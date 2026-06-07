@@ -11,7 +11,7 @@
 App::App() {
 }
 
-void App::begin() {
+void App::Start() {
     Serial.println();
     Serial.println("=================================");
     Serial.println("DeviceIQ Starting...");

@@ -3,5 +3,5 @@
 
 App app;
 
-void setup() { app.begin(); }
+void setup() { app.Start(); }
 void loop() { vTaskDelete(NULL); }

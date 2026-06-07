@@ -3,7 +3,7 @@
 class App {
     public:
         App();
-        void begin();
+        void Start();
     private:
         void initializeCore();
         void initializeConfig();
