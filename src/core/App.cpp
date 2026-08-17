@@ -1,67 +1,36 @@
-#include "App.h"
-
 #include <Arduino.h>
 
-// Future includes
-// #include "../core/Logger.h"
-// #include "../config/ConfigManager.h"
-// #include "../network/WiFiManager.h"
-// #include "../automation/AutomationEngine.h"
-
-App::App() {
-}
+#include "App.h"
+#include "Globals.h"
 
 void App::Start() {
-    Serial.println();
-    Serial.println("=================================");
-    Serial.println("DeviceIQ Starting...");
-    Serial.println("=================================");
+    if (SystemLogger.Start()) {
+        SystemLogger.Log(Logger::Type::Information, Version::Info());
+        SystemLogger.Log(Logger::Type::Information, "Logger initialized");
+    } else {
+        SystemLogger.Log(Logger::Type::Error, "Error initializing Logger");
+        return;
+    }
 
-    initializeCore();
-    initializeConfig();
-    initializeNetwork();
-    initializeComponents();
-    initializeAutomation();
+    xTaskCreate(
+        [](void* parameter) {
+            Logger* logger = static_cast<Logger*>(parameter);
 
-    createTasks();
+            uint16_t c = 0;
+            char message[64];
 
-    Serial.println("DeviceIQ started successfully.");
-}
+            while (true) {
+                snprintf(message, sizeof(message), "Mensagem periódica %u", static_cast<unsigned int>(c));
+                logger->Log(Logger::Type::Information, message);
+                vTaskDelay(pdMS_TO_TICKS(5000));
 
-void App::initializeCore() {
-    Serial.println("[App] Initializing core...");
-}
-
-void App::initializeConfig() {
-    Serial.println("[App] Loading configuration...");
-}
-
-void App::initializeNetwork() {
-    Serial.println("[App] Initializing network...");
-}
-
-void App::initializeComponents() {
-    Serial.println("[App] Initializing components...");
-}
-
-void App::initializeAutomation() {
-    Serial.println("[App] Initializing automation engine...");
-}
-
-void App::createTasks() {
-    Serial.println("[App] Creating FreeRTOS tasks...");
-
-    /*
-    Example:
-
-    xTaskCreatePinnedToCore(
-        networkTask,
-        "NetworkTask",
-        4096,
-        nullptr,
+                c++;
+            }
+        },
+        "LoggerTest",
+        2048,
+        &SystemLogger,
         1,
-        nullptr,
-        1
+        nullptr
     );
-    */
 }

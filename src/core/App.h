@@ -1,14 +1,12 @@
+#include "Logger.h"
+
 #pragma once
 
 class App {
     public:
-        App();
+        App() {}
         void Start();
+
     private:
-        void initializeCore();
-        void initializeConfig();
-        void initializeNetwork();
-        void initializeComponents();
-        void initializeAutomation();
-        void createTasks();
+        bool initialize_Logger();
 };
