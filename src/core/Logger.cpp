@@ -7,7 +7,7 @@ bool Logger::Start() {
 
     if (_queue == nullptr) return false;
 
-    BaseType_t result = xTaskCreate(TaskEntry, "Logger", 2048, this, 1, &_taskHandle);
+    BaseType_t result = xTaskCreate(TaskEntry, "Logger", 4096, this, 1, &_taskHandle);
 
     if (result != pdPASS) return false;
 
@@ -31,15 +31,13 @@ void Logger::Task() {
 
     while (true) {
         if (xQueueReceive(_queue, &message, portMAX_DELAY) == pdTRUE) {
-            _serialport.print("[");
-            _serialport.print(SystemClock.GetDateTime());
-            _serialport.print("] ");
+            String line = "[" + SystemClock.GetDateTime() + "] [" + String(static_cast<char>(message.type)) + "] " + message.text;
+            
+            _serialport.println(line);
 
-            _serialport.print("[");
-            _serialport.print(static_cast<char>(message.type));
-            _serialport.print("] ");
+            line += '\n';
 
-            _serialport.println(message.text);
+            SystemFileSystem.Append("/system.log", line);
         }
     }
 }

@@ -1,0 +1,190 @@
+#include "FileSystem.h"
+
+bool FileSystem::Start(bool formatOnFail) {
+    if (_mounted) return true;
+
+    if (_mutex == nullptr) {
+        _mutex = xSemaphoreCreateMutex();
+        if (_mutex == nullptr) return false;
+    }
+
+    Lock lock(_mutex, pdMS_TO_TICKS(1000));
+
+    if (lock.IsLocked() == false) return false;
+    if (LittleFS.begin(formatOnFail) == false) return false;
+
+    _mounted = true;
+
+    return true;
+}
+
+bool FileSystem::Exists(const char* path, TickType_t timeout) {
+    if (_mounted == false || path == nullptr) return false;
+    Lock lock(_mutex, timeout);
+    if (lock.IsLocked() == false) return false;
+    return LittleFS.exists(path);
+}
+
+size_t FileSystem::Size(const char* path, TickType_t timeout) {
+    if (_mounted == false || path == nullptr) return 0;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return 0;
+
+    File file = LittleFS.open(path, FILE_READ);
+    if (file == false) return 0;
+
+    const size_t size = file.size();
+    file.close();
+
+    return size;
+}
+
+FileSystem::Result FileSystem::Read(const char* path, String& output, TickType_t timeout) {
+    output.clear();
+
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+    if (LittleFS.exists(path) == false) return Result::NotFound;
+
+    File file = LittleFS.open(path, FILE_READ);
+
+    if (file == false) return Result::OpenFailed;
+
+    output.reserve(file.size());
+
+    while (file.available()) {
+        output += static_cast<char>(file.read());
+    }
+
+
+    file.close();
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::Read(const char* path, uint8_t* buffer, size_t bufferSize, size_t& bytesRead, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr || buffer == nullptr || bufferSize == 0) return Result::InvalidArgument;
+
+    bytesRead = 0;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+
+    if (LittleFS.exists(path) == false) return Result::NotFound;
+
+    File file = LittleFS.open(path, FILE_READ);
+    if (file == false) return Result::OpenFailed;
+
+    bytesRead = file.read(buffer, bufferSize);
+
+    file.close();
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::Write(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr || data == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+
+    File file = LittleFS.open(path, FILE_WRITE);
+
+    if (file == false) return Result::OpenFailed;
+    const size_t written = file.write(data, length);
+
+    file.close();
+
+    if (written != length) return Result::WriteFailed;
+
+    return Result::Ok;
+}
+
+
+FileSystem::Result FileSystem::Write(const char* path, const String& data, TickType_t timeout) {
+    return Write(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
+}
+
+FileSystem::Result FileSystem::Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr || data == nullptr) { return Result::InvalidArgument; }
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+
+    File file = LittleFS.open(path, FILE_APPEND);
+
+    if (file == false) return Result::OpenFailed;
+    const size_t written = file.write(data, length);
+
+    file.close();
+
+    if (written != length) return Result::WriteFailed;
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::Append(const char* path, const String& data, TickType_t timeout) {
+    return Append(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
+}
+
+FileSystem::Result FileSystem::Remove(const char* path, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+    if (LittleFS.exists(path) == false) return Result::NotFound;
+    if (LittleFS.remove(path) == false) return Result::RemoveFailed;
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::Rename(const char* source, const char* destination, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;\
+    if (source == nullptr || destination == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+    if (LittleFS.exists(source) == false) return Result::NotFound;
+    if (LittleFS.rename(source, destination) == false) return Result::RenameFailed;
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::CreateDirectory(const char* path, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+    if (LittleFS.mkdir(path) == false) return Result::CreateDirectoryFailed;
+
+    return Result::Ok;
+}
+
+FileSystem::Result FileSystem::RemoveDirectory(const char* path, TickType_t timeout) {
+    if (_mounted == false) return Result::NotInitialized;
+    if (path == nullptr) return Result::InvalidArgument;
+
+    Lock lock(_mutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+    if (LittleFS.rmdir(path) == false) return Result::RemoveDirectoryFailed;
+
+    return Result::Ok;
+}

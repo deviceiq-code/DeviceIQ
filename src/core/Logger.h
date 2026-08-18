@@ -4,7 +4,7 @@
 
 class Logger {
     public: 
-        enum class Type : char {Information = 'I', Warning = 'W', Error = 'E', Debug = 'D'};
+        enum class Type : char { Information = 'I', Warning = 'W', Error = 'E', Debug = 'D' };
         
         Logger(HardwareSerial& serialPort) : _serialport(serialPort) {}
         

@@ -3,34 +3,41 @@
 #include "App.h"
 #include "Globals.h"
 
+void App::Test() {
+    Serial.begin(115200);
+    delay(1000);
+
+    Serial.println("Antes do LittleFS");
+
+    bool mounted = LittleFS.begin(false);
+
+    Serial.printf("Depois do LittleFS: %s\n",
+                  mounted ? "OK" : "FALHOU");
+}
+
 void App::Start() {
-    if (SystemLogger.Start()) {
-        SystemLogger.Log(Logger::Type::Information, Version::Info());
-        SystemLogger.Log(Logger::Type::Information, "Logger initialized");
-    } else {
-        SystemLogger.Log(Logger::Type::Error, "Error initializing Logger");
+    Serial.begin(115200);
+
+    // FileSystem
+    if (!SystemFileSystem.Start(true)) {
+        Serial.println("Error initializing FileSystem");
         return;
     }
 
-    xTaskCreate(
-        [](void* parameter) {
-            Logger* logger = static_cast<Logger*>(parameter);
+    // Logger
+    if (!SystemLogger.Start()) {
+        Serial.println("Error initializing Logger");
+        return;
+    }
 
-            uint16_t c = 0;
-            char message[64];
+    SystemLogger.Log(Logger::Type::Information, Version::Info());
+    SystemLogger.Log(Logger::Type::Information, "Logger initialized");
+    SystemLogger.Log(Logger::Type::Information, "FileSystem initialized");
 
-            while (true) {
-                snprintf(message, sizeof(message), "Mensagem periódica %u", static_cast<unsigned int>(c));
-                logger->Log(Logger::Type::Information, message);
-                vTaskDelay(pdMS_TO_TICKS(5000));
-
-                c++;
-            }
-        },
-        "LoggerTest",
-        2048,
-        &SystemLogger,
-        1,
-        nullptr
-    );
+    xTaskCreate([](void* parameter) {
+        while (true) {
+            SystemLogger.Log(Logger::Type::Information, "Hello!");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+        }
+    }, "FileSystemTest", 2048, nullptr, 1, nullptr);
 }
