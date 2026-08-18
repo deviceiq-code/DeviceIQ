@@ -7,7 +7,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-
 class FileSystem {
     public:
         enum class Result : uint8_t { Ok, NotInitialized, LockTimeout, InvalidArgument, NotFound, OpenFailed, ReadFailed, WriteFailed, RemoveFailed, RenameFailed, CreateDirectoryFailed, RemoveDirectoryFailed, MountFailed };

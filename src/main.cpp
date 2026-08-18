@@ -3,5 +3,5 @@
 
 App app;
 
-void setup() { app.Start(); }
+void setup() { Serial.begin(115200); app.Start(); }    
 void loop() { vTaskDelete(NULL); }

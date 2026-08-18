@@ -3,37 +3,39 @@
 #include "App.h"
 #include "Globals.h"
 
-void App::Test() {
-    Serial.begin(115200);
-    delay(1000);
-
-    Serial.println("Antes do LittleFS");
-
-    bool mounted = LittleFS.begin(false);
-
-    Serial.printf("Depois do LittleFS: %s\n",
-                  mounted ? "OK" : "FALHOU");
-}
-
 void App::Start() {
-    Serial.begin(115200);
-
     // FileSystem
-    if (!SystemFileSystem.Start(true)) {
-        Serial.println("Error initializing FileSystem");
+    if (SystemFileSystem.Start(true) == false) {
+        Serial.println("Error initializing FileSystem object");
         return;
     }
 
     // Logger
-    if (!SystemLogger.Start()) {
-        Serial.println("Error initializing Logger");
+    if (SystemLogger.Start() == false) {
+        Serial.println("Error initializing Logger object");
+        return;
+    }
+
+    // Configuration
+    if (!SystemFileSystem.Exists("/configuration.json")) {
+        if (SystemFileSystem.Write("/configuration.json", "{}") != FileSystem::Result::Ok) {
+                SystemLogger.Log(Logger::Type::Error, "Error creating Configuration file"
+            );
+
+            return;
+        }
+    }
+
+    if (SystemConfiguration.Start("/configuration.json") == false) {
+        SystemLogger.Log(Logger::Type::Error, "Error initializing Configuration");
         return;
     }
 
     SystemLogger.Log(Logger::Type::Information, Version::Info());
     SystemLogger.Log(Logger::Type::Information, "Logger initialized");
     SystemLogger.Log(Logger::Type::Information, "FileSystem initialized");
-
+    SystemLogger.Log(Logger::Type::Information, String("Configuration initialized - file " + String("/configuration.json") + " read"));
+    
     xTaskCreate([](void* parameter) {
         while (true) {
             SystemLogger.Log(Logger::Type::Information, "Hello!");
