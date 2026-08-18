@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Defaults.h"
 #include "Clock.h"
 #include "Logger.h"
 #include "FileSystem.h"

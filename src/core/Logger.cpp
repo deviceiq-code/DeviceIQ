@@ -37,7 +37,7 @@ void Logger::Task() {
 
             line += '\n';
 
-            SystemFileSystem.Append("/system.log", line);
+            SystemFileSystem.Append(Defaults.LogFileName, line);
         }
     }
 }

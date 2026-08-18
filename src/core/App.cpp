@@ -17,8 +17,8 @@ void App::Start() {
     }
 
     // Configuration
-    if (!SystemFileSystem.Exists("/configuration.json")) {
-        if (SystemFileSystem.Write("/configuration.json", "{}") != FileSystem::Result::Ok) {
+    if (!SystemFileSystem.Exists(Defaults.ConfigFileName)) {
+        if (SystemFileSystem.Write(Defaults.ConfigFileName, "{}") != FileSystem::Result::Ok) {
                 SystemLogger.Log(Logger::Type::Error, "Error creating Configuration file"
             );
 
@@ -26,7 +26,7 @@ void App::Start() {
         }
     }
 
-    if (SystemConfiguration.Start("/configuration.json") == false) {
+    if (SystemConfiguration.Start(Defaults.ConfigFileName) == false) {
         SystemLogger.Log(Logger::Type::Error, "Error initializing Configuration");
         return;
     }
@@ -34,7 +34,7 @@ void App::Start() {
     SystemLogger.Log(Logger::Type::Information, Version::Info());
     SystemLogger.Log(Logger::Type::Information, "Logger initialized");
     SystemLogger.Log(Logger::Type::Information, "FileSystem initialized");
-    SystemLogger.Log(Logger::Type::Information, String("Configuration initialized - file " + String("/configuration.json") + " read"));
+    SystemLogger.Log(Logger::Type::Information, String("Configuration initialized - file " + String(Defaults.ConfigFileName) + " read"));
     
     xTaskCreate([](void* parameter) {
         while (true) {
