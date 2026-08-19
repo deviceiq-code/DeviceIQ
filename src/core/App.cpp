@@ -19,19 +19,6 @@ void App::Start() {
         return;
     }
 
-    // Configuration
-    if (!FileSystem.Exists(Defaults.ConfigFileName)) {
-        if (FileSystem.Write(Defaults.ConfigFileName, "{}") != filesystem::Result::Ok) {
-            Logger.Log("Error creating Configuration file", logger::LogLevels::Error);
-            return;
-        }
-    }
-
-    if (Configuration.Start(Defaults.ConfigFileName) == false) {
-        Logger.Log("Error initializing Configuration", logger::LogLevels::Error);
-        return;
-    }
-
     Logger.LogLevel(Defaults.Log.Level);
     Logger.Endpoint(logger::Endpoints::Serial | logger::Endpoints::File | logger::Endpoints::Syslog);
     Logger.SyslogServerHost(Defaults.Log.SyslogServer);

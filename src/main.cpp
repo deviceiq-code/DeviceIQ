@@ -3,5 +3,10 @@
 
 App app;
 
-void setup() { Serial.begin(115200); app.Start(); }    
+void setup() {
+    esp_log_level_set("*", ESP_LOG_NONE);
+    Serial.begin(115200);
+    app.Start();
+}
+
 void loop() { vTaskDelete(NULL); }
