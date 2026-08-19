@@ -4,9 +4,9 @@
 #include <time.h>
 #include <esp_timer.h>
 
-class Clock {
+class rtc {
 public:
-    Clock(time_t initialEpoch) : _baseEpoch(initialEpoch), _baseMicros(esp_timer_get_time()) {}
+    rtc(time_t initialEpoch) : _baseEpoch(initialEpoch), _baseMicros(esp_timer_get_time()) {}
 
     inline void SetEpoch(time_t epoch) { _baseEpoch = epoch; _baseMicros = esp_timer_get_time(); }
     inline time_t GetEpoch() const { int64_t elapsedMicros = esp_timer_get_time() - _baseMicros; time_t elapsedSeconds = elapsedMicros / 1000000; return _baseEpoch + elapsedSeconds; }

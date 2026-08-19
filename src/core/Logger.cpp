@@ -1,7 +1,7 @@
 #include "Logger.h"
 #include "Globals.h"
 
-bool Logger::Start() {
+bool logger::Start() {
     if (_taskHandle != nullptr) return true;
 
     _serialport.begin(115200);
@@ -20,7 +20,7 @@ bool Logger::Start() {
     return true;
 }
 
-bool Logger::ResolveSyslogAddress() {
+bool logger::ResolveSyslogAddress() {
     if (_syslogAddressValid) return true;
 
     if (_syslogAddress.fromString(_syslogServerHost)) {
@@ -38,7 +38,7 @@ bool Logger::ResolveSyslogAddress() {
     return true;
 }
 
-bool Logger::Log(const char* message, LogLevels loglevel) {
+bool logger::Log(const char* message, LogLevels loglevel) {
     if (_queue == nullptr || message == nullptr) return false;
     if ((_logLevel & loglevel) == 0) return true;
 
@@ -51,7 +51,7 @@ bool Logger::Log(const char* message, LogLevels loglevel) {
     return xQueueSend(_queue, &logMessage, 0) == pdTRUE;
 }
 
-void Logger::LogToSerial(const char* message, LogLevels loglevel) {
+void logger::LogToSerial(const char* message, LogLevels loglevel) {
     char levelChar = 'U';
 
     switch (loglevel) {
@@ -72,11 +72,11 @@ void Logger::LogToSerial(const char* message, LogLevels loglevel) {
         } break;
     }
 
-    String line = "[" + SystemClock.GetDateTime() + "] [" + levelChar + "] " + message;
+    String line = "[" + Clock.GetDateTime() + "] [" + levelChar + "] " + message;
     _serialport.println(line);
 }
 
-void Logger::LogToFile(const char* message, LogLevels loglevel) {
+void logger::LogToFile(const char* message, LogLevels loglevel) {
     char levelChar = 'U';
 
     switch (loglevel) {
@@ -97,11 +97,11 @@ void Logger::LogToFile(const char* message, LogLevels loglevel) {
         } break;
     }
 
-    String line = "[" + SystemClock.GetDateTime() + "] [" + levelChar + "] " + message + "\n";
-    SystemFileSystem.Append(Defaults.LogFileName, line);
+    String line = "[" + Clock.GetDateTime() + "] [" + levelChar + "] " + message + "\n";
+    FileSystem.Append(Defaults.LogFileName, line);
 }
 
-void Logger::LogToSyslog(const char* message, LogLevels loglevel) {
+void logger::LogToSyslog(const char* message, LogLevels loglevel) {
     #if CONFIG_IDF_TARGET_ESP32 || CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32C3
     if (xPortInIsrContext()) return;
     #endif
@@ -137,7 +137,7 @@ void Logger::LogToSyslog(const char* message, LogLevels loglevel) {
         } return;
     }
 
-    time_t now = SystemClock.GetEpoch();
+    time_t now = Clock.GetEpoch();
     struct tm timeInfo;
     gmtime_r(&now, &timeInfo);
 
@@ -173,7 +173,7 @@ void Logger::LogToSyslog(const char* message, LogLevels loglevel) {
     }
 }
 
-void Logger::Task() {
+void logger::Task() {
     LogMessage message;
 
     while (true) {

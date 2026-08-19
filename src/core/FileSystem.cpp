@@ -1,6 +1,6 @@
 #include "FileSystem.h"
 
-bool FileSystem::Start(bool formatOnFail) {
+bool filesystem::Start(bool formatOnFail) {
     if (_mounted) return true;
 
     if (_mutex == nullptr) {
@@ -18,14 +18,14 @@ bool FileSystem::Start(bool formatOnFail) {
     return true;
 }
 
-bool FileSystem::Exists(const char* path, TickType_t timeout) {
+bool filesystem::Exists(const char* path, TickType_t timeout) {
     if (_mounted == false || path == nullptr) return false;
     Lock lock(_mutex, timeout);
     if (lock.IsLocked() == false) return false;
     return LittleFS.exists(path);
 }
 
-size_t FileSystem::Size(const char* path, TickType_t timeout) {
+size_t filesystem::Size(const char* path, TickType_t timeout) {
     if (_mounted == false || path == nullptr) return 0;
 
     Lock lock(_mutex, timeout);
@@ -41,7 +41,7 @@ size_t FileSystem::Size(const char* path, TickType_t timeout) {
     return size;
 }
 
-FileSystem::Result FileSystem::Read(const char* path, String& output, TickType_t timeout) {
+filesystem::Result filesystem::Read(const char* path, String& output, TickType_t timeout) {
     output.clear();
 
     if (_mounted == false) return Result::NotInitialized;
@@ -68,7 +68,7 @@ FileSystem::Result FileSystem::Read(const char* path, String& output, TickType_t
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::Read(const char* path, uint8_t* buffer, size_t bufferSize, size_t& bytesRead, TickType_t timeout) {
+filesystem::Result filesystem::Read(const char* path, uint8_t* buffer, size_t bufferSize, size_t& bytesRead, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr || buffer == nullptr || bufferSize == 0) return Result::InvalidArgument;
 
@@ -90,7 +90,7 @@ FileSystem::Result FileSystem::Read(const char* path, uint8_t* buffer, size_t bu
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::Write(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
+filesystem::Result filesystem::Write(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr || data == nullptr) return Result::InvalidArgument;
 
@@ -111,11 +111,11 @@ FileSystem::Result FileSystem::Write(const char* path, const uint8_t* data, size
 }
 
 
-FileSystem::Result FileSystem::Write(const char* path, const String& data, TickType_t timeout) {
+filesystem::Result filesystem::Write(const char* path, const String& data, TickType_t timeout) {
     return Write(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
 }
 
-FileSystem::Result FileSystem::Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
+filesystem::Result filesystem::Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr || data == nullptr) { return Result::InvalidArgument; }
 
@@ -135,11 +135,11 @@ FileSystem::Result FileSystem::Append(const char* path, const uint8_t* data, siz
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::Append(const char* path, const String& data, TickType_t timeout) {
+filesystem::Result filesystem::Append(const char* path, const String& data, TickType_t timeout) {
     return Append(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
 }
 
-FileSystem::Result FileSystem::Remove(const char* path, TickType_t timeout) {
+filesystem::Result filesystem::Remove(const char* path, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr) return Result::InvalidArgument;
 
@@ -152,7 +152,7 @@ FileSystem::Result FileSystem::Remove(const char* path, TickType_t timeout) {
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::Rename(const char* source, const char* destination, TickType_t timeout) {
+filesystem::Result filesystem::Rename(const char* source, const char* destination, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;\
     if (source == nullptr || destination == nullptr) return Result::InvalidArgument;
 
@@ -165,7 +165,7 @@ FileSystem::Result FileSystem::Rename(const char* source, const char* destinatio
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::CreateDirectory(const char* path, TickType_t timeout) {
+filesystem::Result filesystem::CreateDirectory(const char* path, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr) return Result::InvalidArgument;
 
@@ -177,7 +177,7 @@ FileSystem::Result FileSystem::CreateDirectory(const char* path, TickType_t time
     return Result::Ok;
 }
 
-FileSystem::Result FileSystem::RemoveDirectory(const char* path, TickType_t timeout) {
+filesystem::Result filesystem::RemoveDirectory(const char* path, TickType_t timeout) {
     if (_mounted == false) return Result::NotInitialized;
     if (path == nullptr) return Result::InvalidArgument;
 

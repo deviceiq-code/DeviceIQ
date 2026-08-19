@@ -6,7 +6,7 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
-class Configuration {
+class configuration {
     public:
         enum class SaveUrgency : uint8_t { Deferred, Critical };
 

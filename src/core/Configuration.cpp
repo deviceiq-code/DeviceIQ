@@ -3,8 +3,8 @@
 
 #include <ctype.h>
 
-bool Configuration::Start(const char* configurationFile, uint32_t taskStackSize, UBaseType_t taskPriority) {
-    if (configurationFile == nullptr || *configurationFile == '\0' || !SystemFileSystem.IsMounted()) return false;
+bool configuration::Start(const char* configurationFile, uint32_t taskStackSize, UBaseType_t taskPriority) {
+    if (configurationFile == nullptr || *configurationFile == '\0' || !FileSystem.IsMounted()) return false;
     if (_taskHandle != nullptr) return true;
 
     if (_mutex == nullptr) _mutex = xSemaphoreCreateMutex();
@@ -30,11 +30,11 @@ bool Configuration::Start(const char* configurationFile, uint32_t taskStackSize,
     return true;
 }
 
-bool Configuration::LoadConfigurationFile(const String& configurationFile) {
-    if (!SystemFileSystem.IsMounted() || configurationFile.isEmpty() || _mutex == nullptr) return false;
+bool configuration::LoadConfigurationFile(const String& configurationFile) {
+    if (!FileSystem.IsMounted() || configurationFile.isEmpty() || _mutex == nullptr) return false;
 
     String content;
-    if (SystemFileSystem.Read(configurationFile.c_str(), content) != FileSystem::Result::Ok) return false;
+    if (FileSystem.Read(configurationFile.c_str(), content) != filesystem::Result::Ok) return false;
 
     JsonDocument document;
     if (deserializeJson(document, content) || !document.is<JsonObject>()) return false;
@@ -50,7 +50,7 @@ bool Configuration::LoadConfigurationFile(const String& configurationFile) {
     return true;
 }
 
-bool Configuration::ResetToDefaultSettings() {
+bool configuration::ResetToDefaultSettings() {
     String configurationFile;
 
     {
@@ -63,7 +63,7 @@ bool Configuration::ResetToDefaultSettings() {
     defaultFile += configurationFile[0] == '/' ? configurationFile.substring(1) : configurationFile;
 
     String content;
-    if (SystemFileSystem.Read(defaultFile.c_str(), content) != FileSystem::Result::Ok) return false;
+    if (FileSystem.Read(defaultFile.c_str(), content) != filesystem::Result::Ok) return false;
 
     JsonDocument document;
     if (deserializeJson(document, content) || !document.is<JsonObject>()) return false;
@@ -81,17 +81,17 @@ bool Configuration::ResetToDefaultSettings() {
     return true;
 }
 
-bool Configuration::SaveSettings() {
+bool configuration::SaveSettings() {
     return SaveSettingsAtomic();
 }
 
-void Configuration::Outdated() {
+void configuration::Outdated() {
     Lock lock(_mutex, DEFAULT_LOCK_TIMEOUT);
     if (!lock.IsLocked()) return;
     MarkOutdatedLocked();
 }
 
-bool Configuration::Critical() {
+bool configuration::Critical() {
     {
         Lock lock(_mutex, DEFAULT_LOCK_TIMEOUT);
         if (!lock.IsLocked()) return false;
@@ -104,7 +104,7 @@ bool Configuration::Critical() {
     return false;
 }
 
-void Configuration::Control() {
+void configuration::Control() {
     bool shouldSave = false;
 
     {
@@ -121,7 +121,7 @@ void Configuration::Control() {
     if (shouldSave && !SaveSettingsAtomic()) Outdated();
 }
 
-void Configuration::SetMinInterval(uint32_t ms) {
+void configuration::SetMinInterval(uint32_t ms) {
     if (_mutex == nullptr) {
         _minIntervalMs = ms;
         return;
@@ -133,7 +133,7 @@ void Configuration::SetMinInterval(uint32_t ms) {
     if (_taskHandle != nullptr) xTaskNotifyGive(_taskHandle);
 }
 
-void Configuration::SetMaxLatency(uint32_t ms) {
+void configuration::SetMaxLatency(uint32_t ms) {
     if (_mutex == nullptr) {
         _maxLatencyMs = ms;
         return;
@@ -145,7 +145,7 @@ void Configuration::SetMaxLatency(uint32_t ms) {
     if (_taskHandle != nullptr) xTaskNotifyGive(_taskHandle);
 }
 
-String Configuration::Get(const char* path, const char* defaultValue) const {
+String configuration::Get(const char* path, const char* defaultValue) const {
     Lock lock(_mutex, DEFAULT_LOCK_TIMEOUT);
     if (!lock.IsLocked()) return String(defaultValue == nullptr ? "" : defaultValue);
 
@@ -154,7 +154,7 @@ String Configuration::Get(const char* path, const char* defaultValue) const {
     return String(value.as<const char*>());
 }
 
-String Configuration::GetAt(const char* arrayPath, size_t index, const char* subPath, const char* defaultValue) const {
+String configuration::GetAt(const char* arrayPath, size_t index, const char* subPath, const char* defaultValue) const {
     Lock lock(_mutex, DEFAULT_LOCK_TIMEOUT);
     if (!lock.IsLocked()) return String(defaultValue == nullptr ? "" : defaultValue);
 
@@ -163,7 +163,7 @@ String Configuration::GetAt(const char* arrayPath, size_t index, const char* sub
     return String(value.as<const char*>());
 }
 
-uint16_t Configuration::Elements(const char* path) const {
+uint16_t configuration::Elements(const char* path) const {
     Lock lock(_mutex, DEFAULT_LOCK_TIMEOUT);
     if (!lock.IsLocked()) return 0;
 
@@ -173,11 +173,11 @@ uint16_t Configuration::Elements(const char* path) const {
     return 0;
 }
 
-void Configuration::TaskEntry(void* parameter) {
-    static_cast<Configuration*>(parameter)->Task();
+void configuration::TaskEntry(void* parameter) {
+    static_cast<configuration*>(parameter)->Task();
 }
 
-void Configuration::Task() {
+void configuration::Task() {
     while (true) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
@@ -220,9 +220,9 @@ void Configuration::Task() {
     }
 }
 
-bool Configuration::SaveSettingsAtomic() {
+bool configuration::SaveSettingsAtomic() {
     Lock saveLock(_saveMutex, pdMS_TO_TICKS(2000));
-    if (!saveLock.IsLocked() || !SystemFileSystem.IsMounted()) return false;
+    if (!saveLock.IsLocked() || !FileSystem.IsMounted()) return false;
 
     String configurationFile;
     String content;
@@ -238,27 +238,27 @@ bool Configuration::SaveSettingsAtomic() {
     return WriteAtomic(configurationFile, content);
 }
 
-bool Configuration::WriteAtomic(const String& path, const String& content) {
+bool configuration::WriteAtomic(const String& path, const String& content) {
     const String temporaryPath = path + ".tmp";
-    SystemFileSystem.Remove(temporaryPath.c_str());
+    FileSystem.Remove(temporaryPath.c_str());
 
-    if (SystemFileSystem.Write(temporaryPath.c_str(), content) != FileSystem::Result::Ok) return false;
+    if (FileSystem.Write(temporaryPath.c_str(), content) != filesystem::Result::Ok) return false;
 
-    if (SystemFileSystem.Rename(temporaryPath.c_str(), path.c_str()) == FileSystem::Result::Ok) return true;
+    if (FileSystem.Rename(temporaryPath.c_str(), path.c_str()) == filesystem::Result::Ok) return true;
 
-    const FileSystem::Result removeResult = SystemFileSystem.Remove(path.c_str());
-    if (removeResult != FileSystem::Result::Ok && removeResult != FileSystem::Result::NotFound) {
-        SystemFileSystem.Remove(temporaryPath.c_str());
+    const filesystem::Result removeResult = FileSystem.Remove(path.c_str());
+    if (removeResult != filesystem::Result::Ok && removeResult != filesystem::Result::NotFound) {
+        FileSystem.Remove(temporaryPath.c_str());
         return false;
     }
 
-    if (SystemFileSystem.Rename(temporaryPath.c_str(), path.c_str()) == FileSystem::Result::Ok) return true;
+    if (FileSystem.Rename(temporaryPath.c_str(), path.c_str()) == filesystem::Result::Ok) return true;
 
-    SystemFileSystem.Remove(temporaryPath.c_str());
+    FileSystem.Remove(temporaryPath.c_str());
     return false;
 }
 
-void Configuration::MarkOutdatedLocked() {
+void configuration::MarkOutdatedLocked() {
     const uint32_t now = millis();
 
     if (!_outdated) _firstOutdatedMs = now;
@@ -268,7 +268,7 @@ void Configuration::MarkOutdatedLocked() {
     if (_taskHandle != nullptr) xTaskNotifyGive(_taskHandle);
 }
 
-String Configuration::Trim(const String& value) {
+String configuration::Trim(const String& value) {
     int first = 0;
     int last = static_cast<int>(value.length()) - 1;
 
@@ -278,7 +278,7 @@ String Configuration::Trim(const String& value) {
     return first > last ? String() : value.substring(first, last + 1);
 }
 
-JsonVariantConst Configuration::FindConst(const char* path) const {
+JsonVariantConst configuration::FindConst(const char* path) const {
     JsonVariantConst current = _jsonConfiguration.as<JsonVariantConst>();
     if (path == nullptr || *path == '\0') return current;
 
@@ -296,7 +296,7 @@ JsonVariantConst Configuration::FindConst(const char* path) const {
     return current;
 }
 
-JsonVariantConst Configuration::FindConstAt(const char* arrayPath, size_t index, const char* subPath) const {
+JsonVariantConst configuration::FindConstAt(const char* arrayPath, size_t index, const char* subPath) const {
     JsonVariantConst base = FindConst(arrayPath);
     if (!base.is<JsonArray>()) return JsonVariantConst();
 
@@ -320,7 +320,7 @@ JsonVariantConst Configuration::FindConstAt(const char* arrayPath, size_t index,
     return current;
 }
 
-JsonVariant Configuration::Ensure(const char* path) {
+JsonVariant configuration::Ensure(const char* path) {
     JsonVariant current = _jsonConfiguration.as<JsonVariant>();
     if (current.isNull()) current.to<JsonObject>();
     if (path == nullptr || *path == '\0') return current;
@@ -343,7 +343,7 @@ JsonVariant Configuration::Ensure(const char* path) {
     return current;
 }
 
-JsonVariant Configuration::EnsureFrom(JsonVariant base, const char* subPath) {
+JsonVariant configuration::EnsureFrom(JsonVariant base, const char* subPath) {
     if (base.isNull() || subPath == nullptr || *subPath == '\0') return base;
 
     JsonVariant current = base;
@@ -366,7 +366,7 @@ JsonVariant Configuration::EnsureFrom(JsonVariant base, const char* subPath) {
     return current;
 }
 
-JsonVariant Configuration::EnsureArray(const char* arrayPath) {
+JsonVariant configuration::EnsureArray(const char* arrayPath) {
     if (arrayPath == nullptr || *arrayPath == '\0') return JsonVariant();
 
     const char* lastSeparator = strrchr(arrayPath, '|');
@@ -386,7 +386,7 @@ JsonVariant Configuration::EnsureArray(const char* arrayPath) {
     return array.is<JsonArray>() ? array : JsonVariant();
 }
 
-JsonVariant Configuration::EnsureArrayElement(const char* arrayPath, size_t index) {
+JsonVariant configuration::EnsureArrayElement(const char* arrayPath, size_t index) {
     JsonVariant arrayVariant = EnsureArray(arrayPath);
     if (arrayVariant.isNull()) return JsonVariant();
 

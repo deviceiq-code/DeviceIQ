@@ -1,13 +1,13 @@
 #pragma once
 
 #include "Defaults.h"
-#include "Clock.h"
+#include "RTC.h"
 #include "Logger.h"
 #include "FileSystem.h"
 #include "Configuration.h"
 #include "Version.h"
 
-extern Clock SystemClock;
-extern Logger SystemLogger;
-extern FileSystem SystemFileSystem;
-extern Configuration SystemConfiguration;
+extern rtc Clock;
+extern logger Logger;
+extern filesystem FileSystem;
+extern configuration Configuration;

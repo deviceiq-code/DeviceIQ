@@ -4,12 +4,12 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 
-class Logger {
+class logger {
     public: 
         enum Endpoints : uint8_t { NoLog = 0b00000000, Serial = 0b00000001, Syslog = 0b00000010, File = 0b00000100 };
         enum LogLevels : uint8_t { Error = 0b00000001, Warning = 0b00000010, Information = 0b00000100, Debug = 0b00001000, All = 0b11111111};
         
-        Logger(HardwareSerial& serialPort) : _serialport(serialPort) {}
+        logger(HardwareSerial& serialPort) : _serialport(serialPort) {}
         
         bool Start();
 
@@ -50,6 +50,6 @@ class Logger {
 
         bool ResolveSyslogAddress();
         
-        inline static void TaskEntry(void* parameter) { Logger* logger = static_cast<Logger*>(parameter); logger->Task(); }
+        inline static void TaskEntry(void* parameter) { logger* _logger = static_cast<logger*>(parameter); _logger->Task(); }
         void Task();
 };

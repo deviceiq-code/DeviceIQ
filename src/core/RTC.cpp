@@ -1,6 +1,6 @@
-#include "../core/Clock.h"
+#include "RTC.h"
 
-String Clock::GetDate() const {
+String rtc::GetDate() const {
     struct tm timeInfo;
     GetTimeInfo(timeInfo);
 
@@ -10,7 +10,7 @@ String Clock::GetDate() const {
     return String(buffer);
 }
 
-String Clock::GetTime() const {
+String rtc::GetTime() const {
     struct tm timeInfo;
     GetTimeInfo(timeInfo);
 
@@ -20,14 +20,14 @@ String Clock::GetTime() const {
     return String(buffer);
 }
 
-void Clock::SetDateFormat(const char* format) {
+void rtc::SetDateFormat(const char* format) {
     if (format == nullptr) return;
 
     strncpy(_dateFormat, format, FORMAT_SIZE - 1);
     _dateFormat[FORMAT_SIZE - 1] = '\0';
 }
 
-void Clock::SetTimeFormat(const char* format) {
+void rtc::SetTimeFormat(const char* format) {
     if (format == nullptr) return;
 
     strncpy(_timeFormat, format, FORMAT_SIZE - 1);

@@ -7,11 +7,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
-class FileSystem {
+class filesystem {
     public:
         enum class Result : uint8_t { Ok, NotInitialized, LockTimeout, InvalidArgument, NotFound, OpenFailed, ReadFailed, WriteFailed, RemoveFailed, RenameFailed, CreateDirectoryFailed, RemoveDirectoryFailed, MountFailed };
         
-        FileSystem() = default;
+        filesystem() = default;
 
         bool Start(bool formatOnFail = true);
         bool IsMounted() const { return _mounted; }
