@@ -3,7 +3,6 @@
 #include <Arduino.h>
 #include <FS.h>
 #include <LittleFS.h>
-
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -14,8 +13,9 @@ class filesystem {
         filesystem() = default;
 
         bool Start(bool formatOnFail = true);
-        bool IsMounted() const { return _mounted; }
+        bool IsMounted() const { return pMounted; }
         bool Exists(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
+        bool Exists(const String& path, TickType_t timeout = pdMS_TO_TICKS(500)) { return Exists(path.c_str(), timeout); }
         size_t Size(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Read(const char* path, String& output, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Read(const char* path, uint8_t* buffer, size_t bufferSize, size_t& bytesRead, TickType_t timeout = pdMS_TO_TICKS(500));
@@ -23,22 +23,25 @@ class filesystem {
         Result Write(const char* path, const String& data, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Append(const char* path, const String& data, TickType_t timeout = pdMS_TO_TICKS(500));
+        Result AppendRotating(const char* path, const uint8_t* data, size_t length, size_t maxFileSize, TickType_t timeout = pdMS_TO_TICKS(500));
+        Result AppendRotating(const char* path, const String& data, size_t maxFileSize, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Remove(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
+        Result Remove(const String& path, TickType_t timeout = pdMS_TO_TICKS(500)) { return Remove(path.c_str(), timeout); }
         Result Rename(const char* source, const char* destination, TickType_t timeout = pdMS_TO_TICKS(500));
         Result CreateDirectory(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
         Result RemoveDirectory(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
     private:
         class Lock {
             public:
-                Lock(SemaphoreHandle_t mutex, TickType_t timeout) : _mutex(mutex), _locked(false) { if (_mutex == nullptr) return; _locked = xSemaphoreTake(_mutex, timeout) == pdTRUE; }
-                ~Lock() { if (_locked && _mutex != nullptr) xSemaphoreGive(_mutex); }
+                Lock(SemaphoreHandle_t mutex, TickType_t timeout) : pMutex(mutex), pLocked(false) { if (pMutex == nullptr) return; pLocked = xSemaphoreTake(pMutex, timeout) == pdTRUE; }
+                ~Lock() { if (pLocked && pMutex != nullptr) xSemaphoreGive(pMutex); }
                 
-                bool IsLocked() const {return _locked; }
+                bool IsLocked() const {return pLocked; }
             private:
-                SemaphoreHandle_t _mutex = nullptr;
-                bool _locked;
+                SemaphoreHandle_t pMutex = nullptr;
+                bool pLocked;
         };
         
-        SemaphoreHandle_t _mutex = nullptr;
-        bool _mounted = false;
+        SemaphoreHandle_t pMutex = nullptr;
+        bool pMounted = false;
 };

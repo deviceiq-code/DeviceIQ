@@ -13,22 +13,30 @@ void App::Start() {
         return;
     }
 
+    // Settings
+    const bool configurationLoaded = Settings.Load();
+
     // Logger
+    Logger.LogLevel(Settings.Log.LogLevel());
+    Logger.Endpoint(Settings.Log.Endpoint());
+    Logger.SyslogServerHost(Settings.Log.SyslogServerHost());
+    Logger.SyslogServerPort(Settings.Log.SyslogServerPort());
+
     if (Logger.Start() == false) {
         Serial.println("Error initializing Logger object");
         return;
     }
 
-    Logger.LogLevel(Defaults.Log.Level);
-    Logger.Endpoint(logger::Endpoints::Serial | logger::Endpoints::File | logger::Endpoints::Syslog);
-    Logger.SyslogServerHost(Defaults.Log.SyslogServer);
-    Logger.SyslogServerPort(Defaults.Log.SyslogPort);
-
     Logger.Log(Version::Info(), logger::LogLevels::Information);
     Logger.Log("Logger initialized", logger::LogLevels::Information);
     Logger.Log("FileSystem initialized", logger::LogLevels::Information);
-    Logger.Log(String("Configuration initialized - file " + String(Defaults.ConfigFileName) + " read"), logger::LogLevels::Information);
-    
+
+    if (configurationLoaded) {
+        Logger.Log(String("Configuration initialized - file " + String(Defaults.ConfigFileName) + " read"), logger::LogLevels::Information);
+    } else {
+        Logger.Log(String("Configuration initialized with defaults - file " + String(Defaults.ConfigFileName) + " not loaded"), logger::LogLevels::Warning);
+    }
+
     xTaskCreate([](void* parameter) {
         while (true) {
             Logger.Log("Hello!", logger::LogLevels::Information);

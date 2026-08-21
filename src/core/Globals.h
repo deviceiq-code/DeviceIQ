@@ -10,3 +10,4 @@
 extern rtc Clock;
 extern logger Logger;
 extern filesystem FileSystem;
+extern settings Settings;

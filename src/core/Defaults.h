@@ -7,11 +7,11 @@ struct defaults {
     struct users {
         struct admin {
             const char* Username = "admin";
-            const char* Password = "admin";
+            const char* Password = "admin1234";
         } Admin;
         struct user {
             const char* Username = "user";
-            const char* Password = "user";
+            const char* Password = "user1234";
         } User;
     } Users;
     struct log {
@@ -20,6 +20,7 @@ struct defaults {
         const char* SyslogServer = "syslog.svr";
         const uint16_t SyslogPort = 514;
         const uint16_t ShowMaxLines = 20;
+        const size_t MaxFileSize = 64 * 1024;
     } Log;
     struct network {
         const bool DHCPClient = true;

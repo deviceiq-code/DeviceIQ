@@ -1,83 +1,257 @@
 #pragma once
 
 #include <Arduino.h>
-#include <base64.h>
-#include <mbedtls/sha256.h>
-#include <mbedtls/pkcs5.h>
-#include <mbedtls/md.h>
-#include <mbedtls/entropy.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/platform_util.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
+#include <utility>
+#include <IPAddress.h>
 
-constexpr uint32_t PASS_PBKDF2_ITERATIONS = 100000;
-constexpr uint32_t PASS_SALTLEN = 16;
-constexpr uint32_t PASS_HASHLEN = 32;
-constexpr uint8_t MAX_USERS = 3;
-constexpr size_t USERNAME_MIN_LENGTH = 3;
-constexpr size_t USERNAME_MAX_LENGTH = 32;
+#include "Defaults.h"
+#include "Users.h"
 
-enum UserError : uint8_t { NoError = 0, UserExists, UserNotFound, MaxUsersReached, NoAdminRemaining, InvalidUsername, PasswordError, InvalidCredentials, SynchronizationError };
-
-class user {
-    public:
-        const String& Username() const noexcept { return _username; }
-        bool Admin() const noexcept { return _admin; }
-        
-        static bool NormalizeUsername(String& username) noexcept;
-    private:
-        friend class users;
-
-        bool Username(String username) noexcept;
-        bool SetPassword(const String& password);
-        bool Authenticate(const String& password) const;
-        void Admin(bool value) noexcept { _admin = value; }
-        void Clear() noexcept;
-
-        uint8_t _salt[PASS_SALTLEN] = {0};
-        uint8_t _hash[PASS_HASHLEN] = {0};
-
-        String _username;
-        bool _admin = false;
-};
-
-class users {
-    public:
-        users() : _mutex(xSemaphoreCreateMutex()) {}
-        users(const users&) = delete;
-        users& operator=(const users&) = delete;
-        ~users() { if (_mutex != nullptr) { vSemaphoreDelete(_mutex); }}
-        
-        inline size_t Count() const noexcept { Lock lock(_mutex); if (!lock.IsLocked()) return 0; return _userCount; }
-        inline size_t CountAdmins() const noexcept { Lock lock(_mutex); if (!lock.IsLocked()) return 0; size_t count = 0; for (size_t i = 0; i < _userCount; ++i) if (_users[i].Admin()) count++; return count; }
-        UserError SetAdmin(const String& username, bool admin);
-        UserError Add(const String& username, const String& password, bool admin = false);
-        UserError Remove(const String& username);
-        UserError Authenticate(const String& username, const String& password, user** outUser = nullptr);
-        UserError Find(const String& username, user** outUser = nullptr);
-        UserError Rename(const String& currentUsername, const String& newUsername);
-        UserError SetPassword(const String& username, const String& newPassword);
+class settings {
     private:
         class Lock {
             public:
-                explicit Lock(SemaphoreHandle_t mutex) : _mutex(mutex), _locked(mutex != nullptr && xSemaphoreTake(mutex, portMAX_DELAY) == pdTRUE) {}
-                ~Lock() { if (_locked) xSemaphoreGive(_mutex); }
+                explicit Lock(SemaphoreHandle_t mutex) noexcept : pMutex(mutex), pLocked(mutex != nullptr && xSemaphoreTakeRecursive(mutex, portMAX_DELAY) == pdTRUE) {}
+                ~Lock() { if (pLocked) xSemaphoreGiveRecursive(pMutex); }
                 Lock(const Lock&) = delete;
                 Lock& operator=(const Lock&) = delete;
-
-                bool IsLocked() const noexcept { return _locked; }
-
+                [[nodiscard]] bool IsLocked() const noexcept { return pLocked; }
             private:
-                SemaphoreHandle_t _mutex;
-                bool _locked;
+                SemaphoreHandle_t pMutex;
+                bool pLocked;
         };
 
-        size_t CountAdminsUnlocked() const noexcept { size_t count = 0; for (size_t i = 0; i < _userCount; ++i) { if (_users[i].Admin()) { ++count; }} return count;}
+        StaticSemaphore_t pMutexStorage{};
+        SemaphoreHandle_t pMutex = nullptr;
+        bool pFirstRun = false;
+        bool pSaveComponentsStateFlag = false;
+        static void sanitizeIpString(String& s) noexcept;
+    public:
+        class log {
+            private:
+                SemaphoreHandle_t pMutex;
+                uint8_t pEndpoint{};
+                uint8_t pLogLevel{};
+                String pSyslogServerHost;
+                uint16_t pSyslogServerPort{};
+            public:
+                explicit log(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] uint8_t Endpoint() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEndpoint : 0; }
+                void Endpoint(uint8_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEndpoint = value; }
 
-        SemaphoreHandle_t _mutex = nullptr;
-        user _users[MAX_USERS];
-        size_t _userCount = 0;
+                [[nodiscard]] uint8_t LogLevel() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pLogLevel : 0; }
+                void LogLevel(uint8_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pLogLevel = value; }
 
-        bool hasAdmin() const { for (size_t i = 0; i < _userCount; ++i) if (_users[i].Admin()) return true; return false; }
+                [[nodiscard]] String SyslogServerHost() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSyslogServerHost : String(); }
+                void SyslogServerHost(String value) noexcept { value.trim(); value.toLowerCase(); Lock lock(pMutex); if (lock.IsLocked()) pSyslogServerHost = std::move(value); }
+
+                [[nodiscard]] uint16_t SyslogServerPort() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSyslogServerPort : 0; }
+                void SyslogServerPort(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pSyslogServerPort = (value == 0) ? Defaults.Log.SyslogPort : value; }
+        } Log;
+        class network {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pDHCPClient{};
+                String pHostname;
+                IPAddress pIP_Address{0,0,0,0};
+                IPAddress pGateway{0,0,0,0};
+                IPAddress pNetmask{255,255,255,0};
+                IPAddress pDNS[2]{ IPAddress(0,0,0,0), IPAddress(0,0,0,0) };
+                String pSSID;
+                String pPassphrase;
+                uint16_t pConnectionTimeout{};
+                bool pOnlineChecking{};
+                uint16_t pOnlineCheckingTimeout{};
+
+                static bool isValidNetmask(const IPAddress& mask) noexcept;
+                static void stripControlChars(String& s) noexcept;
+                static bool isPrintableASCII(const String& s) noexcept;
+                static bool isHex64(const String& s) noexcept;
+            public:
+                explicit network(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool DHCPClient() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pDHCPClient : false; }
+                void DHCPClient(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pDHCPClient = value; }
+
+                [[nodiscard]] String Hostname() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pHostname : String(); }
+                void Hostname(String value) noexcept;
+
+                [[nodiscard]] IPAddress IP_Address() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIP_Address : IPAddress(0,0,0,0); }
+                void IP_Address(String value) noexcept;
+
+                [[nodiscard]] IPAddress Gateway() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pGateway : IPAddress(0,0,0,0); }
+                void Gateway(String value) noexcept;
+
+                [[nodiscard]] IPAddress Netmask() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pNetmask : IPAddress(0,0,0,0); }
+                void Netmask(String value) noexcept;
+
+                [[nodiscard]] IPAddress DNS(uint8_t index) const noexcept { Lock lock(pMutex); return (lock.IsLocked() && index < 2) ? pDNS[index] : IPAddress(0,0,0,0); }
+                void DNS(uint8_t index, String value) noexcept;
+
+                [[nodiscard]] String SSID() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSSID : String(); }
+                void SSID(String value) noexcept;
+
+                [[nodiscard]] String Passphrase() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPassphrase : String(); }
+                void Passphrase(String value) noexcept;
+
+                [[nodiscard]] uint16_t ConnectionTimeout() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pConnectionTimeout : 0; }
+                void ConnectionTimeout(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pConnectionTimeout = (value == 0) ? Defaults.Network.ConnectionTimeout : value; }
+
+                [[nodiscard]] bool OnlineChecking() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pOnlineChecking : false; }
+                void OnlineChecking(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pOnlineChecking = value; }
+
+                [[nodiscard]] uint16_t OnlineCheckingTimeout() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pOnlineCheckingTimeout : 0; }
+                void OnlineCheckingTimeout(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pOnlineCheckingTimeout = (value == 0) ? Defaults.Network.OnlineCheckingTimeout : value; }
+        } Network;
+        class update {
+            private:
+                SemaphoreHandle_t pMutex;
+                String pManifestURL;
+                bool pAllowInsecure{};
+                bool pEnableLANOTA{};
+                String pPasswordLANOTA;
+                uint16_t pCheckInterval{};
+                bool pAutoReboot{};
+                bool pDebug{};
+                bool pCheckAtStartup{};
+            public:
+                explicit update(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] String ManifestURL() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pManifestURL : String(); }
+                void ManifestURL(String value) noexcept;
+
+                [[nodiscard]] bool AllowInsecure() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAllowInsecure : false; }
+                void AllowInsecure(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAllowInsecure = value; }
+
+                [[nodiscard]] bool EnableLANOTA() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnableLANOTA : false; }
+                void EnableLANOTA(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnableLANOTA = value; }
+
+                [[nodiscard]] String PasswordLANOTA() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPasswordLANOTA : String(); }
+                void PasswordLANOTA(String value) noexcept;
+
+                [[nodiscard]] uint16_t CheckInterval() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pCheckInterval : 0; }
+                void CheckInterval(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pCheckInterval = value; }
+
+                [[nodiscard]] bool AutoReboot() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAutoReboot : false; }
+                void AutoReboot(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAutoReboot = value; }
+
+                [[nodiscard]] bool Debug() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pDebug : false; }
+                void Debug(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pDebug = value; }
+
+                [[nodiscard]] bool CheckAtStartup() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pCheckAtStartup : false; }
+                void CheckAtStartup(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pCheckAtStartup = value; }
+        } Update;
+        class general {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pNTPUpdate{};
+                String pNTPServer;
+                uint16_t pSaveStatePooling{};
+            public:
+                explicit general(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool NTPUpdate() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pNTPUpdate : false; }
+                void NTPUpdate(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pNTPUpdate = value; }
+
+                [[nodiscard]] String NTPServer() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pNTPServer : String(); }
+                void NTPServer(String value) noexcept;
+
+                [[nodiscard]] uint16_t SaveStatePooling() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSaveStatePooling : 0; }
+                void SaveStatePooling(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pSaveStatePooling = (value <= 1) ? Defaults.General.SaveStatePooling : value; }
+        } General;
+        class orchestrator {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pAssigned{};
+                String pServerID;
+                IPAddress pIP_Address{0,0,0,0};
+                uint16_t pPort{};
+            public:
+                explicit orchestrator(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool Assigned() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAssigned : false; }
+                void Assigned(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAssigned = value; }
+
+                [[nodiscard]] String ServerID() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pServerID : String(); }
+                void ServerID(String value) noexcept;
+
+                [[nodiscard]] IPAddress IP_Address() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIP_Address : IPAddress(0,0,0,0); }
+                void IP_Address(String value) noexcept;
+
+                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
+                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.Orchestrator.Port : value; }
+        } Orchestrator;
+        class webserver {
+            private:
+                SemaphoreHandle_t pMutex;
+                uint16_t pPort{};
+                bool pEnabled{};
+                String pWebHooksToken;
+            public:
+                explicit webserver(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
+                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.WebServer.Port : value; }
+
+                [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
+                void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+
+                [[nodiscard]] String WebHooksToken() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pWebHooksToken : String(); }
+                void WebHooksToken(String value) noexcept;
+        } WebServer;
+        class telnetserver {
+            private:
+                SemaphoreHandle_t pMutex;
+                uint16_t pPort{};
+                bool pEnabled{};
+            public:
+                explicit telnetserver(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
+                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.TelnetServer.Port : value; }
+
+                [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
+                void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+        } TelnetServer;
+        class mqtt {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pEnabled{};
+                String pBroker;
+                uint16_t pPort{};
+                String pUser;
+                String pPassword;
+            public:
+                explicit mqtt(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
+                void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+
+                [[nodiscard]] String Broker() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pBroker : String(); }
+                void Broker(String value) noexcept;
+
+                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
+                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.MQTT.Port : value; }
+
+                [[nodiscard]] String User() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pUser : String(); }
+                void User(String value) noexcept;
+
+                [[nodiscard]] String Password() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPassword : String(); }
+                void Password(String value) noexcept;
+        } MQTT;
+
+        settings() noexcept;
+        settings(const settings&) = delete;
+        settings& operator=(const settings&) = delete;
+
+        [[nodiscard]] bool FirstRun() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFirstRun : false; }
+        [[nodiscard]] bool SaveComponentsStateFlag() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSaveComponentsStateFlag : false; }
+        void SetSaveComponentsState() noexcept { Lock lock(pMutex); if (lock.IsLocked()) pSaveComponentsStateFlag = true; }
+
+        // Collection Components;
+        users Users;
+
+        void LoadDefaults();
+        void RestoreToFactoryDefaults();
+        bool Load(const String& configfilename = Defaults.ConfigFileName) noexcept;
+        bool Save(const String& configfilename = Defaults.ConfigFileName) const noexcept;
+        bool InstallComponents(const String& configfilename = Defaults.ConfigFileName) noexcept;
+        bool SaveComponentsState(const String& configfilename = Defaults.ConfigFileName) noexcept;
 };
+
+extern settings Settings;

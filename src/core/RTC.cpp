@@ -5,7 +5,7 @@ String rtc::GetDate() const {
     GetTimeInfo(timeInfo);
 
     char buffer[32];
-    strftime(buffer, sizeof(buffer), _dateFormat, &timeInfo);
+    strftime(buffer, sizeof(buffer), pDateFormat, &timeInfo);
 
     return String(buffer);
 }
@@ -15,7 +15,7 @@ String rtc::GetTime() const {
     GetTimeInfo(timeInfo);
 
     char buffer[32];
-    strftime(buffer, sizeof(buffer), _timeFormat, &timeInfo);
+    strftime(buffer, sizeof(buffer), pTimeFormat, &timeInfo);
 
     return String(buffer);
 }
@@ -23,13 +23,13 @@ String rtc::GetTime() const {
 void rtc::SetDateFormat(const char* format) {
     if (format == nullptr) return;
 
-    strncpy(_dateFormat, format, FORMAT_SIZE - 1);
-    _dateFormat[FORMAT_SIZE - 1] = '\0';
+    strncpy(pDateFormat, format, FORMAT_SIZE - 1);
+    pDateFormat[FORMAT_SIZE - 1] = '\0';
 }
 
 void rtc::SetTimeFormat(const char* format) {
     if (format == nullptr) return;
 
-    strncpy(_timeFormat, format, FORMAT_SIZE - 1);
-    _timeFormat[FORMAT_SIZE - 1] = '\0';
+    strncpy(pTimeFormat, format, FORMAT_SIZE - 1);
+    pTimeFormat[FORMAT_SIZE - 1] = '\0';
 }
