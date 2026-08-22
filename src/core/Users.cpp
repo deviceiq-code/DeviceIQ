@@ -137,95 +137,95 @@ bool user::Authenticate(const String& password) const {
     return authenticated;
 }
 
-UserError users::SetPassword(const String& username, const String& newPassword) {
+UserReturn users::SetPassword(const String& username, const String& newPassword) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     String normalizedUsername = username;
 
-    if (!user::NormalizeUsername(normalizedUsername)) return UserError::InvalidUsername;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
 
     for (size_t i = 0; i < pUserCount; ++i) {
         if (pUsers[i].Username() != normalizedUsername) continue;
-        if (!pUsers[i].SetPassword(newPassword)) return UserError::PasswordError;
+        if (!pUsers[i].SetPassword(newPassword)) return UserReturn::PasswordError;
 
-        return UserError::NoError;
+        return UserReturn::NoError;
     }
 
-    return UserError::UserNotFound;
+    return UserReturn::UserNotFound;
 }
 
-UserError users::Rename(const String& currentUsername, const String& newUsername) {
+UserReturn users::Rename(const String& currentUsername, const String& newUsername) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     String current = currentUsername;
     String replacement = newUsername;
 
     if (!user::NormalizeUsername(current) ||
         !user::NormalizeUsername(replacement)) {
-        return UserError::InvalidUsername;
+        return UserReturn::InvalidUsername;
     }
 
     size_t currentIndex = MAX_USERS;
 
     for (size_t i = 0; i < pUserCount; ++i) {
         if (pUsers[i].Username() == replacement) {
-            if (pUsers[i].Username() == current) return UserError::NoError;
+            if (pUsers[i].Username() == current) return UserReturn::NoError;
 
-            return UserError::UserExists;
+            return UserReturn::UserExists;
         }
 
         if (pUsers[i].Username() == current) currentIndex = i;
     }
 
-    if (currentIndex == MAX_USERS) return UserError::UserNotFound;
-    if (!pUsers[currentIndex].Username(std::move(replacement))) return UserError::InvalidUsername;
+    if (currentIndex == MAX_USERS) return UserReturn::UserNotFound;
+    if (!pUsers[currentIndex].Username(std::move(replacement))) return UserReturn::InvalidUsername;
 
-    return UserError::NoError;
+    return UserReturn::NoError;
 }
 
-UserError users::Add(const String& username, const String& password, bool admin) {
+UserReturn users::Add(const String& username, const String& password, bool admin) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     String normalizedUsername = username;
-    if (!user::NormalizeUsername(normalizedUsername)) return UserError::InvalidUsername;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
 
     if (pUserCount == 0) admin = true;
 
-    if (pUserCount >= MAX_USERS) return UserError::MaxUsersReached;
+    if (pUserCount >= MAX_USERS) return UserReturn::MaxUsersReached;
 
     for (size_t i = 0; i < pUserCount; ++i) {
-        if (pUsers[i].Username() == normalizedUsername) return UserError::UserExists;
+        if (pUsers[i].Username() == normalizedUsername) return UserReturn::UserExists;
     }
 
     user& u = pUsers[pUserCount];
 
-    if (!u.Username(std::move(normalizedUsername))) return UserError::InvalidUsername;
+    if (!u.Username(std::move(normalizedUsername))) return UserReturn::InvalidUsername;
 
     u.Admin(admin);
 
     if (!u.SetPassword(password)) {
         u.Clear();
-        return UserError::PasswordError;
+        return UserReturn::PasswordError;
     }
 
     ++pUserCount;
-    return UserError::NoError;
+    return UserReturn::NoError;
 }
 
-UserError users::Remove(const String& username) {
+UserReturn users::Remove(const String& username) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     String normalizedUsername = username;
 
-    if (!user::NormalizeUsername(normalizedUsername)) return UserError::InvalidUsername;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
 
     for (size_t i = 0; i < pUserCount; ++i) {
         if (pUsers[i].Username() != normalizedUsername) continue;
-        if (pUsers[i].Admin() && CountAdminsUnlocked() == 1) return UserError::NoAdminRemaining;
+        if (pUsers[i].Admin() && CountAdminsUnlocked() == 1) return UserReturn::NoAdminRemaining;
 
         const size_t lastIndex = pUserCount - 1;
 
@@ -234,61 +234,61 @@ UserError users::Remove(const String& username) {
         pUsers[lastIndex].Clear();
         --pUserCount;
 
-        return UserError::NoError;
+        return UserReturn::NoError;
     }
 
-    return UserError::UserNotFound;
+    return UserReturn::UserNotFound;
 }
 
-UserError users::SetAdmin(const String& username, bool admin) {
+UserReturn users::SetAdmin(const String& username, bool admin) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     String normalizedUsername = username;
 
-    if (!user::NormalizeUsername(normalizedUsername)) return UserError::InvalidUsername;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
 
     for (size_t i = 0; i < pUserCount; ++i) {
         user& current = pUsers[i];
 
         if (current.Username() != normalizedUsername) continue;
-        if (current.Admin() == admin) return UserError::NoError;
-        if (!admin && current.Admin() && CountAdminsUnlocked() == 1) return UserError::NoAdminRemaining;
+        if (current.Admin() == admin) return UserReturn::NoError;
+        if (!admin && current.Admin() && CountAdminsUnlocked() == 1) return UserReturn::NoAdminRemaining;
 
         current.Admin(admin);
-        return UserError::NoError;
+        return UserReturn::NoError;
     }
 
-    return UserError::UserNotFound;
+    return UserReturn::UserNotFound;
 }
 
-UserError users::Authenticate(const String& username, const String& password) {
+UserReturn users::Authenticate(const String& username, const String& password) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     const uint32_t now = millis();
-    if (AuthenticationRateLimitedUnlocked(now)) return UserError::AuthenticationRateLimited;
+    if (AuthenticationRateLimitedUnlocked(now)) return UserReturn::AuthenticationRateLimited;
 
     String normalizedUsername = username;
     if (!user::NormalizeUsername(normalizedUsername)) {
         RegisterAuthenticationFailureUnlocked(millis());
-        return UserError::InvalidCredentials;
+        return UserReturn::InvalidCredentials;
     }
 
     for (size_t i = 0; i < pUserCount; ++i) {
         if (pUsers[i].Username() == normalizedUsername) {
             if (pUsers[i].Authenticate(password)) {
                 ResetAuthenticationRateLimitUnlocked();
-                return UserError::AuthenticationSuccess;
+                return UserReturn::AuthenticationSuccess;
             }
 
             RegisterAuthenticationFailureUnlocked(millis());
-            return UserError::InvalidCredentials;
+            return UserReturn::InvalidCredentials;
         }
     }
 
     RegisterAuthenticationFailureUnlocked(millis());
-    return UserError::InvalidCredentials;
+    return UserReturn::InvalidCredentials;
 }
 
 bool users::AuthenticationRateLimitedUnlocked(uint32_t now) const noexcept {
@@ -313,14 +313,14 @@ void users::ResetAuthenticationRateLimitUnlocked() noexcept {
     pAuthenticationBlockedUntilMs = 0;
 }
 
-UserError users::Find(const String& username, UserInfo* outUser) {
+UserReturn users::Find(const String& username, UserInfo* outUser) {
     Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserError::SynchronizationError;
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
     if (outUser != nullptr) *outUser = UserInfo{};
 
     String normalizedUsername = username;
-    if (!user::NormalizeUsername(normalizedUsername)) return UserError::InvalidUsername;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
 
     for (size_t i = 0; i < pUserCount; ++i) {
         if (pUsers[i].Username() == normalizedUsername) {
@@ -328,8 +328,8 @@ UserError users::Find(const String& username, UserInfo* outUser) {
                 outUser->username = pUsers[i].Username();
                 outUser->admin = pUsers[i].Admin();
             }
-            return UserError::NoError;
+            return UserReturn::NoError;
         }
     }
-    return UserError::UserNotFound;
+    return UserReturn::UserNotFound;
 }

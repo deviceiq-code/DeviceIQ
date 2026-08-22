@@ -1303,7 +1303,7 @@ bool settings::Save(const String& configfilename) const noexcept {
     {
         JsonArray users = doc["Users"].to<JsonArray>();
 
-        const UserError result = Users.ForEachStored(
+        const UserReturn result = Users.ForEachStored(
             [&](const String& username,
                 bool admin,
                 const uint8_t (&salt)[PASS_SALTLEN],
@@ -1321,7 +1321,7 @@ bool settings::Save(const String& configfilename) const noexcept {
             }
         );
 
-        if (result != UserError::NoError) return false;
+        if (result != UserReturn::NoError) return false;
     }
 
     String serialized;

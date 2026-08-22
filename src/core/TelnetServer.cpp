@@ -109,6 +109,18 @@ bool telnetserver::OnCommand(String command, String helpMessage, command_callbac
     return true;
 }
 
+bool telnetserver::SetSessionIdentity(WiFiClient& client, String username, bool admin) {
+    username.trim();
+    if (username.isEmpty() || xTaskGetCurrentTaskHandle() != pTaskHandle) return false;
+
+    Session* session = FindSession(client);
+    if (session == nullptr) return false;
+
+    session->user = std::move(username);
+    session->admin = admin;
+    return true;
+}
+
 void telnetserver::RegisterBuiltInCommands() {
     (void)OnCommand("clear", "Clear terminal screen\r\n\r\nclear", [](WiFiClient& client, String*) {
         client.write("\x1B[2J\x1B[H");

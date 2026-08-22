@@ -15,7 +15,7 @@ constexpr size_t PASSWORD_MAX_LENGTH = 64;
 constexpr uint32_t AUTH_RATE_LIMIT_INITIAL_DELAY_MS = 1000;
 constexpr uint32_t AUTH_RATE_LIMIT_MAX_DELAY_MS = 30000;
 
-enum UserError : uint8_t { NoError = 0, AuthenticationSuccess, UserExists, UserNotFound, MaxUsersReached, NoAdminRemaining, InvalidUsername, PasswordError, InvalidCredentials, SynchronizationError, AuthenticationRateLimited };
+enum UserReturn : uint8_t { NoError = 0, AuthenticationSuccess, UserExists, UserNotFound, MaxUsersReached, NoAdminRemaining, InvalidUsername, PasswordError, InvalidCredentials, SynchronizationError, AuthenticationRateLimited };
 
 struct UserInfo {
     String username;
@@ -52,25 +52,25 @@ class users {
         
         inline size_t Count() const noexcept { Lock lock(pMutex); if (!lock.IsLocked()) return 0; return pUserCount; }
         inline size_t CountAdmins() const noexcept { Lock lock(pMutex); if (!lock.IsLocked()) return 0; size_t count = 0; for (size_t i = 0; i < pUserCount; ++i) if (pUsers[i].Admin()) count++; return count; }
-        UserError SetAdmin(const String& username, bool admin);
-        UserError Add(const String& username, const String& password, bool admin = false);
-        UserError Remove(const String& username);
-        UserError Authenticate(const String& username, const String& password);
-        UserError Find(const String& username, UserInfo* outUser = nullptr);
-        UserError Rename(const String& currentUsername, const String& newUsername);
-        UserError SetPassword(const String& username, const String& newPassword);
+        UserReturn SetAdmin(const String& username, bool admin);
+        UserReturn Add(const String& username, const String& password, bool admin = false);
+        UserReturn Remove(const String& username);
+        UserReturn Authenticate(const String& username, const String& password);
+        UserReturn Find(const String& username, UserInfo* outUser = nullptr);
+        UserReturn Rename(const String& currentUsername, const String& newUsername);
+        UserReturn SetPassword(const String& username, const String& newPassword);
 
         template<typename Visitor>
-        UserError ForEachStored(Visitor&& visitor) const {
+        UserReturn ForEachStored(Visitor&& visitor) const {
             Lock lock(pMutex);
-            if (!lock.IsLocked()) return UserError::SynchronizationError;
+            if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
             for (size_t i = 0; i < pUserCount; ++i) {
                 const user& current = pUsers[i];
                 visitor(current.Username(), current.Admin(), current.pSalt, current.pHash);
             }
 
-            return UserError::NoError;
+            return UserReturn::NoError;
         }
     private:
         class Lock {
