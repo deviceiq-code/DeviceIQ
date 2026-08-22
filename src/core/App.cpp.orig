@@ -120,7 +120,7 @@ bool App::RegisterTelnetCommands() {
         const String path = Defaults.ConfigFileName;
         String content;
 
-        if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok) {
+        if (FileSystem.Read(path, content) != filesystem::Result::Ok) {
             const String error = "Config         | Error reading config file '" + path + "'.\r\n";
             client.write(error.c_str());
             return;
@@ -192,7 +192,7 @@ bool App::RegisterTelnetCommands() {
         client.write(result.c_str());
     }, false);
 
-    return rebootRegistered && dumpcfgRegistered && logonRegistered && versionRegistered;
+    return logonRegistered && versionRegistered;
 }
 
 void App::DeviceRestart() {
