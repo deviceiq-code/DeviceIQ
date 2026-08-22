@@ -24,7 +24,7 @@ namespace Version {
         static String Info() { return String(Major) + "." + String(Minor) + "." + String(Revision);}
     };
 
-    static String Info() { return String(Version::ProductFamily) + String(Version::ProductName) + String(" ") + SoftwareVersion::Info(); }
+    static String Info() { return String(Version::ProductFamily) + " " + String(Version::ProductName) + String(" ") + SoftwareVersion::Info(); }
 
     using Software = SoftwareVersion;
     using Hardware = HardwareVersion;
