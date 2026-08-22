@@ -5,3 +5,4 @@ logger Logger(Serial);
 filesystem FileSystem;
 settings Settings;
 network Network;
+telnetserver TelnetServer;
