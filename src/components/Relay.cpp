@@ -102,6 +102,7 @@ bool relay::ApplyState(bool newState, bool publishEvents) noexcept {
     }
 
     pState.store(newState, std::memory_order_relaxed);
+    MarkStateChanged();
 
     if (publishEvents) {
         (void)PublishEvent(newState ? EventCodes::SetOn : EventCodes::SetOff, newState ? 1 : 0);

@@ -29,6 +29,10 @@ class ComponentManager final : private ComponentRuntime {
         [[nodiscard]] component* FindByName(const String& name) const noexcept;
         [[nodiscard]] component* FindByID(int16_t id) const noexcept;
         [[nodiscard]] component* At(size_t index) const noexcept;
+        [[nodiscard]] bool PropertyChanged() const noexcept;
+        [[nodiscard]] bool StateChanged() const noexcept;
+        void ClearPropertyChanged() noexcept;
+        void ClearStateChanged() noexcept;
 
     private:
         static constexpr size_t MAX_COMPONENTS = 32;

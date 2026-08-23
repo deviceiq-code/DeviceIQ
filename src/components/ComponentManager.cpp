@@ -20,24 +20,8 @@ bool ComponentManager::Register(component& candidate) noexcept {
 bool ComponentManager::Start() noexcept {
     if (IsStarted()) return true;
 
-    if (pCommandQueue == nullptr) {
-        pCommandQueue = xQueueCreateStatic(
-            COMMAND_QUEUE_LENGTH,
-            sizeof(ComponentCommand),
-            pCommandQueueStorage,
-            &pCommandQueueControl
-        );
-    }
-
-    if (pEventQueue == nullptr) {
-        pEventQueue = xQueueCreateStatic(
-            EVENT_QUEUE_LENGTH,
-            sizeof(ComponentEvent),
-            pEventQueueStorage,
-            &pEventQueueControl
-        );
-    }
-
+    if (pCommandQueue == nullptr) pCommandQueue = xQueueCreateStatic(COMMAND_QUEUE_LENGTH, sizeof(ComponentCommand), pCommandQueueStorage, &pCommandQueueControl);
+    if (pEventQueue == nullptr) pEventQueue = xQueueCreateStatic(EVENT_QUEUE_LENGTH, sizeof(ComponentEvent), pEventQueueStorage, &pEventQueueControl);
     if (pCommandQueue == nullptr || pEventQueue == nullptr) return false;
 
     for (size_t index = 0; index < pComponentCount; ++index) {
@@ -94,6 +78,28 @@ component* ComponentManager::At(size_t index) const noexcept {
     return index < pComponentCount ? pComponents[index] : nullptr;
 }
 
+bool ComponentManager::PropertyChanged() const noexcept {
+    for (size_t index = 0; index < pComponentCount; ++index) {
+        if (pComponents[index]->PropertyChanged()) return true;
+    }
+    return false;
+}
+
+bool ComponentManager::StateChanged() const noexcept {
+    for (size_t index = 0; index < pComponentCount; ++index) {
+        if (pComponents[index]->StateChanged()) return true;
+    }
+    return false;
+}
+
+void ComponentManager::ClearPropertyChanged() noexcept {
+    for (size_t index = 0; index < pComponentCount; ++index) pComponents[index]->ClearPropertyChanged();
+}
+
+void ComponentManager::ClearStateChanged() noexcept {
+    for (size_t index = 0; index < pComponentCount; ++index) pComponents[index]->ClearStateChanged();
+}
+
 void ComponentManager::TaskEntry(void* parameter) {
     static_cast<ComponentManager*>(parameter)->Task();
 }
@@ -123,14 +129,12 @@ void ComponentManager::ProcessCommand(const ComponentCommand& command) {
     if (!IsRegistered(command.target)) return;
 
     if (command.code == ComponentCommand::Enable) {
-        command.target->SetEnabled(true);
-        command.target->EnabledChanged(true);
+        if (command.target->SetEnabled(true)) command.target->EnabledChanged(true);
         return;
     }
 
     if (command.code == ComponentCommand::Disable) {
-        command.target->EnabledChanged(false);
-        command.target->SetEnabled(false);
+        if (command.target->SetEnabled(false)) command.target->EnabledChanged(false);
         return;
     }
 

@@ -72,6 +72,8 @@ class component {
         [[nodiscard]] bool Enabled() const noexcept { return pEnabled.load(std::memory_order_relaxed); }
         [[nodiscard]] bool Configured() const noexcept { return pConfigured.load(std::memory_order_acquire); }
         [[nodiscard]] bool Initialized() const noexcept { return pInitialized.load(std::memory_order_acquire); }
+        [[nodiscard]] bool PropertyChanged() const noexcept { return pPropertyChanged.load(std::memory_order_acquire); }
+        [[nodiscard]] bool StateChanged() const noexcept { return pStateChanged.load(std::memory_order_acquire); }
         [[nodiscard]] Buses Bus() const noexcept { return pBus; }
         [[nodiscard]] uint8_t Address() const noexcept { return pAddress; }
         [[nodiscard]] virtual Classes Class() const noexcept { return Classes::Base; }
@@ -98,19 +100,30 @@ class component {
         [[nodiscard]] bool PublishEvent(uint16_t code, int32_t value = 0) noexcept;
         [[nodiscard]] bool PublishEventFromISR(uint16_t code, int32_t value, BaseType_t* higherPriorityTaskWoken) noexcept;
 
+        void MarkPropertyChanged() noexcept { pPropertyChanged.store(true, std::memory_order_release); }
+        void MarkStateChanged() noexcept { pStateChanged.store(true, std::memory_order_release); }
+
     private:
         friend class ComponentManager;
 
         void SetRuntime(ComponentRuntime* runtime) noexcept { pRuntime = runtime; }
-        void SetEnabled(bool value) noexcept { pEnabled.store(value, std::memory_order_relaxed); }
+        [[nodiscard]] bool SetEnabled(bool value) noexcept {
+            const bool previous = pEnabled.exchange(value, std::memory_order_relaxed);
+            if (previous != value) MarkPropertyChanged();
+            return previous != value;
+        }
         void SetConfigured(bool value) noexcept { pConfigured.store(value, std::memory_order_release); }
         void SetInitialized(bool value) noexcept { pInitialized.store(value, std::memory_order_release); }
+        void ClearPropertyChanged() noexcept { pPropertyChanged.store(false, std::memory_order_release); }
+        void ClearStateChanged() noexcept { pStateChanged.store(false, std::memory_order_release); }
 
         const String pName;
         const int16_t pID;
         std::atomic<bool> pEnabled;
         std::atomic<bool> pConfigured{false};
         std::atomic<bool> pInitialized{false};
+        std::atomic<bool> pPropertyChanged{false};
+        std::atomic<bool> pStateChanged{false};
         const Buses pBus;
         const uint8_t pAddress;
         ComponentRuntime* pRuntime = nullptr;
