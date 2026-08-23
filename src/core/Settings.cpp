@@ -492,6 +492,7 @@ void settings::LoadDefaults() {
     // General
     General.NTPUpdate(Defaults.General.NTPUpdate);
     General.NTPServer(Defaults.General.NTPServer);
+    General.TimeZone(Defaults.General.TimeZone);
     General.SaveStatePooling(Defaults.General.SaveStatePooling);
 
     // Orchestrator
@@ -603,6 +604,7 @@ bool settings::Load(const String& configfilename) noexcept {
             JsonObjectConst gen = root["General"].as<JsonObjectConst>();
             General.NTPUpdate((bool)(gen["NTP Update"] | Defaults.General.NTPUpdate));
             General.NTPServer(String(gen["NTP Server"] | Defaults.General.NTPServer));
+            General.TimeZone((int)(gen["Time Zone"] | Defaults.General.TimeZone));
             General.SaveStatePooling((uint32_t)(gen["Save State Pooling"] | Defaults.General.SaveStatePooling));
         }
 
@@ -1188,6 +1190,7 @@ bool settings::Save(const String& configfilename) const noexcept {
             JsonObject gen = doc["General"].to<JsonObject>();
             gen["NTP Update"] = General.NTPUpdate();
             gen["NTP Server"] = General.NTPServer();
+            gen["Time Zone"] = General.TimeZone();
             gen["Save State Pooling"] = General.SaveStatePooling();
         }
 

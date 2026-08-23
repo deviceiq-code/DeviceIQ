@@ -8,6 +8,7 @@
 #include "Network.h"
 #include "TelnetServer.h"
 #include "Version.h"
+#include "components/ComponentManager.h"
 
 extern rtc Clock;
 extern logger Logger;
@@ -15,3 +16,4 @@ extern filesystem FileSystem;
 extern settings Settings;
 extern network Network;
 extern telnetserver TelnetServer;
+extern ComponentManager ComponentController;

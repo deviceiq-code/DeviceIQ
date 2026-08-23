@@ -8,8 +8,10 @@ class rtc {
 public:
     rtc(time_t initialEpoch) : pBaseEpoch(initialEpoch), pBaseMicros(esp_timer_get_time()) {}
 
-    inline void SetEpoch(time_t epoch) { pBaseEpoch = epoch; pBaseMicros = esp_timer_get_time(); }
-    inline time_t GetEpoch() const { int64_t elapsedMicros = esp_timer_get_time() - pBaseMicros; time_t elapsedSeconds = elapsedMicros / 1000000; return pBaseEpoch + elapsedSeconds; }
+    void SetEpoch(time_t epoch);
+    time_t GetEpoch() const;
+
+    bool NTPUpdate(const String& ntpserver);
 
     String GetDate() const;
     String GetTime() const;
@@ -17,14 +19,19 @@ public:
 
     void SetDateFormat(const char* format);
     void SetTimeFormat(const char* format);
+
+    int8_t TimeZone() const;
+    void TimeZone(int8_t value);
 private:
     time_t pBaseEpoch;
     int64_t pBaseMicros;
+    int8_t pTimeZone = -3;
+    mutable portMUX_TYPE pMutex = portMUX_INITIALIZER_UNLOCKED;
 
     static constexpr uint8_t FORMAT_SIZE = 24;
 
     char pDateFormat[FORMAT_SIZE] = "%d/%m/%Y";
     char pTimeFormat[FORMAT_SIZE] = "%H:%M:%S";
 
-    inline void GetTimeInfo(struct tm& timeInfo) const { time_t currentEpoch = GetEpoch(); gmtime_r(&currentEpoch, &timeInfo); }
+    void GetTimeInfo(struct tm& timeInfo) const;
 };

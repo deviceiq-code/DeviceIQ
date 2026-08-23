@@ -146,6 +146,7 @@ class settings {
                 SemaphoreHandle_t pMutex;
                 bool pNTPUpdate{};
                 String pNTPServer;
+                int8_t pTimeZone{};
                 uint16_t pSaveStatePooling{};
             public:
                 explicit general(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
@@ -154,6 +155,9 @@ class settings {
 
                 [[nodiscard]] String NTPServer() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pNTPServer : String(); }
                 void NTPServer(String value) noexcept;
+
+                [[nodiscard]] int8_t TimeZone() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pTimeZone : 0; }
+                void TimeZone(int value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pTimeZone = static_cast<int8_t>(constrain(value, -12, 14)); }
 
                 [[nodiscard]] uint16_t SaveStatePooling() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSaveStatePooling : 0; }
                 void SaveStatePooling(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pSaveStatePooling = (value <= 1) ? Defaults.General.SaveStatePooling : value; }

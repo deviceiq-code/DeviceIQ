@@ -10,6 +10,7 @@ void App::Start() {
     if (!InitializeFileSystem()) return;
 
     const bool configurationLoaded = Settings.Load();
+    Clock.TimeZone(Settings.General.TimeZone());
 
     if (!InitializeLogger()) return;
 
@@ -18,6 +19,8 @@ void App::Start() {
     Logger.Log("FileSystem initialized", logger::LogLevels::Information);
 
     if (!InitializeNetwork()) return;
+    if (!InitializeClock()) return;
+    if (!InitializeComponents()) return;
     if (!InitializeTelnetServer()) return;
 
     LogConfigurationStatus(configurationLoaded);
@@ -74,6 +77,58 @@ bool App::InitializeNetwork() {
 
     Logger.Log("Network initialized", logger::LogLevels::Information);
     return true;
+}
+
+bool App::InitializeClock() {
+    if (!Settings.General.NTPUpdate()) {
+        Logger.Log("Date and time: NTP disabled, using local clock", logger::LogLevels::Information);
+        return true;
+    }
+
+    if (pClockTaskHandle != nullptr) return true;
+
+    const BaseType_t result = xTaskCreate(ClockTaskEntry, "Clock", CLOCK_TASK_STACK_SIZE, this, CLOCK_TASK_PRIORITY, &pClockTaskHandle);
+    if (result != pdPASS) {
+        pClockTaskHandle = nullptr;
+        Logger.Log("Error starting clock synchronization task", logger::LogLevels::Error);
+        return false;
+    }
+
+    return true;
+}
+
+bool App::InitializeComponents() {
+    if (!ComponentController.Start()) {
+        Logger.Log("Error initializing component task", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log("Component task initialized", logger::LogLevels::Information);
+    return true;
+}
+
+void App::ClockTaskEntry(void* parameter) {
+    static_cast<App*>(parameter)->ClockTask();
+}
+
+void App::ClockTask() {
+    while (true) {
+        if (Network.ConnectionMode() != network::APMode::WifiClient) {
+            vTaskDelay(pdMS_TO_TICKS(NTP_OFFLINE_RETRY_MS));
+            continue;
+        }
+
+        const String server = Settings.General.NTPServer();
+        const bool updated = Clock.NTPUpdate(server);
+
+        if (updated) {
+            Logger.Log("Date and time: Updated from NTP server " + server, logger::LogLevels::Information);
+            vTaskDelay(pdMS_TO_TICKS(NTP_UPDATE_INTERVAL_MS));
+        } else {
+            Logger.Log("Date and time: Failed to update from NTP server " + server, logger::LogLevels::Error);
+            vTaskDelay(pdMS_TO_TICKS(NTP_FAILURE_RETRY_MS));
+        }
+    }
 }
 
 bool App::InitializeTelnetServer() {

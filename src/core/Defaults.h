@@ -49,6 +49,7 @@ struct defaults {
         const uint16_t SaveStatePooling = 20;
         const bool NTPUpdate = true;
         const char* NTPServer = "pool.ntp.org";
+        const int8_t TimeZone = -3;
     } General;
     struct orchestrator {
         const char* Provider = "Orchestrator";
