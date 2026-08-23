@@ -98,13 +98,61 @@ bool App::InitializeClock() {
 }
 
 bool App::InitializeComponents() {
+    if (!ComponentController.Register(OnboardLedRelay)) {
+        Logger.Log("Error registering onboard LED relay", logger::LogLevels::Error);
+        return false;
+    }
+
     if (!ComponentController.Start()) {
         Logger.Log("Error initializing component task", logger::LogLevels::Error);
         return false;
     }
 
+    const BaseType_t result = xTaskCreate(
+        RelayTestTaskEntry,
+        "RelayTest",
+        RELAY_TEST_TASK_STACK_SIZE,
+        this,
+        RELAY_TEST_TASK_PRIORITY,
+        &pRelayTestTaskHandle
+    );
+    if (result != pdPASS) {
+        pRelayTestTaskHandle = nullptr;
+        Logger.Log("Error starting onboard LED relay test task", logger::LogLevels::Error);
+        return false;
+    }
+
     Logger.Log("Component task initialized", logger::LogLevels::Information);
     return true;
+}
+
+void App::RelayTestTaskEntry(void* parameter) {
+    static_cast<App*>(parameter)->RelayTestTask();
+}
+
+void App::RelayTestTask() {
+    TickType_t lastWake = xTaskGetTickCount();
+
+    while (true) {
+        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(RELAY_TEST_INTERVAL_MS));
+
+        const bool previousState = OnboardLedRelay.State();
+        if (!OnboardLedRelay.Toggle(pdMS_TO_TICKS(100))) {
+            Logger.Log("Unable to enqueue onboard LED relay toggle", logger::LogLevels::Warning);
+            continue;
+        }
+
+        const TickType_t changeStartedAt = xTaskGetTickCount();
+        while (OnboardLedRelay.State() == previousState && xTaskGetTickCount() - changeStartedAt < pdMS_TO_TICKS(RELAY_TEST_CHANGE_TIMEOUT_MS)) {
+            vTaskDelay(1);
+        }
+
+        if (OnboardLedRelay.State() != previousState) {
+            Logger.Log(String("Onboard LED relay changed to ") + (OnboardLedRelay.State() ? "on" : "off"), logger::LogLevels::Information);
+        } else {
+            Logger.Log("Onboard LED relay state change timed out", logger::LogLevels::Warning);
+        }
+    }
 }
 
 void App::ClockTaskEntry(void* parameter) {
