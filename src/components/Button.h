@@ -59,6 +59,7 @@ class button final : public component {
         [[nodiscard]] uint32_t DebounceTime() const noexcept { return pDebounceTimeMs; }
         [[nodiscard]] uint32_t LongClickTime() const noexcept { return pLongClickTimeMs; }
         [[nodiscard]] uint32_t MultiClickTime() const noexcept { return pMultiClickTimeMs; }
+        void GetInfo(String& output) const override;
 
     protected:
         bool Configure() noexcept override;

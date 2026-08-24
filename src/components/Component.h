@@ -30,6 +30,14 @@ struct ComponentDescriptor {
     uint16_t code;
 };
 
+enum class ComponentPropertyResult : uint8_t {
+    Accepted,
+    PropertyNotSupported,
+    InvalidValue,
+    ComponentDisabled,
+    CommandRejected
+};
+
 class ComponentRuntime {
     public:
         virtual ~ComponentRuntime() = default;
@@ -80,6 +88,10 @@ class component {
 
         [[nodiscard]] bool ResolveEvent(const String& name, uint16_t& code) const noexcept;
         [[nodiscard]] bool ResolveCommand(const String& name, uint16_t& code) const noexcept;
+        [[nodiscard]] virtual ComponentPropertyResult SetProperty(const String& name, const String& value, TickType_t timeout = 0) noexcept;
+        virtual void GetInfo(String& output) const;
+        [[nodiscard]] static const char* ClassName(Classes value) noexcept;
+        [[nodiscard]] static const char* BusName(Buses value) noexcept;
 
     protected:
         // Configure declares pins/resources. Initialize activates hardware only
@@ -102,6 +114,7 @@ class component {
 
         void MarkPropertyChanged() noexcept { pPropertyChanged.store(true, std::memory_order_release); }
         void MarkStateChanged() noexcept { pStateChanged.store(true, std::memory_order_release); }
+        [[nodiscard]] static bool ParseBoolean(const String& value, bool& result) noexcept;
 
     private:
         friend class ComponentManager;

@@ -13,6 +13,25 @@ bool relay::Toggle(TickType_t timeout) noexcept {
     return RequestCommand(CommandCodes::ToggleState, 0, timeout);
 }
 
+ComponentPropertyResult relay::SetProperty(const String& name, const String& value, TickType_t timeout) noexcept {
+    if (!name.equalsIgnoreCase("state")) return component::SetProperty(name, value, timeout);
+
+    bool state = false;
+    if (!ParseBoolean(value, state)) return ComponentPropertyResult::InvalidValue;
+    if (!Enabled()) return ComponentPropertyResult::ComponentDisabled;
+    if (state == State()) return ComponentPropertyResult::Accepted;
+
+    return State(state, timeout) ? ComponentPropertyResult::Accepted : ComponentPropertyResult::CommandRejected;
+}
+
+void relay::GetInfo(String& output) const {
+    component::GetInfo(output);
+    output += "State          | " + String(State() ? "on" : "off") + "\r\n";
+    output += "RelayType      | " + String(Type() == RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed") + "\r\n";
+    output += "DriveMode      | " + String(DriveMode() == DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow") + "\r\n";
+    output += "InitialState   | " + String(pInitialState ? "on" : "off") + "\r\n";
+}
+
 bool relay::Configure() noexcept {
     const bool startupState = Enabled() ? pInitialState : false;
     const bool level = ElectricalLevel(startupState);

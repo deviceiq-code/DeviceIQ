@@ -31,6 +31,67 @@ bool component::ResolveCommand(const String& name, uint16_t& code) const noexcep
     return false;
 }
 
+ComponentPropertyResult component::SetProperty(const String& name, const String& value, TickType_t timeout) noexcept {
+    if (!name.equalsIgnoreCase("enabled")) return ComponentPropertyResult::PropertyNotSupported;
+
+    bool enabled = false;
+    if (!ParseBoolean(value, enabled)) return ComponentPropertyResult::InvalidValue;
+    if (enabled == Enabled()) return ComponentPropertyResult::Accepted;
+
+    return RequestCommand(enabled ? ComponentCommand::Enable : ComponentCommand::Disable, enabled ? 1 : 0, timeout) ? ComponentPropertyResult::Accepted : ComponentPropertyResult::CommandRejected;
+}
+
+void component::GetInfo(String& output) const {
+    output += "Name           | " + Name() + "\r\n";
+    output += "ID             | " + String(ID()) + "\r\n";
+    output += "Class          | " + String(ClassName(Class())) + "\r\n";
+    output += "Bus            | " + String(BusName(Bus())) + "\r\n";
+    output += "Address        | " + String(Address()) + "\r\n";
+    output += "Enabled        | " + String(Enabled() ? "true" : "false") + "\r\n";
+    output += "Configured     | " + String(Configured() ? "true" : "false") + "\r\n";
+    output += "Initialized    | " + String(Initialized() ? "true" : "false") + "\r\n";
+    output += "PropertyChanged| " + String(PropertyChanged() ? "true" : "false") + "\r\n";
+    output += "StateChanged   | " + String(StateChanged() ? "true" : "false") + "\r\n";
+}
+
+const char* component::ClassName(Classes value) noexcept {
+    switch (value) {
+        case Classes::Base: return "Base";
+        case Classes::Relay: return "Relay";
+        case Classes::PIR: return "PIR";
+        case Classes::Button: return "Button";
+        case Classes::Blinds: return "Blinds";
+        case Classes::Thermometer: return "Thermometer";
+        case Classes::CurrentMeter: return "CurrentMeter";
+        case Classes::Doorbell: return "Doorbell";
+        case Classes::ContactSensor: return "ContactSensor";
+        default: return "Unknown";
+    }
+}
+
+const char* component::BusName(Buses value) noexcept {
+    switch (value) {
+        case Buses::Group: return "Group";
+        case Buses::Onboard: return "Onboard";
+        case Buses::I2C: return "I2C";
+        default: return "Unknown";
+    }
+}
+
+bool component::ParseBoolean(const String& value, bool& result) noexcept {
+    if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("on") || value == "1") {
+        result = true;
+        return true;
+    }
+
+    if (value.equalsIgnoreCase("false") || value.equalsIgnoreCase("off") || value == "0") {
+        result = false;
+        return true;
+    }
+
+    return false;
+}
+
 const ComponentDescriptor* component::EventDescriptors(size_t& count) const noexcept {
     count = 0;
     return nullptr;

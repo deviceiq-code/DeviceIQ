@@ -1,8 +1,39 @@
 #include <Arduino.h>
+#include <cstdlib>
 
 #include "App.h"
 #include "Globals.h"
 #include "Users.h"
+
+namespace {
+    component* FindCliComponent(const String& selector) {
+        if (selector.isEmpty()) return nullptr;
+
+        component* byName = ComponentController.FindByName(selector);
+        if (byName != nullptr) return byName;
+
+        String idText = selector;
+        if (idText.startsWith("#")) idText.remove(0, 1);
+        if (idText.isEmpty()) return nullptr;
+
+        char* end = nullptr;
+        const long id = std::strtol(idText.c_str(), &end, 10);
+        if (end == idText.c_str() || *end != '\0' || id < -32768 || id > 32767) return nullptr;
+
+        return ComponentController.FindByID(static_cast<int16_t>(id));
+    }
+
+    const char* PropertyResultText(ComponentPropertyResult result) {
+        switch (result) {
+            case ComponentPropertyResult::Accepted: return "accepted";
+            case ComponentPropertyResult::PropertyNotSupported: return "property not supported";
+            case ComponentPropertyResult::InvalidValue: return "invalid value";
+            case ComponentPropertyResult::ComponentDisabled: return "component disabled";
+            case ComponentPropertyResult::CommandRejected: return "command rejected";
+            default: return "unknown error";
+        }
+    }
+}
 
 void App::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
@@ -108,51 +139,8 @@ bool App::InitializeComponents() {
         return false;
     }
 
-    const BaseType_t result = xTaskCreate(
-        RelayTestTaskEntry,
-        "RelayTest",
-        RELAY_TEST_TASK_STACK_SIZE,
-        this,
-        RELAY_TEST_TASK_PRIORITY,
-        &pRelayTestTaskHandle
-    );
-    if (result != pdPASS) {
-        pRelayTestTaskHandle = nullptr;
-        Logger.Log("Error starting onboard LED relay test task", logger::LogLevels::Error);
-        return false;
-    }
-
     Logger.Log("Component task initialized", logger::LogLevels::Information);
     return true;
-}
-
-void App::RelayTestTaskEntry(void* parameter) {
-    static_cast<App*>(parameter)->RelayTestTask();
-}
-
-void App::RelayTestTask() {
-    TickType_t lastWake = xTaskGetTickCount();
-
-    while (true) {
-        vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(RELAY_TEST_INTERVAL_MS));
-
-        const bool previousState = OnboardLedRelay.State();
-        if (!OnboardLedRelay.Toggle(pdMS_TO_TICKS(100))) {
-            Logger.Log("Unable to enqueue onboard LED relay toggle", logger::LogLevels::Warning);
-            continue;
-        }
-
-        const TickType_t changeStartedAt = xTaskGetTickCount();
-        while (OnboardLedRelay.State() == previousState && xTaskGetTickCount() - changeStartedAt < pdMS_TO_TICKS(RELAY_TEST_CHANGE_TIMEOUT_MS)) {
-            vTaskDelay(1);
-        }
-
-        if (OnboardLedRelay.State() != previousState) {
-            Logger.Log(String("Onboard LED relay changed to ") + (OnboardLedRelay.State() ? "on" : "off"), logger::LogLevels::Information);
-        } else {
-            Logger.Log("Onboard LED relay state change timed out", logger::LogLevels::Warning);
-        }
-    }
 }
 
 void App::ClockTaskEntry(void* parameter) {
@@ -286,6 +274,74 @@ bool App::RegisterTelnetCommands() {
         client.write(result.c_str());
     }, false);
 
+    const bool getRegistered = TelnetServer.OnCommand("get", "Show all component information\r\n\r\nget [component_name|#component_id]", [](WiFiClient& client, String* parameters) {
+        if (!parameters[1].isEmpty()) {
+            client.write("Usage: get [component_name|#component_id]\r\n");
+            return;
+        }
+
+        if (parameters[0].isEmpty()) {
+            if (ComponentController.Count() == 0) {
+                client.write("No components registered.\r\n");
+                return;
+            }
+
+            for (size_t index = 0; index < ComponentController.Count(); ++index) {
+                component* item = ComponentController.At(index);
+                if (item == nullptr) continue;
+
+                String output;
+                output.reserve(384);
+                item->GetInfo(output);
+                if (index + 1 < ComponentController.Count()) output += "\r\n";
+                client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+            }
+            return;
+        }
+
+        component* target = FindCliComponent(parameters[0]);
+        if (target == nullptr) {
+            const String output = "Component '" + parameters[0] + "' not found.\r\n";
+            client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+            return;
+        }
+
+        String output;
+        output.reserve(384);
+        target->GetInfo(output);
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+    }, false);
+
+    const bool setRegistered = TelnetServer.OnCommand("set", "Set a component property\r\n\r\nset [component_name|#component_id] property=value", [](WiFiClient& client, String* parameters) {
+        if (parameters[0].isEmpty() || parameters[1].isEmpty() || !parameters[2].isEmpty()) {
+            client.write("Usage: set [component_name|#component_id] property=value\r\n");
+            return;
+        }
+
+        String assignment = parameters[1];
+        const int separator = assignment.indexOf('=');
+        if (separator <= 0 || separator == static_cast<int>(assignment.length()) - 1 || assignment.indexOf('=', separator + 1) >= 0) {
+            client.write("Invalid assignment. Expected property=value.\r\n");
+            return;
+        }
+
+        String property = assignment.substring(0, separator);
+        String value = assignment.substring(separator + 1);
+        property.trim();
+        value.trim();
+
+        component* target = FindCliComponent(parameters[0]);
+        if (target == nullptr) {
+            const String output = "Component '" + parameters[0] + "' not found.\r\n";
+            client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+            return;
+        }
+
+        const ComponentPropertyResult result = target->SetProperty(property, value, pdMS_TO_TICKS(100));
+        String output = "Set " + target->Name() + "." + property + "=" + value + ": " + PropertyResultText(result) + ".\r\n";
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+    }, true);
+
     const bool versionRegistered = TelnetServer.OnCommand("ver", "Show device version info\r\n\r\nver", [](WiFiClient& client, String*) {
         String result;
         result += "Version        | Product: " + String(Version::ProductName) + "\r\n";
@@ -295,7 +351,7 @@ bool App::RegisterTelnetCommands() {
         client.write(result.c_str());
     }, false);
 
-    return rebootRegistered && dumpcfgRegistered && logonRegistered && versionRegistered;
+    return rebootRegistered && dumpcfgRegistered && logonRegistered && getRegistered && setRegistered && versionRegistered;
 }
 
 void App::DeviceRestart() {

@@ -41,6 +41,8 @@ class relay final : public component {
         [[nodiscard]] bool Toggle(TickType_t timeout = 0) noexcept;
         [[nodiscard]] bool On(TickType_t timeout = 0) noexcept { return State(true, timeout); }
         [[nodiscard]] bool Off(TickType_t timeout = 0) noexcept { return State(false, timeout); }
+        [[nodiscard]] ComponentPropertyResult SetProperty(const String& name, const String& value, TickType_t timeout = 0) noexcept override;
+        void GetInfo(String& output) const override;
 
     protected:
         bool Configure() noexcept override;

@@ -48,6 +48,16 @@ button::button(
     pLongClickTicks(pdMS_TO_TICKS(longClickTimeMs)),
     pMultiClickTicks(pdMS_TO_TICKS(multiClickTimeMs)) {}
 
+void button::GetInfo(String& output) const {
+    component::GetInfo(output);
+    output += "State          | " + String(State() ? "pressed" : "released") + "\r\n";
+    output += "ActiveLevel    | " + String(ActiveLevel() == ActiveLevels::High ? "High" : "Low") + "\r\n";
+    output += "InputMode      | " + String(InputMode() == InputModes::PullUp ? "PullUp" : InputMode() == InputModes::PullDown ? "PullDown" : "Floating") + "\r\n";
+    output += "DebounceTimeMs | " + String(DebounceTime()) + "\r\n";
+    output += "LongClickTimeMs| " + String(LongClickTime()) + "\r\n";
+    output += "MultiClickMs   | " + String(MultiClickTime()) + "\r\n";
+}
+
 bool button::Configure() noexcept {
     if (Bus() == Buses::I2C && pInputDevice != nullptr) {
         return pInputDevice->Configure(Address(), pInputMode == InputModes::PullUp);
