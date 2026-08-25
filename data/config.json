@@ -71,14 +71,16 @@
             },
             "Type": "NormallyOpen",
             "DriveMode": "ActiveHigh",
-            "Events": {}
+            "Events": {
+                "Changed": "log(%NAME% changed)"
+            }
         },
         {
             "Name": "WallButton",
             "ID": 2,
             "Class": "Button",
             "Bus": "Onboard",
-            "Address": 4,
+            "Address": 0,
             "Properties": {
                 "Enabled": true
             },
@@ -87,7 +89,14 @@
             "DebounceTimeMs": 50,
             "LongClickTimeMs": 1000,
             "MultiClickTimeMs": 400,
-            "Events": {}
+            "Events": {
+                "Pressed": "log(%NAME% pressed)",
+                "Released": "log(%NAME% released)",
+                "Clicked": "compset(GarageLights state=toggle)",
+                "LongClicked": "log(%NAME% longclicked)",
+                "DoubleClicked": "log(%NAME% doubleclicked)",
+                "TripleClicked": "log(%NAME% tripleclicked)"
+            }
         }
     ],
     "Users": [

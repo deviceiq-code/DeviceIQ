@@ -13,6 +13,7 @@ class App {
         bool InitializeNetwork();
         bool InitializeClock();
         bool InitializeComponents();
+        bool InitializeAutomation();
         bool InitializeStatePersistence();
         bool InitializeTelnetServer();
 
@@ -23,9 +24,12 @@ class App {
         static void LogNetworkStatus();
         static void ClockTaskEntry(void* parameter);
         static void StatePersistenceTaskEntry(void* parameter);
+        static void AutomationTaskEntry(void* parameter);
         void StatePersistenceTask();
+        void AutomationTask();
         void ClockTask();
 
+        TaskHandle_t pAutomationTaskHandle = nullptr;
         TaskHandle_t pClockTaskHandle = nullptr;
         TaskHandle_t pStatePersistenceTaskHandle = nullptr;
 
@@ -33,6 +37,8 @@ class App {
         static constexpr UBaseType_t CLOCK_TASK_PRIORITY = 1;
         static constexpr uint32_t STATE_PERSISTENCE_TASK_STACK_SIZE = 4096;
         static constexpr UBaseType_t STATE_PERSISTENCE_TASK_PRIORITY = 1;
+        static constexpr uint32_t AUTOMATION_TASK_STACK_SIZE = 4096;
+        static constexpr UBaseType_t AUTOMATION_TASK_PRIORITY = 2;
         static constexpr uint32_t NTP_OFFLINE_RETRY_MS = 5000;
         static constexpr uint32_t NTP_FAILURE_RETRY_MS = 60000;
         static constexpr uint32_t NTP_UPDATE_INTERVAL_MS = 3600000;

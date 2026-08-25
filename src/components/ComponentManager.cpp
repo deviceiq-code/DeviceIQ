@@ -72,7 +72,7 @@ bool ComponentManager::ReceiveEvent(ComponentEvent& event, TickType_t timeout) n
 
 component* ComponentManager::FindByName(const String& name) const noexcept {
     for (size_t index = 0; index < pComponentCount; ++index) {
-        if (pComponents[index]->Name() == name) return pComponents[index];
+        if (pComponents[index]->Name().equalsIgnoreCase(name)) return pComponents[index];
     }
     return nullptr;
 }

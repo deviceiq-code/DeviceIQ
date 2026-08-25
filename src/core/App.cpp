@@ -39,6 +39,7 @@ void App::Start() {
     if (!InitializeNetwork()) return;
     if (!InitializeClock()) return;
     if (!InitializeComponents()) return;
+    if (!InitializeAutomation()) return;
     if (!InitializeStatePersistence()) return;
     if (!InitializeTelnetServer()) return;
 
@@ -156,6 +157,31 @@ bool App::InitializeStatePersistence() {
     return true;
 }
 
+bool App::InitializeAutomation() {
+    if (pAutomationTaskHandle != nullptr) return true;
+
+    const BaseType_t result = xTaskCreate(
+        AutomationTaskEntry,
+        "Automation",
+        AUTOMATION_TASK_STACK_SIZE,
+        this,
+        AUTOMATION_TASK_PRIORITY,
+        &pAutomationTaskHandle
+    );
+
+    if (result != pdPASS) {
+        pAutomationTaskHandle = nullptr;
+        Logger.Log("Error starting automation task", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log(
+        "Automation initialized (event bindings: " + String(Automation.Count()) + ")",
+        logger::LogLevels::Information
+    );
+    return true;
+}
+
 void App::ClockTaskEntry(void* parameter) {
     static_cast<App*>(parameter)->ClockTask();
 }
@@ -182,6 +208,17 @@ void App::ClockTask() {
 
 void App::StatePersistenceTaskEntry(void* parameter) {
     static_cast<App*>(parameter)->StatePersistenceTask();
+}
+
+void App::AutomationTaskEntry(void* parameter) {
+    static_cast<App*>(parameter)->AutomationTask();
+}
+
+void App::AutomationTask() {
+    ComponentEvent event;
+    while (true) {
+        if (ComponentController.ReceiveEvent(event, portMAX_DELAY)) (void)Automation.Execute(event);
+    }
 }
 
 void App::StatePersistenceTask() {

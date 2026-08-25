@@ -275,6 +275,33 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         if (!ComponentController.Register(std::move(instances[index]))) return false;
     }
 
+    Automation.Clear();
+    index = 0;
+    for (JsonVariantConst value : components) {
+        component* instance = ComponentController.At(index++);
+        const JsonObjectConst events = value["Events"].as<JsonObjectConst>();
+        if (events.isNull()) continue;
+
+        for (JsonPairConst configuredEvent : events) {
+            const String eventName = configuredEvent.key().c_str();
+            if (!configuredEvent.value().is<const char*>()) {
+                Logger.Log(
+                    "Component " + instance->Name() + ": event '" + eventName + "' action must be a string",
+                    logger::LogLevels::Warning
+                );
+                continue;
+            }
+
+            String error;
+            if (!Automation.Register(*instance, eventName, configuredEvent.value().as<const char*>(), error)) {
+                Logger.Log(
+                    "Component " + instance->Name() + ": invalid event '" + eventName + "' (" + error + ")",
+                    logger::LogLevels::Warning
+                );
+            }
+        }
+    }
+
     return true;
 }
 

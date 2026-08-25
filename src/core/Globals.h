@@ -8,6 +8,7 @@
 #include "Network.h"
 #include "TelnetServer.h"
 #include "Version.h"
+#include "Automation.h"
 #include "components/ComponentManager.h"
 #include "components/Relay.h"
 
@@ -18,4 +19,5 @@ extern settings Settings;
 extern network Network;
 extern telnetserver TelnetServer;
 extern ComponentManager ComponentController;
+extern automation Automation;
 extern relay OnboardLedRelay;

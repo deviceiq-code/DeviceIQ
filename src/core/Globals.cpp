@@ -7,3 +7,4 @@ settings Settings;
 network Network;
 telnetserver TelnetServer;
 ComponentManager ComponentController;
+automation Automation;

@@ -198,7 +198,9 @@ Example:
         "Enabled": true,
         "State": false
       },
-      "Events": {}
+      "Events": {
+        "Changed": "log(%NAME% changed)"
+      }
     },
     {
       "Name": "WallButton",
@@ -214,7 +216,11 @@ Example:
       "Properties": {
         "Enabled": true
       },
-      "Events": {}
+      "Events": {
+        "Pressed": "log(%NAME% pressed)",
+        "Released": "log(%NAME% released)",
+        "Clicked": "compset(GarageLights state=toggle)"
+      }
     }
   ]
 }
@@ -227,6 +233,20 @@ Relay runtime state is persisted back to `/config.json` every `General.Save
 State Pooling` seconds when it changes. Button input state is
 physical and is not persisted. A power loss before the next persistence cycle
 can therefore lose the most recent change.
+
+Component events are handled by the automation task. Event names must exist in
+the component's event descriptors. The first supported actions are:
+
+```text
+log(message)
+compset(component_name property=value)
+compset(#component_id property=value)
+```
+
+`%NAME%` is replaced with the source component name. Relay state accepts
+`on`, `off`, and `toggle` in `compset`. Each event currently accepts one action.
+Malformed actions, unknown events, missing targets, and rejected properties are
+reported in the log without stopping component processing.
 
 ### Component CLI
 
