@@ -4,6 +4,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <memory>
 
 #include "Component.h"
 
@@ -18,6 +19,7 @@ class ComponentManager final : private ComponentRuntime {
         // Components must have static or otherwise application-long lifetime.
         // Registration is allowed only before Start().
         [[nodiscard]] bool Register(component& component) noexcept;
+        [[nodiscard]] bool Register(std::unique_ptr<component> component) noexcept;
         [[nodiscard]] bool Start() noexcept;
 
         [[nodiscard]] bool SendCommand(const ComponentCommand& command, TickType_t timeout = 0) noexcept override;
@@ -31,6 +33,7 @@ class ComponentManager final : private ComponentRuntime {
         [[nodiscard]] component* At(size_t index) const noexcept;
         [[nodiscard]] bool PropertyChanged() const noexcept;
         [[nodiscard]] bool StateChanged() const noexcept;
+        [[nodiscard]] bool PersistenceRequired() const noexcept;
         void ClearPropertyChanged() noexcept;
         void ClearStateChanged() noexcept;
 
@@ -52,6 +55,7 @@ class ComponentManager final : private ComponentRuntime {
         bool PublishFromISR(const ComponentEvent& event, BaseType_t* higherPriorityTaskWoken) noexcept override;
 
         component* pComponents[MAX_COMPONENTS]{};
+        std::unique_ptr<component> pOwnedComponents[MAX_COMPONENTS];
         size_t pComponentCount = 0;
 
         StaticQueue_t pCommandQueueControl{};

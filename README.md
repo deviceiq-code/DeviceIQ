@@ -185,20 +185,66 @@ Example:
 
 ```json
 {
-  "deviceName": "LivingRoomController",
-  "wifi": {
-    "ssid": "MyWiFi",
-    "password": "secret"
-  },
-  "components": [
+  "Components": [
     {
-      "type": "relay",
-      "name": "Relay1",
-      "pin": 26
+      "Name": "OnboardLed",
+      "ID": 1,
+      "Class": "Relay",
+      "Bus": "Onboard",
+      "Address": 2,
+      "Type": "NormallyOpen",
+      "DriveMode": "ActiveHigh",
+      "Properties": {
+        "Enabled": true,
+        "State": false
+      },
+      "Events": {}
+    },
+    {
+      "Name": "WallButton",
+      "ID": 2,
+      "Class": "Button",
+      "Bus": "Onboard",
+      "Address": 4,
+      "ActiveLevel": "Low",
+      "InputMode": "PullUp",
+      "DebounceTimeMs": 50,
+      "LongClickTimeMs": 1000,
+      "MultiClickTimeMs": 400,
+      "Properties": {
+        "Enabled": true
+      },
+      "Events": {}
     }
   ]
 }
 ```
+
+At startup, onboard components are validated and created from this array. If the
+section is missing or invalid, DeviceIQ falls back to its built-in components.
+
+Relay runtime state is persisted back to `/config.json` every `General.Save
+State Pooling` seconds when it changes. Button input state is
+physical and is not persisted. A power loss before the next persistence cycle
+can therefore lose the most recent change.
+
+### Component CLI
+
+```text
+comp list
+comp status [component_name|#component_id]
+comp set [component_name|#component_id] state=on
+comp set [component_name|#component_id] enabled=false
+comp rename [component_name|#component_id] name=newname
+comp remove [component_name|#component_id]
+comp add relay name=Lamp address=5
+comp add button name=WallButton address=6 inputMode=PullUp
+```
+
+`state` is applied immediately in runtime and persisted automatically. Other
+properties, add, rename, and remove update `/config.json` immediately and report
+that a restart is required. Use the existing `reboot` command to load those
+changes. Mutating subcommands require an administrative session.
 
 ---
 

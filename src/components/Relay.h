@@ -33,9 +33,11 @@ class relay final : public component {
         ~relay() override = default;
 
         [[nodiscard]] Classes Class() const noexcept override { return Classes::Relay; }
+        [[nodiscard]] bool HasPersistentState() const noexcept override { return true; }
         [[nodiscard]] bool State() const noexcept { return pState.load(std::memory_order_relaxed); }
         [[nodiscard]] RelayTypes Type() const noexcept { return pType; }
         [[nodiscard]] DriveModes DriveMode() const noexcept { return pDriveMode; }
+        [[nodiscard]] bool InitialState() const noexcept { return pInitialState; }
 
         [[nodiscard]] bool State(bool newState, TickType_t timeout = 0) noexcept;
         [[nodiscard]] bool Toggle(TickType_t timeout = 0) noexcept;

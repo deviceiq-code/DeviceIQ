@@ -17,6 +17,16 @@ bool ComponentManager::Register(component& candidate) noexcept {
     return true;
 }
 
+bool ComponentManager::Register(std::unique_ptr<component> candidate) noexcept {
+    if (!candidate) return false;
+
+    const size_t index = pComponentCount;
+    if (!Register(*candidate)) return false;
+
+    pOwnedComponents[index] = std::move(candidate);
+    return true;
+}
+
 bool ComponentManager::Start() noexcept {
     if (IsStarted()) return true;
 
@@ -88,6 +98,15 @@ bool ComponentManager::PropertyChanged() const noexcept {
 bool ComponentManager::StateChanged() const noexcept {
     for (size_t index = 0; index < pComponentCount; ++index) {
         if (pComponents[index]->StateChanged()) return true;
+    }
+    return false;
+}
+
+bool ComponentManager::PersistenceRequired() const noexcept {
+    for (size_t index = 0; index < pComponentCount; ++index) {
+        const component* item = pComponents[index];
+        if (item->PropertyChanged()) return true;
+        if (item->HasPersistentState() && item->StateChanged()) return true;
     }
     return false;
 }

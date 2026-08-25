@@ -256,6 +256,7 @@ class settings {
         bool Save(const String& configfilename = Defaults.ConfigFileName) const noexcept;
         bool InstallComponents(const String& configfilename = Defaults.ConfigFileName) noexcept;
         bool SaveComponentsState(const String& configfilename = Defaults.ConfigFileName) noexcept;
+        bool ExecuteComponentCommand(String* parameters, String& output) noexcept;
 };
 
 extern settings Settings;

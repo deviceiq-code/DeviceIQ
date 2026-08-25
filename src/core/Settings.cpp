@@ -1,5 +1,6 @@
 #include "Settings.h"
 #include "Globals.h"
+#include "components/Button.h"
 
 #include <ArduinoJson.h>
 settings::settings() noexcept
@@ -521,12 +522,23 @@ void settings::LoadDefaults() {
 bool settings::Load(const String& configfilename) noexcept {
     const String path = configfilename.length() ? configfilename : String(Defaults.ConfigFileName);
     String content;
+    const filesystem::Result readResult = FileSystem.Read(path.c_str(), content);
 
-    if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok || content.isEmpty()) {
-        Lock lock(pMutex);
-        if (!lock.IsLocked()) return false;
-        LoadDefaults();
-        pFirstRun = true;
+    if (readResult != filesystem::Result::Ok || content.isEmpty()) {
+        const bool firstRun = readResult == filesystem::Result::NotFound;
+
+        {
+            Lock lock(pMutex);
+            if (!lock.IsLocked()) return false;
+            LoadDefaults();
+            pFirstRun = firstRun;
+        }
+
+        if (firstRun && Users.Count() == 0) {
+            Users.Add(Defaults.Users.Admin.Username, Defaults.Users.Admin.Password, true);
+            Users.Add(Defaults.Users.User.Username, Defaults.Users.User.Password, false);
+        }
+
         return false;
     }
 
@@ -671,8 +683,6 @@ bool settings::Load(const String& configfilename) noexcept {
                     hash[i++] = v.as<uint8_t>();
                 }
             }
-
-            // Users.AddLoaded(username, admin, salt, hash);
         }
     }
 
@@ -1137,6 +1147,13 @@ void settings::RestoreToFactoryDefaults() {
 bool settings::Save(const String& configfilename) const noexcept {
     const String path = configfilename.length() ? configfilename : String(Defaults.ConfigFileName);
 
+    JsonDocument existingDoc;
+    String existingContent;
+    if (FileSystem.Read(path.c_str(), existingContent) == filesystem::Result::Ok &&
+        !existingContent.isEmpty()) {
+        (void)deserializeJson(existingDoc, existingContent);
+    }
+
     JsonDocument doc;
 
     {
@@ -1228,6 +1245,63 @@ bool settings::Save(const String& configfilename) const noexcept {
             tn["Port"] = TelnetServer.Port();
         }
 
+    }
+
+    // Preserve the configuration catalog and merge only runtime state by ID.
+    // This prevents state persistence from undoing add/remove/rename changes
+    // that are waiting for a reboot.
+    {
+        JsonArray components = doc["Components"].to<JsonArray>();
+        const JsonArrayConst existingComponents = existingDoc["Components"].as<JsonArrayConst>();
+
+        if (!existingComponents.isNull()) {
+            for (JsonObjectConst existing : existingComponents) components.add(existing);
+
+            for (size_t index = 0; index < ComponentController.Count(); ++index) {
+                const component* runtimeComponent = ComponentController.At(index);
+                if (runtimeComponent == nullptr || !runtimeComponent->HasPersistentState()) continue;
+
+                for (JsonObject configured : components) {
+                    if ((configured["ID"] | INT32_MIN) != runtimeComponent->ID()) continue;
+
+                    JsonObject properties = configured["Properties"].to<JsonObject>();
+                    if (runtimeComponent->Class() == component::Classes::Relay) {
+                        properties["State"] = static_cast<const relay&>(*runtimeComponent).State();
+                    }
+                    break;
+                }
+            }
+        } else {
+            for (size_t index = 0; index < ComponentController.Count(); ++index) {
+                const component* source = ComponentController.At(index);
+                if (source == nullptr) continue;
+
+                JsonObject item = components.add<JsonObject>();
+                item["Name"] = source->Name();
+                item["ID"] = source->ID();
+                item["Class"] = component::ClassName(source->Class());
+                item["Bus"] = component::BusName(source->Bus());
+                item["Address"] = source->Address();
+
+                JsonObject properties = item["Properties"].to<JsonObject>();
+                properties["Enabled"] = source->Enabled();
+                item["Events"].to<JsonObject>();
+
+                if (source->Class() == component::Classes::Relay) {
+                    const relay& relayComponent = static_cast<const relay&>(*source);
+                    item["Type"] = relayComponent.Type() == relay::RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed";
+                    item["DriveMode"] = relayComponent.DriveMode() == relay::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
+                    properties["State"] = relayComponent.State();
+                } else if (source->Class() == component::Classes::Button) {
+                    const button& buttonComponent = static_cast<const button&>(*source);
+                    item["ActiveLevel"] = buttonComponent.ActiveLevel() == button::ActiveLevels::High ? "High" : "Low";
+                    item["InputMode"] = buttonComponent.InputMode() == button::InputModes::PullUp ? "PullUp" : buttonComponent.InputMode() == button::InputModes::PullDown ? "PullDown" : "Floating";
+                    item["DebounceTimeMs"] = buttonComponent.DebounceTime();
+                    item["LongClickTimeMs"] = buttonComponent.LongClickTime();
+                    item["MultiClickTimeMs"] = buttonComponent.MultiClickTime();
+                }
+            }
+        }
     }
 
     // Components

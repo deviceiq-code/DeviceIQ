@@ -121,6 +121,14 @@ bool telnetserver::SetSessionIdentity(WiFiClient& client, String username, bool 
     return true;
 }
 
+bool telnetserver::IsSessionAdmin(WiFiClient& client) {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return false;
+
+    Session* session = FindSession(client);
+    return session != nullptr && session->admin;
+}
+
 void telnetserver::RegisterBuiltInCommands() {
     (void)OnCommand("clear", "Clear terminal screen\r\n\r\nclear", [](WiFiClient& client, String*) {
         client.write("\x1B[2J\x1B[H");

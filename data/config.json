@@ -1,0 +1,207 @@
+{
+    "Log": {
+        "Endpoint": 5,
+        "Level": 255,
+        "Syslog Server": "syslog.svr",
+        "Syslog Port": 514
+    },
+    "Network": {
+        "DHCP Client": true,
+        "Hostname": "esp32s3",
+        "IP Address": "0.0.0.0",
+        "Gateway": "0.0.0.0",
+        "Netmask": "255.255.255.0",
+        "DNS Servers": [
+            "8.8.8.8",
+            "8.8.4.4"
+        ],
+        "SSID": "IOT-2",
+        "Passphrase": "1921682GenesisIOT-2",
+        "Connection Timeout": 30,
+        "Online Checking": true,
+        "Online Checking Timeout": 10
+    },
+    "Update": {
+        "Manifest URL": "https://server.dts-network.com:8081/update-dpk.json",
+        "Allow Insecure": true,
+        "Enable LAN OTA": false,
+        "Password LAN OTA": "",
+        "Check Interval": 3600,
+        "Auto Reboot": true,
+        "Debug": false,
+        "Check At Startup": true
+    },
+    "General": {
+        "NTP Update": true,
+        "NTP Server": "pool.ntp.org",
+        "Time Zone": -3,
+        "Save State Pooling": 5
+    },
+    "Orchestrator": {
+        "Assigned": false,
+        "Server ID": "",
+        "IP Address": "0.0.0.0",
+        "Port": 30030
+    },
+    "Web Server": {
+        "Port": 80,
+        "Enabled": true,
+        "Token": "default_token"
+    },
+    "MQTT": {
+        "Enabled": false,
+        "Broker": "",
+        "Port": 1883,
+        "User": "",
+        "Password": ""
+    },
+    "Telnet": {
+        "Enabled": true,
+        "Port": 23
+    },
+    "Components": [
+        {
+            "Name": "GarageLights",
+            "ID": 1,
+            "Class": "Relay",
+            "Bus": "Onboard",
+            "Address": 2,
+            "Properties": {
+                "State": true
+            },
+            "Type": "NormallyOpen",
+            "DriveMode": "ActiveHigh",
+            "Events": {}
+        },
+        {
+            "Name": "WallButton",
+            "ID": 2,
+            "Class": "Button",
+            "Bus": "Onboard",
+            "Address": 4,
+            "Properties": {
+                "Enabled": true
+            },
+            "ActiveLevel": "Low",
+            "InputMode": "PullUp",
+            "DebounceTimeMs": 50,
+            "LongClickTimeMs": 1000,
+            "MultiClickTimeMs": 400,
+            "Events": {}
+        }
+    ],
+    "Users": [
+        {
+            "Username": "admin",
+            "Admin": true,
+            "Salt": [
+                157,
+                143,
+                136,
+                149,
+                160,
+                131,
+                20,
+                18,
+                43,
+                206,
+                214,
+                9,
+                62,
+                130,
+                21,
+                161
+            ],
+            "Hash": [
+                167,
+                54,
+                111,
+                197,
+                229,
+                172,
+                244,
+                220,
+                179,
+                57,
+                226,
+                60,
+                253,
+                253,
+                153,
+                177,
+                121,
+                124,
+                132,
+                100,
+                140,
+                188,
+                193,
+                97,
+                109,
+                57,
+                201,
+                199,
+                70,
+                35,
+                17,
+                62
+            ]
+        },
+        {
+            "Username": "user",
+            "Admin": false,
+            "Salt": [
+                174,
+                48,
+                160,
+                99,
+                150,
+                26,
+                107,
+                80,
+                196,
+                137,
+                168,
+                178,
+                122,
+                187,
+                225,
+                5
+            ],
+            "Hash": [
+                100,
+                31,
+                143,
+                143,
+                179,
+                16,
+                128,
+                149,
+                69,
+                216,
+                228,
+                145,
+                55,
+                123,
+                33,
+                155,
+                88,
+                12,
+                2,
+                143,
+                147,
+                221,
+                251,
+                109,
+                10,
+                84,
+                103,
+                112,
+                11,
+                177,
+                234,
+                30
+            ]
+        }
+    ]
+}

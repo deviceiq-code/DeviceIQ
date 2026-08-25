@@ -85,6 +85,7 @@ class component {
         [[nodiscard]] Buses Bus() const noexcept { return pBus; }
         [[nodiscard]] uint8_t Address() const noexcept { return pAddress; }
         [[nodiscard]] virtual Classes Class() const noexcept { return Classes::Base; }
+        [[nodiscard]] virtual bool HasPersistentState() const noexcept { return false; }
 
         [[nodiscard]] bool ResolveEvent(const String& name, uint16_t& code) const noexcept;
         [[nodiscard]] bool ResolveCommand(const String& name, uint16_t& code) const noexcept;

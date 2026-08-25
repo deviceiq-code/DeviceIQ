@@ -1,46 +1,23 @@
 #include <Arduino.h>
-#include <cstdlib>
 
 #include "App.h"
 #include "Globals.h"
 #include "Users.h"
-
-namespace {
-    component* FindCliComponent(const String& selector) {
-        if (selector.isEmpty()) return nullptr;
-
-        component* byName = ComponentController.FindByName(selector);
-        if (byName != nullptr) return byName;
-
-        String idText = selector;
-        if (idText.startsWith("#")) idText.remove(0, 1);
-        if (idText.isEmpty()) return nullptr;
-
-        char* end = nullptr;
-        const long id = std::strtol(idText.c_str(), &end, 10);
-        if (end == idText.c_str() || *end != '\0' || id < -32768 || id > 32767) return nullptr;
-
-        return ComponentController.FindByID(static_cast<int16_t>(id));
-    }
-
-    const char* PropertyResultText(ComponentPropertyResult result) {
-        switch (result) {
-            case ComponentPropertyResult::Accepted: return "accepted";
-            case ComponentPropertyResult::PropertyNotSupported: return "property not supported";
-            case ComponentPropertyResult::InvalidValue: return "invalid value";
-            case ComponentPropertyResult::ComponentDisabled: return "component disabled";
-            case ComponentPropertyResult::CommandRejected: return "command rejected";
-            default: return "unknown error";
-        }
-    }
-}
 
 void App::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
 
     if (!InitializeFileSystem()) return;
 
-    const bool configurationLoaded = Settings.Load();
+    bool configurationLoaded = Settings.Load();
+    const bool firstRun = Settings.FirstRun();
+    bool firstRunConfigurationSaved = false;
+
+    if (firstRun) {
+        firstRunConfigurationSaved = Settings.Save();
+        if (firstRunConfigurationSaved) configurationLoaded = Settings.Load();
+    }
+
     Clock.TimeZone(Settings.General.TimeZone());
 
     if (!InitializeLogger()) return;
@@ -49,9 +26,20 @@ void App::Start() {
     Logger.Log("Logger initialized", logger::LogLevels::Information);
     Logger.Log("FileSystem initialized", logger::LogLevels::Information);
 
+    if (firstRun) {
+        if (firstRunConfigurationSaved && configurationLoaded) {
+            Logger.Log("First Run - New configuration file " + String(Defaults.ConfigFileName) + " saved", logger::LogLevels::Information);
+        } else if (!firstRunConfigurationSaved) {
+            Logger.Log("First Run - Error saving new configuration file " + String(Defaults.ConfigFileName), logger::LogLevels::Error);
+        } else {
+            Logger.Log("First Run - New configuration file " + String(Defaults.ConfigFileName) + " saved but could not be loaded", logger::LogLevels::Error);
+        }
+    }
+
     if (!InitializeNetwork()) return;
     if (!InitializeClock()) return;
     if (!InitializeComponents()) return;
+    if (!InitializeStatePersistence()) return;
     if (!InitializeTelnetServer()) return;
 
     LogConfigurationStatus(configurationLoaded);
@@ -129,9 +117,8 @@ bool App::InitializeClock() {
 }
 
 bool App::InitializeComponents() {
-    if (!ComponentController.Register(OnboardLedRelay)) {
-        Logger.Log("Error registering onboard LED relay", logger::LogLevels::Error);
-        return false;
+    if (!Settings.InstallComponents()) {
+        Logger.Log("Components configuration missing or invalid; using built-in defaults", logger::LogLevels::Warning);
     }
 
     if (!ComponentController.Start()) {
@@ -140,6 +127,32 @@ bool App::InitializeComponents() {
     }
 
     Logger.Log("Component task initialized", logger::LogLevels::Information);
+    return true;
+}
+
+bool App::InitializeStatePersistence() {
+    if (pStatePersistenceTaskHandle != nullptr) return true;
+
+    const BaseType_t result = xTaskCreate(
+        StatePersistenceTaskEntry,
+        "StateSave",
+        STATE_PERSISTENCE_TASK_STACK_SIZE,
+        this,
+        STATE_PERSISTENCE_TASK_PRIORITY,
+        &pStatePersistenceTaskHandle
+    );
+
+    if (result != pdPASS) {
+        pStatePersistenceTaskHandle = nullptr;
+        Logger.Log("Error starting component state persistence task", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log(
+        "Component state persistence initialized (interval: " +
+            String(Settings.General.SaveStatePooling()) + " seconds)",
+        logger::LogLevels::Information
+    );
     return true;
 }
 
@@ -163,6 +176,29 @@ void App::ClockTask() {
         } else {
             Logger.Log("Date and time: Failed to update from NTP server " + server, logger::LogLevels::Error);
             vTaskDelay(pdMS_TO_TICKS(NTP_FAILURE_RETRY_MS));
+        }
+    }
+}
+
+void App::StatePersistenceTaskEntry(void* parameter) {
+    static_cast<App*>(parameter)->StatePersistenceTask();
+}
+
+void App::StatePersistenceTask() {
+    while (true) {
+        const uint32_t intervalMs =
+            static_cast<uint32_t>(Settings.General.SaveStatePooling()) * 1000U;
+        vTaskDelay(pdMS_TO_TICKS(intervalMs));
+
+        if (!ComponentController.PersistenceRequired() &&
+            !Settings.SaveComponentsStateFlag()) {
+            continue;
+        }
+
+        if (Settings.SaveComponentsState()) {
+            Logger.Log("Component state saved", logger::LogLevels::Debug);
+        } else {
+            Logger.Log("Error saving component state", logger::LogLevels::Error);
         }
     }
 }
@@ -274,73 +310,33 @@ bool App::RegisterTelnetCommands() {
         client.write(result.c_str());
     }, false);
 
-    const bool getRegistered = TelnetServer.OnCommand("get", "Show all component information\r\n\r\nget [component_name|#component_id]", [](WiFiClient& client, String* parameters) {
-        if (!parameters[1].isEmpty()) {
-            client.write("Usage: get [component_name|#component_id]\r\n");
-            return;
-        }
+    const bool compRegistered = TelnetServer.OnCommand(
+        "comp",
+        "Manage components\r\n\r\n"
+        "comp list\r\n"
+        "comp status [component_name|#component_id]\r\n"
+        "comp set [component_name|#component_id] property=value\r\n"
+        "comp rename [component_name|#component_id] name=newname\r\n"
+        "comp remove [component_name|#component_id]\r\n"
+        "comp add relay|button name=value [id=value] address=value ...",
+        [](WiFiClient& client, String* parameters) {
+            String subcommand = parameters[0];
+            subcommand.toLowerCase();
+            const bool mutation = subcommand == "set" || subcommand == "rename" ||
+                subcommand == "remove" || subcommand == "add";
 
-        if (parameters[0].isEmpty()) {
-            if (ComponentController.Count() == 0) {
-                client.write("No components registered.\r\n");
+            if (mutation && !TelnetServer.IsSessionAdmin(client)) {
+                client.write("Permission denied.\r\n");
                 return;
             }
 
-            for (size_t index = 0; index < ComponentController.Count(); ++index) {
-                component* item = ComponentController.At(index);
-                if (item == nullptr) continue;
-
-                String output;
-                output.reserve(384);
-                item->GetInfo(output);
-                if (index + 1 < ComponentController.Count()) output += "\r\n";
-                client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-            }
-            return;
-        }
-
-        component* target = FindCliComponent(parameters[0]);
-        if (target == nullptr) {
-            const String output = "Component '" + parameters[0] + "' not found.\r\n";
+            String output;
+            output.reserve(768);
+            (void)Settings.ExecuteComponentCommand(parameters, output);
             client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-            return;
-        }
-
-        String output;
-        output.reserve(384);
-        target->GetInfo(output);
-        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-    }, false);
-
-    const bool setRegistered = TelnetServer.OnCommand("set", "Set a component property\r\n\r\nset [component_name|#component_id] property=value", [](WiFiClient& client, String* parameters) {
-        if (parameters[0].isEmpty() || parameters[1].isEmpty() || !parameters[2].isEmpty()) {
-            client.write("Usage: set [component_name|#component_id] property=value\r\n");
-            return;
-        }
-
-        String assignment = parameters[1];
-        const int separator = assignment.indexOf('=');
-        if (separator <= 0 || separator == static_cast<int>(assignment.length()) - 1 || assignment.indexOf('=', separator + 1) >= 0) {
-            client.write("Invalid assignment. Expected property=value.\r\n");
-            return;
-        }
-
-        String property = assignment.substring(0, separator);
-        String value = assignment.substring(separator + 1);
-        property.trim();
-        value.trim();
-
-        component* target = FindCliComponent(parameters[0]);
-        if (target == nullptr) {
-            const String output = "Component '" + parameters[0] + "' not found.\r\n";
-            client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-            return;
-        }
-
-        const ComponentPropertyResult result = target->SetProperty(property, value, pdMS_TO_TICKS(100));
-        String output = "Set " + target->Name() + "." + property + "=" + value + ": " + PropertyResultText(result) + ".\r\n";
-        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-    }, true);
+        },
+        false
+    );
 
     const bool versionRegistered = TelnetServer.OnCommand("ver", "Show device version info\r\n\r\nver", [](WiFiClient& client, String*) {
         String result;
@@ -351,10 +347,14 @@ bool App::RegisterTelnetCommands() {
         client.write(result.c_str());
     }, false);
 
-    return rebootRegistered && dumpcfgRegistered && logonRegistered && getRegistered && setRegistered && versionRegistered;
+    return rebootRegistered && dumpcfgRegistered && logonRegistered && compRegistered && versionRegistered;
 }
 
 void App::DeviceRestart() {
+    if (!Settings.SaveComponentsState()) {
+        Logger.Log("Error saving component state before restart", logger::LogLevels::Error);
+    }
+
     Logger.Log("Device restart requested", logger::LogLevels::Information);
     vTaskDelay(pdMS_TO_TICKS(250));
     ESP.restart();
@@ -372,14 +372,14 @@ void App::LogNetworkStatus() {
     const network::APMode mode = Network.ConnectionMode();
 
     if (mode == network::APMode::Offline) {
-        Logger.Log("Network status: offline", logger::LogLevels::Warning);
+        Logger.Log("Network status: Offline", logger::LogLevels::Warning);
         return;
     }
 
     if (mode == network::APMode::WifiClient) {
-        Logger.Log("Network status: Online - WiFi Client, connected to " + Network.SSID() + " (IP: " + Network.IP_Address().toString() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
+        Logger.Log("Network: WiFi Client, connected to " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
         return;
     }
 
-    Logger.Log("Network status: Online - SoftAP Mode, connected to " + Network.SSID() + " (IP: " + Network.IP_Address().toString() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
+    Logger.Log("Network: SoftAP Mode, connected to " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
 }
