@@ -27,6 +27,13 @@ bool ComponentManager::Register(std::unique_ptr<component> candidate) noexcept {
     return true;
 }
 
+bool ComponentManager::AssignOwner(component& member, component& owner) noexcept {
+    if (IsStarted() || &member == &owner || !IsRegistered(&member) || !IsRegistered(&owner) ||
+        member.Owner() != nullptr || owner.Owner() != nullptr) return false;
+    member.SetOwner(&owner);
+    return true;
+}
+
 bool ComponentManager::Start() noexcept {
     if (IsStarted()) return true;
 
@@ -105,8 +112,8 @@ bool ComponentManager::StateChanged() const noexcept {
 bool ComponentManager::PersistenceRequired() const noexcept {
     for (size_t index = 0; index < pComponentCount; ++index) {
         const component* item = pComponents[index];
-        if (item->PropertyChanged()) return true;
-        if (item->HasPersistentState() && item->StateChanged()) return true;
+        if (item->IsPublic() && item->PropertyChanged()) return true;
+        if (item->IsPublic() && item->HasPersistentState() && item->StateChanged()) return true;
     }
     return false;
 }
@@ -147,6 +154,18 @@ void ComponentManager::ProcessCommands() {
 void ComponentManager::ProcessCommand(const ComponentCommand& command) {
     if (!IsRegistered(command.target)) return;
 
+    if (command.type == ComponentCommand::Types::TriggerEvent) {
+        if (!command.target->Enabled() || !command.target->Initialized()) return;
+
+        ComponentEvent event;
+        event.source = command.target;
+        event.code = command.code;
+        event.value = command.value;
+        event.timestamp = xTaskGetTickCount();
+        (void)Publish(event);
+        return;
+    }
+
     if (command.code == ComponentCommand::Enable) {
         if (command.target->SetEnabled(true)) command.target->EnabledChanged(true);
         return;
@@ -169,10 +188,18 @@ bool ComponentManager::IsRegistered(const component* component) const noexcept {
 
 bool ComponentManager::Publish(const ComponentEvent& event) noexcept {
     if (pEventQueue == nullptr || event.source == nullptr || !IsRegistered(event.source)) return false;
+    component* owner = const_cast<component*>(event.source->Owner());
+    if (owner != nullptr) {
+        owner->HandleMemberEvent(event);
+        return true;
+    }
     return xQueueSend(pEventQueue, &event, 0) == pdTRUE;
 }
 
 bool ComponentManager::PublishFromISR(const ComponentEvent& event, BaseType_t* higherPriorityTaskWoken) noexcept {
     if (pEventQueue == nullptr || event.source == nullptr) return false;
+    // Owned components are currently polled from the component task. Reject an
+    // unexpected ISR publication rather than invoking an aggregate from ISR.
+    if (event.source->Owner() != nullptr) return false;
     return xQueueSendFromISR(pEventQueue, &event, higherPriorityTaskWoken) == pdTRUE;
 }

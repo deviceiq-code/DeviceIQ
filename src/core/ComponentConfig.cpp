@@ -6,6 +6,7 @@
 #include <new>
 
 #include "Globals.h"
+#include "components/Blinds.h"
 #include "components/Button.h"
 #include "components/Relay.h"
 
@@ -177,6 +178,73 @@ namespace {
         if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
         return true;
     }
+
+    struct BlindsConfiguration {
+        String name;
+        int16_t id = 0;
+        String relayUp;
+        String relayDown;
+        String buttonUp;
+        String buttonDown;
+        uint8_t position = 0;
+        uint32_t stepTimeMs = blinds::DEFAULT_STEP_TIME_MS;
+        uint32_t reversalDelayMs = blinds::DEFAULT_REVERSAL_DELAY_MS;
+        bool enabled = true;
+    };
+
+    bool ParseBlindsConfiguration(JsonObjectConst object, BlindsConfiguration& result) {
+        if (!object["Name"].is<const char*>() || !object["ID"].is<int>() ||
+            !object["Class"].is<const char*>() || !object["Bus"].is<const char*>() ||
+            !object["Relay Up"].is<const char*>() || !object["Relay Down"].is<const char*>()) return false;
+
+        result.name = object["Name"].as<const char*>();
+        result.relayUp = object["Relay Up"].as<const char*>();
+        result.relayDown = object["Relay Down"].as<const char*>();
+        result.name.trim();
+        result.relayUp.trim();
+        result.relayDown.trim();
+        if (result.name.isEmpty() || result.relayUp.isEmpty() || result.relayDown.isEmpty()) return false;
+
+        const int id = object["ID"].as<int>();
+        if (id < INT16_MIN || id > INT16_MAX) return false;
+        result.id = static_cast<int16_t>(id);
+
+        const String componentClass = object["Class"].as<const char*>();
+        const String bus = object["Bus"].as<const char*>();
+        if (!componentClass.equalsIgnoreCase("Blinds") || !bus.equalsIgnoreCase("Group")) return false;
+
+        if (!object["Button Up"].isNull()) {
+            if (!object["Button Up"].is<const char*>()) return false;
+            result.buttonUp = object["Button Up"].as<const char*>();
+            result.buttonUp.trim();
+        }
+        if (!object["Button Down"].isNull()) {
+            if (!object["Button Down"].is<const char*>()) return false;
+            result.buttonDown = object["Button Down"].as<const char*>();
+            result.buttonDown.trim();
+        }
+
+        if (!ReadOptionalTime(object, "StepTimeMs", result.stepTimeMs) || result.stepTimeMs == 0 ||
+            !ReadOptionalTime(object, "ReversalDelayMs", result.reversalDelayMs)) return false;
+
+        if (!object["Properties"].isNull()) {
+            if (!object["Properties"].is<JsonObjectConst>()) return false;
+            const JsonObjectConst properties = object["Properties"].as<JsonObjectConst>();
+            if (!properties["Enabled"].isNull()) {
+                if (!properties["Enabled"].is<bool>()) return false;
+                result.enabled = properties["Enabled"].as<bool>();
+            }
+            if (!properties["Position"].isNull()) {
+                if (!properties["Position"].is<int>()) return false;
+                const int position = properties["Position"].as<int>();
+                if (position < 0 || position > 100) return false;
+                result.position = static_cast<uint8_t>(position);
+            }
+        }
+
+        if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
+        return true;
+    }
 }
 
 bool settings::InstallComponents(const String& configfilename) noexcept {
@@ -196,9 +264,12 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         String name;
         int16_t id;
         uint8_t address;
+        component::Classes type;
+        bool hasAddress;
     };
 
     ComponentIdentity identities[MaxConfiguredComponents];
+    int16_t owners[MaxConfiguredComponents];
     size_t count = 0;
 
     for (JsonVariantConst value : components) {
@@ -210,11 +281,15 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         if (componentClass.equalsIgnoreCase("Relay")) {
             RelayConfiguration configuration;
             if (!ParseRelayConfiguration(object, configuration)) return false;
-            identities[count] = {configuration.name, configuration.id, configuration.address};
+            identities[count] = {configuration.name, configuration.id, configuration.address, component::Classes::Relay, true};
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(object, configuration)) return false;
-            identities[count] = {configuration.name, configuration.id, configuration.address};
+            identities[count] = {configuration.name, configuration.id, configuration.address, component::Classes::Button, true};
+        } else if (componentClass.equalsIgnoreCase("Blinds")) {
+            BlindsConfiguration configuration;
+            if (!ParseBlindsConfiguration(object, configuration)) return false;
+            identities[count] = {configuration.name, configuration.id, 0, component::Classes::Blinds, false};
         } else {
             return false;
         }
@@ -222,17 +297,59 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         for (size_t previous = 0; previous < count; ++previous) {
             if (identities[previous].id == identities[count].id ||
                 identities[previous].name.equalsIgnoreCase(identities[count].name) ||
-                identities[previous].address == identities[count].address) {
+                (identities[previous].hasAddress && identities[count].hasAddress &&
+                    identities[previous].address == identities[count].address)) {
                 return false;
             }
         }
 
+        owners[count] = -1;
         ++count;
+    }
+
+    auto resolveMember = [&](const String& selector, component::Classes expected) -> int16_t {
+        for (size_t candidate = 0; candidate < count; ++candidate) {
+            if (identities[candidate].type != expected) continue;
+            if (identities[candidate].name.equalsIgnoreCase(selector) ||
+                selector == "#" + String(identities[candidate].id)) return static_cast<int16_t>(candidate);
+        }
+        return -1;
+    };
+
+    size_t blindsIndex = 0;
+    for (JsonVariantConst value : components) {
+        const JsonObjectConst object = value.as<JsonObjectConst>();
+        const String componentClass = object["Class"].as<const char*>();
+        if (!componentClass.equalsIgnoreCase("Blinds")) {
+            ++blindsIndex;
+            continue;
+        }
+
+        BlindsConfiguration configuration;
+        if (!ParseBlindsConfiguration(object, configuration)) return false;
+        const int16_t relayUp = resolveMember(configuration.relayUp, component::Classes::Relay);
+        const int16_t relayDown = resolveMember(configuration.relayDown, component::Classes::Relay);
+        const int16_t buttonUp = configuration.buttonUp.isEmpty() ? -1 : resolveMember(configuration.buttonUp, component::Classes::Button);
+        const int16_t buttonDown = configuration.buttonDown.isEmpty() ? -1 : resolveMember(configuration.buttonDown, component::Classes::Button);
+        if (relayUp < 0 || relayDown < 0 || relayUp == relayDown ||
+            (!configuration.buttonUp.isEmpty() && buttonUp < 0) ||
+            (!configuration.buttonDown.isEmpty() && buttonDown < 0) ||
+            (buttonUp >= 0 && buttonUp == buttonDown)) return false;
+
+        const int16_t members[] = {relayUp, relayDown, buttonUp, buttonDown};
+        for (int16_t member : members) {
+            if (member < 0) continue;
+            if (owners[member] >= 0) return false;
+            owners[member] = static_cast<int16_t>(blindsIndex);
+        }
+        ++blindsIndex;
     }
 
     std::unique_ptr<component> instances[MaxConfiguredComponents];
     size_t index = 0;
 
+    // Create physical components first so groups may reference them regardless
+    // of their ordering in the configuration array.
     for (JsonVariantConst value : components) {
         const JsonObjectConst object = value.as<JsonObjectConst>();
         const String componentClass = object["Class"].as<const char*>();
@@ -247,10 +364,10 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 configuration.address,
                 configuration.type,
                 configuration.driveMode,
-                configuration.state,
-                configuration.enabled
+                owners[index] < 0 ? configuration.state : false,
+                owners[index] < 0 ? configuration.enabled : true
             ));
-        } else {
+        } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(object, configuration)) return false;
             instances[index].reset(new (std::nothrow) button(
@@ -263,10 +380,41 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 configuration.debounceTimeMs,
                 configuration.longClickTimeMs,
                 configuration.multiClickTimeMs,
-                configuration.enabled
+                owners[index] < 0 ? configuration.enabled : true
             ));
         }
 
+        if (!componentClass.equalsIgnoreCase("Blinds") && !instances[index]) return false;
+        ++index;
+    }
+
+    index = 0;
+    for (JsonVariantConst value : components) {
+        const JsonObjectConst object = value.as<JsonObjectConst>();
+        const String componentClass = object["Class"].as<const char*>();
+        if (!componentClass.equalsIgnoreCase("Blinds")) {
+            ++index;
+            continue;
+        }
+
+        BlindsConfiguration configuration;
+        if (!ParseBlindsConfiguration(object, configuration)) return false;
+        const int16_t relayUpIndex = resolveMember(configuration.relayUp, component::Classes::Relay);
+        const int16_t relayDownIndex = resolveMember(configuration.relayDown, component::Classes::Relay);
+        const int16_t buttonUpIndex = configuration.buttonUp.isEmpty() ? -1 : resolveMember(configuration.buttonUp, component::Classes::Button);
+        const int16_t buttonDownIndex = configuration.buttonDown.isEmpty() ? -1 : resolveMember(configuration.buttonDown, component::Classes::Button);
+        instances[index].reset(new (std::nothrow) blinds(
+            configuration.name,
+            configuration.id,
+            static_cast<relay&>(*instances[relayUpIndex]),
+            static_cast<relay&>(*instances[relayDownIndex]),
+            buttonUpIndex < 0 ? nullptr : static_cast<button*>(instances[buttonUpIndex].get()),
+            buttonDownIndex < 0 ? nullptr : static_cast<button*>(instances[buttonDownIndex].get()),
+            configuration.position,
+            configuration.stepTimeMs,
+            configuration.reversalDelayMs,
+            configuration.enabled
+        ));
         if (!instances[index]) return false;
         ++index;
     }
@@ -275,12 +423,35 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         if (!ComponentController.Register(std::move(instances[index]))) return false;
     }
 
+    for (index = 0; index < count; ++index) {
+        if (owners[index] < 0) continue;
+        component* member = ComponentController.At(index);
+        component* owner = ComponentController.At(static_cast<size_t>(owners[index]));
+        if (member == nullptr || owner == nullptr || !ComponentController.AssignOwner(*member, *owner)) return false;
+        Logger.Log(
+            "Component " + member->Name() + ": private member of Blinds '" + owner->Name() +
+                "'; standalone automation and MQTT disabled",
+            logger::LogLevels::Information
+        );
+    }
+
     Automation.Clear();
     index = 0;
     for (JsonVariantConst value : components) {
         component* instance = ComponentController.At(index++);
         const JsonObjectConst events = value["Events"].as<JsonObjectConst>();
         if (events.isNull()) continue;
+
+        if (!instance->IsPublic()) {
+            for (JsonPairConst configuredEvent : events) {
+                Logger.Log(
+                    "Component " + instance->Name() + ": event '" + String(configuredEvent.key().c_str()) +
+                        "' ignored because it is owned by Blinds '" + instance->Owner()->Name() + "'",
+                    logger::LogLevels::Warning
+                );
+            }
+            continue;
+        }
 
         for (JsonPairConst configuredEvent : events) {
             const String eventName = configuredEvent.key().c_str();
@@ -404,9 +575,12 @@ namespace {
             String name;
             int16_t id;
             uint8_t address;
+            component::Classes type;
+            bool hasAddress;
         };
 
         Identity identities[MaxConfiguredComponents];
+        int16_t owners[MaxConfiguredComponents];
         size_t count = 0;
 
         for (JsonObjectConst object : components) {
@@ -416,11 +590,15 @@ namespace {
             if (componentClass.equalsIgnoreCase("Relay")) {
                 RelayConfiguration configuration;
                 if (!ParseRelayConfiguration(object, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, configuration.address};
+                identities[count] = {configuration.name, configuration.id, configuration.address, component::Classes::Relay, true};
             } else if (componentClass.equalsIgnoreCase("Button")) {
                 ButtonConfiguration configuration;
                 if (!ParseButtonConfiguration(object, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, configuration.address};
+                identities[count] = {configuration.name, configuration.id, configuration.address, component::Classes::Button, true};
+            } else if (componentClass.equalsIgnoreCase("Blinds")) {
+                BlindsConfiguration configuration;
+                if (!ParseBlindsConfiguration(object, configuration)) return false;
+                identities[count] = {configuration.name, configuration.id, 0, component::Classes::Blinds, false};
             } else {
                 return false;
             }
@@ -428,21 +606,60 @@ namespace {
             for (size_t previous = 0; previous < count; ++previous) {
                 if (identities[previous].id == identities[count].id ||
                     identities[previous].name.equalsIgnoreCase(identities[count].name) ||
-                    identities[previous].address == identities[count].address) return false;
+                    (identities[previous].hasAddress && identities[count].hasAddress &&
+                        identities[previous].address == identities[count].address)) return false;
             }
+            owners[count] = -1;
             ++count;
+        }
+
+        auto resolveMember = [&](const String& selector, component::Classes expected) -> int16_t {
+            for (size_t candidate = 0; candidate < count; ++candidate) {
+                if (identities[candidate].type != expected) continue;
+                if (identities[candidate].name.equalsIgnoreCase(selector) ||
+                    selector == "#" + String(identities[candidate].id)) return static_cast<int16_t>(candidate);
+            }
+            return -1;
+        };
+
+        size_t ownerIndex = 0;
+        for (JsonObjectConst object : components) {
+            const String componentClass = object["Class"].as<const char*>();
+            if (!componentClass.equalsIgnoreCase("Blinds")) {
+                ++ownerIndex;
+                continue;
+            }
+            BlindsConfiguration configuration;
+            if (!ParseBlindsConfiguration(object, configuration)) return false;
+            const int16_t relayUp = resolveMember(configuration.relayUp, component::Classes::Relay);
+            const int16_t relayDown = resolveMember(configuration.relayDown, component::Classes::Relay);
+            const int16_t buttonUp = configuration.buttonUp.isEmpty() ? -1 : resolveMember(configuration.buttonUp, component::Classes::Button);
+            const int16_t buttonDown = configuration.buttonDown.isEmpty() ? -1 : resolveMember(configuration.buttonDown, component::Classes::Button);
+            if (relayUp < 0 || relayDown < 0 || relayUp == relayDown ||
+                (!configuration.buttonUp.isEmpty() && buttonUp < 0) ||
+                (!configuration.buttonDown.isEmpty() && buttonDown < 0) ||
+                (buttonUp >= 0 && buttonUp == buttonDown)) return false;
+            const int16_t members[] = {relayUp, relayDown, buttonUp, buttonDown};
+            for (int16_t member : members) {
+                if (member < 0) continue;
+                if (owners[member] >= 0) return false;
+                owners[member] = static_cast<int16_t>(ownerIndex);
+            }
+            ++ownerIndex;
         }
         return true;
     }
 
     bool ConfigurationMatchesRuntime(JsonObjectConst configured, const component& runtime) {
-        if ((configured["ID"] | INT32_MIN) != runtime.ID() ||
-            (configured["Address"] | -1) != runtime.Address()) return false;
+        if ((configured["ID"] | INT32_MIN) != runtime.ID()) return false;
 
         const String configuredName = configured["Name"] | "";
         const JsonObjectConst properties = configured["Properties"].as<JsonObjectConst>();
-        if (configuredName != runtime.Name() || properties.isNull() ||
-            (properties["Enabled"] | true) != runtime.Enabled()) return false;
+        if (configuredName != runtime.Name() || properties.isNull()) return false;
+
+        if (runtime.Class() != component::Classes::Blinds &&
+            (configured["Address"] | -1) != runtime.Address()) return false;
+        if (runtime.IsPublic() && (properties["Enabled"] | true) != runtime.Enabled()) return false;
 
         if (runtime.Class() == component::Classes::Relay) {
             RelayConfiguration configuration;
@@ -460,6 +677,21 @@ namespace {
                    configuration.debounceTimeMs == value.DebounceTime() &&
                    configuration.longClickTimeMs == value.LongClickTime() &&
                    configuration.multiClickTimeMs == value.MultiClickTime();
+        }
+
+        if (runtime.Class() == component::Classes::Blinds) {
+            BlindsConfiguration configuration;
+            if (!ParseBlindsConfiguration(configured, configuration)) return false;
+            const blinds& value = static_cast<const blinds&>(runtime);
+            const auto matchesSelector = [](const component& member, const String& selector) {
+                return member.Name().equalsIgnoreCase(selector) || selector == "#" + String(member.ID());
+            };
+            const bool buttonsMatch =
+                (value.ButtonUp() == nullptr ? configuration.buttonUp.isEmpty() : matchesSelector(*value.ButtonUp(), configuration.buttonUp)) &&
+                (value.ButtonDown() == nullptr ? configuration.buttonDown.isEmpty() : matchesSelector(*value.ButtonDown(), configuration.buttonDown));
+            return matchesSelector(value.RelayUp(), configuration.relayUp) &&
+                matchesSelector(value.RelayDown(), configuration.relayDown) && buttonsMatch &&
+                value.StepTime() == configuration.stepTimeMs && value.ReversalDelay() == configuration.reversalDelayMs;
         }
 
         return false;
@@ -538,6 +770,21 @@ namespace {
             }
         }
 
+        if (componentClass.equalsIgnoreCase("Blinds")) {
+            if (property.equalsIgnoreCase("position")) {
+                long value = 0;
+                if (!ParseInteger(text, 0, 100, value)) return false;
+                item["Properties"].to<JsonObject>()["Position"] = value;
+                return true;
+            }
+            if (property.equalsIgnoreCase("steptimems") || property.equalsIgnoreCase("reversaldelayms")) {
+                long value = 0;
+                if (!ParseInteger(text, property.equalsIgnoreCase("steptimems") ? 1 : 0, INT32_MAX, value)) return false;
+                item[property.equalsIgnoreCase("steptimems") ? "StepTimeMs" : "ReversalDelayMs"] = static_cast<uint32_t>(value);
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -565,7 +812,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
     String subcommand = parameters[0];
     subcommand.toLowerCase();
     if (subcommand.isEmpty()) {
-        output = "Usage: comp list | status [selector] | set selector property=value | rename selector name=value | remove selector | add class key=value...\r\n";
+        output = "Usage: comp list | status [selector] | set selector property=value | trigger selector event [value=integer] | rename selector name=value | remove selector | add class key=value...\r\n";
         return false;
     }
 
@@ -692,6 +939,10 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
                 output = "Component is not running; state cannot be changed.\r\n";
                 return false;
             }
+            if (!runtime->IsPublic()) {
+                output = "Component is a private Blinds member; control it through '" + runtime->Owner()->Name() + "'.\r\n";
+                return false;
+            }
             const ComponentPropertyResult result = runtime->SetProperty("state", value, pdMS_TO_TICKS(100));
             output = "Set " + runtime->Name() + ".state=" + value + ": " + PropertyResultName(result) + ".\r\n";
             return result == ComponentPropertyResult::Accepted;
@@ -713,6 +964,58 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         }
 
         output = "Configuration saved. Restart required. Use 'reboot' to apply changes.\r\n";
+        return true;
+    }
+
+    if (subcommand == "trigger") {
+        if (parameters[1].isEmpty() || parameters[2].isEmpty() || !parameters[4].isEmpty()) {
+            output = "Usage: comp trigger selector event [value=integer]\r\n";
+            return false;
+        }
+
+        int32_t eventValue = 0;
+        if (!parameters[3].isEmpty()) {
+            String property;
+            String value;
+            long parsed = 0;
+            if (!SplitAssignment(parameters[3], property, value) || !property.equalsIgnoreCase("value") ||
+                !ParseInteger(value, INT32_MIN, INT32_MAX, parsed)) {
+                output = "Invalid event value. Expected value=integer.\r\n";
+                return false;
+            }
+            eventValue = static_cast<int32_t>(parsed);
+        }
+
+        JsonObject configured = ResolveConfiguredComponent(components, parameters[1]);
+        component* runtime = FindRuntimeComponent(parameters[1]);
+        if (runtime == nullptr && !configured.isNull()) {
+            runtime = ComponentController.FindByID(static_cast<int16_t>(configured["ID"] | 0));
+        }
+        if (runtime == nullptr) {
+            output = "Component '" + parameters[1] + "' is not running.\r\n";
+            return false;
+        }
+
+        uint16_t eventCode = 0;
+        if (!runtime->ResolveEvent(parameters[2], eventCode)) {
+            output = "Component '" + runtime->Name() + "' does not expose event '" + parameters[2] + "'.\r\n";
+            return false;
+        }
+        if (!runtime->Enabled()) {
+            output = "Component '" + runtime->Name() + "' is disabled.\r\n";
+            return false;
+        }
+        if (!runtime->Initialized()) {
+            output = "Component '" + runtime->Name() + "' is not initialized.\r\n";
+            return false;
+        }
+
+        if (!runtime->TriggerEvent(parameters[2], eventValue, pdMS_TO_TICKS(100))) {
+            output = "Event queue rejected " + runtime->Name() + "." + parameters[2] + ".\r\n";
+            return false;
+        }
+
+        output = "Triggered " + runtime->Name() + "." + parameters[2] + " value=" + String(eventValue) + ".\r\n";
         return true;
     }
 
@@ -765,6 +1068,11 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         }
         components.remove(removeIndex);
 
+        if (!ValidateCatalog(components)) {
+            output = "Component is still required by a Blinds group and was not removed.\r\n";
+            return false;
+        }
+
         if (!WriteConfigurationDocument(document)) {
             output = "Error saving configuration.\r\n";
             return false;
@@ -776,7 +1084,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
     if (subcommand == "add") {
         if (parameters[1].isEmpty()) {
-            output = "Usage: comp add relay|button name=value [id=value] address=value ...\r\n";
+            output = "Usage: comp add relay|button|blinds name=value [id=value] ...\r\n";
             return false;
         }
         if (components.size() >= MaxConfiguredComponents) {
@@ -785,15 +1093,17 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         }
 
         String componentClass = parameters[1];
-        if (!componentClass.equalsIgnoreCase("Relay") && !componentClass.equalsIgnoreCase("Button")) {
-            output = "Unsupported component class. Expected relay or button.\r\n";
+        if (!componentClass.equalsIgnoreCase("Relay") && !componentClass.equalsIgnoreCase("Button") &&
+            !componentClass.equalsIgnoreCase("Blinds")) {
+            output = "Unsupported component class. Expected relay, button, or blinds.\r\n";
             return false;
         }
 
         JsonObject item = components.add<JsonObject>();
-        item["Class"] = componentClass.equalsIgnoreCase("Relay") ? "Relay" : "Button";
-        item["Bus"] = "Onboard";
-        item["Address"] = -1;
+        item["Class"] = componentClass.equalsIgnoreCase("Relay") ? "Relay" :
+            componentClass.equalsIgnoreCase("Button") ? "Button" : "Blinds";
+        item["Bus"] = componentClass.equalsIgnoreCase("Blinds") ? "Group" : "Onboard";
+        if (!componentClass.equalsIgnoreCase("Blinds")) item["Address"] = -1;
         JsonObject properties = item["Properties"].to<JsonObject>();
         properties["Enabled"] = true;
         item["Events"].to<JsonObject>();
@@ -802,12 +1112,18 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
             item["Type"] = "NormallyOpen";
             item["DriveMode"] = "ActiveHigh";
             properties["State"] = false;
-        } else {
+        } else if (componentClass.equalsIgnoreCase("Button")) {
             item["ActiveLevel"] = "Low";
             item["InputMode"] = "PullUp";
             item["DebounceTimeMs"] = button::DEFAULT_DEBOUNCE_TIME_MS;
             item["LongClickTimeMs"] = button::DEFAULT_LONG_CLICK_TIME_MS;
             item["MultiClickTimeMs"] = button::DEFAULT_MULTI_CLICK_TIME_MS;
+        } else {
+            item["Relay Up"] = "";
+            item["Relay Down"] = "";
+            item["StepTimeMs"] = blinds::DEFAULT_STEP_TIME_MS;
+            item["ReversalDelayMs"] = blinds::DEFAULT_REVERSAL_DELAY_MS;
+            properties["Position"] = 0;
         }
 
         bool idProvided = false;
@@ -830,10 +1146,23 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
                 item["ID"] = id;
                 idProvided = true;
             } else if (property.equalsIgnoreCase("bus")) {
-                if (!value.equalsIgnoreCase("Onboard")) {
-                    output = "Only bus=Onboard is currently supported.\r\n";
+                const bool validBus = componentClass.equalsIgnoreCase("Blinds")
+                    ? value.equalsIgnoreCase("Group")
+                    : value.equalsIgnoreCase("Onboard");
+                if (!validBus) {
+                    output = componentClass.equalsIgnoreCase("Blinds")
+                        ? "Blinds requires bus=Group.\r\n"
+                        : "Only bus=Onboard is currently supported.\r\n";
                     return false;
                 }
+            } else if (componentClass.equalsIgnoreCase("Blinds") && property.equalsIgnoreCase("relayup")) {
+                item["Relay Up"] = value;
+            } else if (componentClass.equalsIgnoreCase("Blinds") && property.equalsIgnoreCase("relaydown")) {
+                item["Relay Down"] = value;
+            } else if (componentClass.equalsIgnoreCase("Blinds") && property.equalsIgnoreCase("buttonup")) {
+                item["Button Up"] = value;
+            } else if (componentClass.equalsIgnoreCase("Blinds") && property.equalsIgnoreCase("buttondown")) {
+                item["Button Down"] = value;
             } else if (!ApplyConfiguredProperty(item, property, value, true)) {
                 output = "Unsupported property '" + property + "'.\r\n";
                 return false;

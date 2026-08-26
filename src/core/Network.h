@@ -122,7 +122,7 @@ class network {
         static TickType_t SecondsToTicks(uint16_t seconds) noexcept;
         static bool TimeReached(TickType_t now, TickType_t target) noexcept;
 
-        static void TaskEntry(void* parameter);
+        static void TaskEntry(void* parameter) { static_cast<network*>(parameter)->Task(); }
         void Task();
         void Control();
         APMode ConnectInternal();

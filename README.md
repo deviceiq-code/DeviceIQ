@@ -264,6 +264,44 @@ State Pooling` seconds when it changes. Button input state is
 physical and is not persisted. A power loss before the next persistence cycle
 can therefore lose the most recent change.
 
+### Blinds groups
+
+A `Blinds` component owns two relays and, optionally, two buttons. Owned
+components remain in the catalog as hardware definitions, but become private:
+they are not published through MQTT, cannot be targeted by automation, and
+their configured `Events` are ignored with a startup warning. All motor control
+passes through the group, which guarantees relay interlocking and a delay when
+reversing direction.
+
+```json
+{
+  "Name": "BedroomBlinds",
+  "ID": 7,
+  "Class": "Blinds",
+  "Bus": "Group",
+  "Relay Up": "BedroomBlindRelayUp",
+  "Relay Down": "BedroomBlindRelayDown",
+  "Button Up": "BedroomBlindButtonUp",
+  "Button Down": "BedroomBlindButtonDown",
+  "StepTimeMs": 250,
+  "ReversalDelayMs": 250,
+  "Properties": {
+    "Enabled": true,
+    "Position": 0
+  },
+  "Events": {}
+}
+```
+
+`StepTimeMs` is the estimated travel time for one percent, so `250` represents
+approximately 25 seconds from fully closed to fully open. Holding a direction
+button moves while pressed and stops on release. A double click starts complete
+travel. `Clicked`, `LongClicked`, and `TripleClicked` are private no-ops.
+
+The public properties are `state` (`open`, `close`, or `stop`) and `position`
+(`0` through `100`). Home Assistant receives one MQTT cover for the group; its
+member relays and buttons are intentionally hidden.
+
 Component events are handled by the automation task. Event names must exist in
 the component's event descriptors. The first supported actions are:
 
@@ -285,16 +323,30 @@ comp list
 comp status [component_name|#component_id]
 comp set [component_name|#component_id] state=on
 comp set [component_name|#component_id] enabled=false
+comp trigger [component_name|#component_id] event [value=integer]
 comp rename [component_name|#component_id] name=newname
 comp remove [component_name|#component_id]
 comp add relay name=Lamp address=5
 comp add button name=WallButton address=6 inputMode=PullUp
+comp add blinds name=BedroomBlinds relayUp=UpRelay relayDown=DownRelay buttonUp=UpButton buttonDown=DownButton
 ```
 
 `state` is applied immediately in runtime and persisted automatically. Other
 properties, add, rename, and remove update `/config.json` immediately and report
 that a restart is required. Use the existing `reboot` command to load those
 changes. Mutating subcommands require an administrative session.
+
+`trigger` simulates any event declared by the selected runtime component. The
+optional integer value defaults to `0`. Synthetic events use the normal event
+pipeline, so public components reach automations and MQTT, while private Blinds
+members are routed only to their owner. Examples:
+
+```text
+comp trigger WallButton Clicked
+comp trigger WallButton DoubleClicked value=2
+comp trigger #4 Pressed value=1
+comp trigger #4 Released
+```
 
 ### System diagnostics CLI
 

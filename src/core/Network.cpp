@@ -410,10 +410,6 @@ bool network::TimeReached(TickType_t now, TickType_t target) noexcept {
     return static_cast<int32_t>(now - target) >= 0;
 }
 
-void network::TaskEntry(void* parameter) {
-    static_cast<network*>(parameter)->Task();
-}
-
 void network::Task() {
     pLastModeCheck = xTaskGetTickCount();
     pPendingNotifications = NotificationBits::ConnectRequested;

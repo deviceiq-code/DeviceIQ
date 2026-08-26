@@ -44,6 +44,20 @@ bool component::ResolveCommand(const String& name, uint16_t& code) const noexcep
     return false;
 }
 
+bool component::TriggerEvent(const String& name, int32_t value, TickType_t timeout) noexcept {
+    if (!Enabled() || !Initialized() || pRuntime == nullptr) return false;
+
+    uint16_t code = 0;
+    if (!ResolveEvent(name, code)) return false;
+
+    ComponentCommand command;
+    command.target = this;
+    command.type = ComponentCommand::Types::TriggerEvent;
+    command.code = code;
+    command.value = value;
+    return pRuntime->SendCommand(command, timeout);
+}
+
 ComponentPropertyResult component::SetProperty(const String& name, const String& value, TickType_t timeout) noexcept {
     if (!name.equalsIgnoreCase("enabled")) return ComponentPropertyResult::PropertyNotSupported;
 
@@ -60,6 +74,8 @@ void component::GetInfo(String& output) const {
     output += "Class          | " + String(ClassName(Class())) + "\r\n";
     output += "Bus            | " + String(BusName(Bus())) + "\r\n";
     output += "Address        | " + String(Address()) + "\r\n";
+    output += "Visibility     | " + String(IsPublic() ? "public" : "private") + "\r\n";
+    if (Owner() != nullptr) output += "Owner          | " + Owner()->Name() + "\r\n";
     output += "Enabled        | " + String(Enabled() ? "true" : "false") + "\r\n";
     output += "Configured     | " + String(Configured() ? "true" : "false") + "\r\n";
     output += "Initialized    | " + String(Initialized() ? "true" : "false") + "\r\n";

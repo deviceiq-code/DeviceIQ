@@ -1,6 +1,7 @@
 #include "MQTTClient.h"
 
 #include "Globals.h"
+#include "components/Blinds.h"
 #include "components/Button.h"
 #include "components/Relay.h"
 
@@ -131,7 +132,7 @@ void mqttclient::DiscardEvents() {
     while (xQueueReceive(pEventQueue, &event, 0) == pdTRUE) {}
 }
 void mqttclient::ProcessEvent(const ComponentEvent& event) {
-    if (event.source == nullptr || !ValidTopicSegment(event.source->Name())) return;
+    if (event.source == nullptr || !event.source->IsPublic() || !ValidTopicSegment(event.source->Name())) return;
 
     String eventName;
     if (event.source->ResolveEvent(event.code, eventName)) {
@@ -148,6 +149,8 @@ void mqttclient::ProcessEvent(const ComponentEvent& event) {
         PublishComponentState(*event.source);
     } else if (event.source->Class() == component::Classes::Button &&
         (event.code == button::EventCodes::Pressed || event.code == button::EventCodes::Released)) {
+        PublishComponentState(*event.source);
+    } else if (event.source->Class() == component::Classes::Blinds && event.code == blinds::EventCodes::Changed) {
         PublishComponentState(*event.source);
     }
 }
@@ -173,7 +176,7 @@ void mqttclient::HandleMessage(const String& topic, const uint8_t* payload, size
     if (!direction.equalsIgnoreCase("Set") || property.isEmpty()) return;
 
     component* target = ComponentController.FindByName(componentName);
-    if (target == nullptr) {
+    if (target == nullptr || !target->IsPublic()) {
         Logger.Log("MQTT target component not found: " + componentName, logger::LogLevels::Warning);
         return;
     }
@@ -191,7 +194,7 @@ void mqttclient::HandleMessage(const String& topic, const uint8_t* payload, size
 void mqttclient::PublishAvailability(const char* state) {
     for (size_t index = 0; index < ComponentController.Count(); ++index) {
         const component* item = ComponentController.At(index);
-        if (item != nullptr && ValidTopicSegment(item->Name())) {
+        if (item != nullptr && item->IsPublic() && ValidTopicSegment(item->Name())) {
             (void)Publish(pHostname + "/" + item->Name() + "/Online", state, true);
         }
     }
@@ -200,7 +203,7 @@ void mqttclient::PublishAvailability(const char* state) {
 void mqttclient::PublishAllStates() {
     for (size_t index = 0; index < ComponentController.Count(); ++index) {
         const component* item = ComponentController.At(index);
-        if (item != nullptr) PublishComponentState(*item);
+        if (item != nullptr && item->IsPublic()) PublishComponentState(*item);
     }
 }
 
@@ -212,6 +215,12 @@ void mqttclient::PublishComponentState(const component& item) {
     } else if (item.Class() == component::Classes::Button) {
         const button& value = static_cast<const button&>(item);
         (void)Publish(ComponentTopic(item, "Get", "state"), value.State() ? "pressed" : "released", true);
+    } else if (item.Class() == component::Classes::Blinds) {
+        const blinds& value = static_cast<const blinds&>(item);
+        const char* state = value.State() != blinds::Motion::Stopped ? blinds::MotionName(value.State()) :
+            value.Position() == 0 ? "closed" : value.Position() == 100 ? "open" : "stopped";
+        (void)Publish(ComponentTopic(item, "Get", "state"), state, true);
+        (void)Publish(ComponentTopic(item, "Get", "position"), String(value.Position()), true);
     }
 }
 
@@ -219,9 +228,10 @@ void mqttclient::PublishDiscovery() {
     if (!pDiscoveryEnabled || !pClient.connected()) return;
     for (size_t index = 0; index < ComponentController.Count(); ++index) {
         const component* item = ComponentController.At(index);
-        if (item == nullptr || !ValidTopicSegment(item->Name())) continue;
+        if (item == nullptr || !item->IsPublic() || !ValidTopicSegment(item->Name())) continue;
         if (item->Class() == component::Classes::Relay) PublishRelayDiscovery(*item);
         else if (item->Class() == component::Classes::Button) PublishButtonDiscovery(*item);
+        else if (item->Class() == component::Classes::Blinds) PublishBlindsDiscovery(*item);
     }
 }
 
@@ -268,6 +278,31 @@ void mqttclient::PublishButtonDiscovery(const component& item) {
     String eventPayload;
     if (serializeJson(eventDocument, eventPayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/event/" + eventUnique + "/config", eventPayload, true);
+    }
+}
+
+void mqttclient::PublishBlindsDiscovery(const component& item) {
+    const String unique = UniqueID(item, "cover");
+    JsonDocument document;
+    AddDiscoveryMetadata(document, item, unique);
+    document["dev_cla"] = "blind";
+    document["cmd_t"] = ComponentTopic(item, "Set", "state");
+    document["stat_t"] = ComponentTopic(item, "Get", "state");
+    document["pos_t"] = ComponentTopic(item, "Get", "position");
+    document["set_pos_t"] = ComponentTopic(item, "Set", "position");
+    document["pos_clsd"] = 0;
+    document["pos_open"] = 100;
+    document["pl_open"] = "open";
+    document["pl_cls"] = "close";
+    document["pl_stop"] = "stop";
+    document["stat_clsd"] = "closed";
+    document["stat_open"] = "open";
+    document["stat_opening"] = "opening";
+    document["stat_closing"] = "closing";
+    document["stat_stopped"] = "stopped";
+    String payload;
+    if (serializeJson(document, payload) > 0) {
+        (void)Publish(pDiscoveryPrefix + "/cover/" + unique + "/config", payload, true);
     }
 }
 

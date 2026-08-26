@@ -9,11 +9,17 @@
 class component;
 
 struct ComponentCommand {
+    enum class Types : uint8_t {
+        Command,
+        TriggerEvent
+    };
+
     static constexpr uint16_t Enable = 0;
     static constexpr uint16_t Disable = 1;
     static constexpr uint16_t CustomCommandBase = 0x0100;
 
     component* target = nullptr;
+    Types type = Types::Command;
     uint16_t code = 0;
     int32_t value = 0;
 };
@@ -84,12 +90,15 @@ class component {
         [[nodiscard]] bool StateChanged() const noexcept { return pStateChanged.load(std::memory_order_acquire); }
         [[nodiscard]] Buses Bus() const noexcept { return pBus; }
         [[nodiscard]] uint8_t Address() const noexcept { return pAddress; }
+        [[nodiscard]] const component* Owner() const noexcept { return pOwner; }
+        [[nodiscard]] bool IsPublic() const noexcept { return pOwner == nullptr; }
         [[nodiscard]] virtual Classes Class() const noexcept { return Classes::Base; }
         [[nodiscard]] virtual bool HasPersistentState() const noexcept { return false; }
 
         [[nodiscard]] bool ResolveEvent(const String& name, uint16_t& code) const noexcept;
         [[nodiscard]] bool ResolveEvent(uint16_t code, String& name) const noexcept;
         [[nodiscard]] bool ResolveCommand(const String& name, uint16_t& code) const noexcept;
+        [[nodiscard]] bool TriggerEvent(const String& name, int32_t value = 0, TickType_t timeout = 0) noexcept;
         [[nodiscard]] virtual ComponentPropertyResult SetProperty(const String& name, const String& value, TickType_t timeout = 0) noexcept;
         virtual void GetInfo(String& output) const;
         [[nodiscard]] static const char* ClassName(Classes value) noexcept;
@@ -105,6 +114,7 @@ class component {
         // Called only by ComponentManager's task. Implementations must not block.
         virtual void Control(TickType_t now) { (void)now; }
         virtual void HandleCommand(const ComponentCommand& command) { (void)command; }
+        virtual void HandleMemberEvent(const ComponentEvent& event) { (void)event; }
 
         virtual const ComponentDescriptor* EventDescriptors(size_t& count) const noexcept;
         virtual const ComponentDescriptor* CommandDescriptors(size_t& count) const noexcept;
@@ -122,6 +132,7 @@ class component {
         friend class ComponentManager;
 
         void SetRuntime(ComponentRuntime* runtime) noexcept { pRuntime = runtime; }
+        void SetOwner(component* owner) noexcept { pOwner = owner; }
         [[nodiscard]] bool SetEnabled(bool value) noexcept {
             const bool previous = pEnabled.exchange(value, std::memory_order_relaxed);
             if (previous != value) MarkPropertyChanged();
@@ -142,4 +153,5 @@ class component {
         const Buses pBus;
         const uint8_t pAddress;
         ComponentRuntime* pRuntime = nullptr;
+        component* pOwner = nullptr;
 };

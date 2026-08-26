@@ -104,6 +104,86 @@
                 "DoubleClicked": "log(%NAME% doubleclicked)",
                 "TripleClicked": "log(%NAME% tripleclicked)"
             }
+        },
+        {
+            "Name": "BedroomBlindRelayUp",
+            "ID": 3,
+            "Class": "Relay",
+            "Bus": "Onboard",
+            "Address": 4,
+            "Properties": {
+                "Enabled": true,
+                "State": false
+            },
+            "Type": "NormallyOpen",
+            "DriveMode": "ActiveHigh",
+            "Events": {}
+        },
+        {
+            "Name": "BedroomBlindRelayDown",
+            "ID": 4,
+            "Class": "Relay",
+            "Bus": "Onboard",
+            "Address": 5,
+            "Properties": {
+                "Enabled": true,
+                "State": false
+            },
+            "Type": "NormallyOpen",
+            "DriveMode": "ActiveHigh",
+            "Events": {}
+        },
+        {
+            "Name": "BedroomBlindButtonUp",
+            "ID": 5,
+            "Class": "Button",
+            "Bus": "Onboard",
+            "Address": 6,
+            "Properties": {
+                "Enabled": true
+            },
+            "ActiveLevel": "Low",
+            "InputMode": "PullUp",
+            "DebounceTimeMs": 50,
+            "LongClickTimeMs": 1000,
+            "MultiClickTimeMs": 400,
+            "Events": {}
+        },
+        {
+            "Name": "BedroomBlindButtonDown",
+            "ID": 6,
+            "Class": "Button",
+            "Bus": "Onboard",
+            "Address": 7,
+            "Properties": {
+                "Enabled": true
+            },
+            "ActiveLevel": "Low",
+            "InputMode": "PullUp",
+            "DebounceTimeMs": 50,
+            "LongClickTimeMs": 1000,
+            "MultiClickTimeMs": 400,
+            "Events": {}
+        },
+        {
+            "Name": "BedroomBlinds",
+            "ID": 7,
+            "Class": "Blinds",
+            "Bus": "Group",
+            "Relay Up": "BedroomBlindRelayUp",
+            "Relay Down": "BedroomBlindRelayDown",
+            "Button Up": "BedroomBlindButtonUp",
+            "Button Down": "BedroomBlindButtonDown",
+            "StepTimeMs": 250,
+            "ReversalDelayMs": 250,
+            "Properties": {
+                "Enabled": true,
+                "Position": 0
+            },
+            "Events": {
+                "Opened": "log(%NAME% opened)",
+                "Closed": "log(%NAME% closed)"
+            }
         }
     ],
     "Users": [

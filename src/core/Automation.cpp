@@ -124,10 +124,12 @@ component* automation::ResolveComponent(const String& selector) noexcept {
         char* end = nullptr;
         const long id = std::strtol(selector.c_str() + 1, &end, 10);
         if (end == selector.c_str() + 1 || *end != '\0' || id < INT16_MIN || id > INT16_MAX) return nullptr;
-        return ComponentController.FindByID(static_cast<int16_t>(id));
+        component* result = ComponentController.FindByID(static_cast<int16_t>(id));
+        return result != nullptr && result->IsPublic() ? result : nullptr;
     }
 
-    return ComponentController.FindByName(selector);
+    component* result = ComponentController.FindByName(selector);
+    return result != nullptr && result->IsPublic() ? result : nullptr;
 }
 
 const char* automation::PropertyResultName(ComponentPropertyResult result) noexcept {

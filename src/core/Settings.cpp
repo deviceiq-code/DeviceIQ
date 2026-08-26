@@ -1,5 +1,6 @@
 #include "Settings.h"
 #include "Globals.h"
+#include "components/Blinds.h"
 #include "components/Button.h"
 
 #include <ArduinoJson.h>
@@ -1326,7 +1327,7 @@ bool settings::Save(const String& configfilename) const noexcept {
 
             for (size_t index = 0; index < ComponentController.Count(); ++index) {
                 const component* runtimeComponent = ComponentController.At(index);
-                if (runtimeComponent == nullptr || !runtimeComponent->HasPersistentState()) continue;
+                if (runtimeComponent == nullptr || !runtimeComponent->IsPublic() || !runtimeComponent->HasPersistentState()) continue;
 
                 for (JsonObject configured : components) {
                     if ((configured["ID"] | INT32_MIN) != runtimeComponent->ID()) continue;
@@ -1334,6 +1335,8 @@ bool settings::Save(const String& configfilename) const noexcept {
                     JsonObject properties = configured["Properties"].to<JsonObject>();
                     if (runtimeComponent->Class() == component::Classes::Relay) {
                         properties["State"] = static_cast<const relay&>(*runtimeComponent).State();
+                    } else if (runtimeComponent->Class() == component::Classes::Blinds) {
+                        properties["Position"] = static_cast<const blinds&>(*runtimeComponent).Position();
                     }
                     break;
                 }
@@ -1358,7 +1361,7 @@ bool settings::Save(const String& configfilename) const noexcept {
                     const relay& relayComponent = static_cast<const relay&>(*source);
                     item["Type"] = relayComponent.Type() == relay::RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed";
                     item["DriveMode"] = relayComponent.DriveMode() == relay::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
-                    properties["State"] = relayComponent.State();
+                    properties["State"] = source->IsPublic() ? relayComponent.State() : false;
                 } else if (source->Class() == component::Classes::Button) {
                     const button& buttonComponent = static_cast<const button&>(*source);
                     item["ActiveLevel"] = buttonComponent.ActiveLevel() == button::ActiveLevels::High ? "High" : "Low";
@@ -1366,6 +1369,16 @@ bool settings::Save(const String& configfilename) const noexcept {
                     item["DebounceTimeMs"] = buttonComponent.DebounceTime();
                     item["LongClickTimeMs"] = buttonComponent.LongClickTime();
                     item["MultiClickTimeMs"] = buttonComponent.MultiClickTime();
+                } else if (source->Class() == component::Classes::Blinds) {
+                    const blinds& blindsComponent = static_cast<const blinds&>(*source);
+                    item.remove("Address");
+                    item["Relay Up"] = blindsComponent.RelayUp().Name();
+                    item["Relay Down"] = blindsComponent.RelayDown().Name();
+                    if (blindsComponent.ButtonUp() != nullptr) item["Button Up"] = blindsComponent.ButtonUp()->Name();
+                    if (blindsComponent.ButtonDown() != nullptr) item["Button Down"] = blindsComponent.ButtonDown()->Name();
+                    item["StepTimeMs"] = blindsComponent.StepTime();
+                    item["ReversalDelayMs"] = blindsComponent.ReversalDelay();
+                    properties["Position"] = blindsComponent.Position();
                 }
             }
         }

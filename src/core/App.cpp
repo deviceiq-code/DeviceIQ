@@ -351,13 +351,14 @@ bool app::RegisterTelnetCommands() {
         "comp list\r\n"
         "comp status [component_name|#component_id]\r\n"
         "comp set [component_name|#component_id] property=value\r\n"
+        "comp trigger [component_name|#component_id] event [value=integer]\r\n"
         "comp rename [component_name|#component_id] name=newname\r\n"
         "comp remove [component_name|#component_id]\r\n"
-        "comp add relay|button name=value [id=value] address=value ...",
+        "comp add relay|button|blinds name=value [id=value] ...",
         [](WiFiClient& client, String* parameters) {
             String subcommand = parameters[0];
             subcommand.toLowerCase();
-            const bool mutation = subcommand == "set" || subcommand == "rename" ||
+            const bool mutation = subcommand == "set" || subcommand == "trigger" || subcommand == "rename" ||
                 subcommand == "remove" || subcommand == "add";
 
             if (mutation && !TelnetServer.IsSessionAdmin(client)) {

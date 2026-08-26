@@ -20,6 +20,7 @@ class ComponentManager final : private ComponentRuntime {
         // Registration is allowed only before Start().
         [[nodiscard]] bool Register(component& component) noexcept;
         [[nodiscard]] bool Register(std::unique_ptr<component> component) noexcept;
+        [[nodiscard]] bool AssignOwner(component& member, component& owner) noexcept;
         [[nodiscard]] bool Start() noexcept;
 
         [[nodiscard]] bool SendCommand(const ComponentCommand& command, TickType_t timeout = 0) noexcept override;
