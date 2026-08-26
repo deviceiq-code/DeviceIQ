@@ -234,6 +234,28 @@ void settings::network::Passphrase(String value) noexcept {
     pPassphrase = String();
 }
 
+void settings::network::FallbackAPSSID(String value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    value.trim();
+    stripControlChars(value);
+    if (value.length() > 32) value.remove(32);
+    pFallbackAPSSID = std::move(value);
+}
+
+void settings::network::FallbackAPPassword(String value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    value.trim();
+
+    if (value.isEmpty() || (value.length() >= 8 && value.length() <= 63 && isPrintableASCII(value))) {
+        pFallbackAPPassword = std::move(value);
+        return;
+    }
+
+    pFallbackAPPassword = Defaults.Network.FallbackAPPassword;
+}
+
 void settings::update::ManifestURL(String value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
@@ -501,8 +523,13 @@ void settings::LoadDefaults() {
     Network.SSID(Defaults.Network.SSID);
     Network.Passphrase(Defaults.Network.Passphrase);
     Network.ConnectionTimeout(Defaults.Network.ConnectionTimeout);
-    Network.OnlineChecking(Defaults.Network.OnlineChecking);
-    Network.OnlineCheckingTimeout(Defaults.Network.OnlineCheckingTimeout);
+    Network.ReconnectEnabled(Defaults.Network.ReconnectEnabled);
+    Network.ReconnectInitialInterval(Defaults.Network.ReconnectInitialInterval);
+    Network.ReconnectMaximumInterval(Defaults.Network.ReconnectMaximumInterval);
+    Network.FallbackAPEnabled(Defaults.Network.FallbackAPEnabled);
+    Network.FallbackAPSSID(Defaults.Network.FallbackAPSSID);
+    Network.FallbackAPPassword(Defaults.Network.FallbackAPPassword);
+    Network.FallbackAPRetention(Defaults.Network.FallbackAPRetention);
 
     // Update
     Update.ManifestURL(Defaults.Update.ManifestURL);
@@ -620,8 +647,13 @@ bool settings::Load(const String& configfilename) noexcept {
             Network.SSID(String(net["SSID"] | Defaults.Network.SSID));
             Network.Passphrase(String(net["Passphrase"] | Defaults.Network.Passphrase));
             Network.ConnectionTimeout((uint16_t)(net["Connection Timeout"] | Defaults.Network.ConnectionTimeout));
-            Network.OnlineChecking((uint16_t)(net["Online Checking"] | Defaults.Network.OnlineChecking));
-            Network.OnlineCheckingTimeout((uint16_t)(net["Online Checking Timeout"] | Defaults.Network.OnlineCheckingTimeout));
+            Network.ReconnectEnabled((bool)(net["Reconnect Enabled"] | (net["Online Checking"] | Defaults.Network.ReconnectEnabled)));
+            Network.ReconnectInitialInterval((uint16_t)(net["Reconnect Initial Interval"] | (net["Online Checking Timeout"] | Defaults.Network.ReconnectInitialInterval)));
+            Network.ReconnectMaximumInterval((uint16_t)(net["Reconnect Maximum Interval"] | Defaults.Network.ReconnectMaximumInterval));
+            Network.FallbackAPEnabled((bool)(net["Fallback AP Enabled"] | Defaults.Network.FallbackAPEnabled));
+            Network.FallbackAPSSID(String(net["Fallback AP SSID"] | Defaults.Network.FallbackAPSSID));
+            Network.FallbackAPPassword(String(net["Fallback AP Password"] | Defaults.Network.FallbackAPPassword));
+            Network.FallbackAPRetention((uint16_t)(net["Fallback AP Retention"] | Defaults.Network.FallbackAPRetention));
         }
 
         // Update
@@ -1213,8 +1245,13 @@ bool settings::Save(const String& configfilename) const noexcept {
             net["SSID"] = Network.SSID();
             net["Passphrase"] = Network.Passphrase();
             net["Connection Timeout"] = Network.ConnectionTimeout();
-            net["Online Checking"] = Network.OnlineChecking();
-            net["Online Checking Timeout"] = Network.OnlineCheckingTimeout();
+            net["Reconnect Enabled"] = Network.ReconnectEnabled();
+            net["Reconnect Initial Interval"] = Network.ReconnectInitialInterval();
+            net["Reconnect Maximum Interval"] = Network.ReconnectMaximumInterval();
+            net["Fallback AP Enabled"] = Network.FallbackAPEnabled();
+            net["Fallback AP SSID"] = Network.FallbackAPSSID();
+            net["Fallback AP Password"] = Network.FallbackAPPassword();
+            net["Fallback AP Retention"] = Network.FallbackAPRetention();
         }
 
         // Update

@@ -32,8 +32,13 @@ struct defaults {
         const char* SSID = "IOT-2";
         const char* Passphrase = "1921682GenesisIOT-2";
         const uint16_t ConnectionTimeout = 30;
-        const bool OnlineChecking = true;
-        const uint16_t OnlineCheckingTimeout = 10;
+        const bool ReconnectEnabled = true;
+        const uint16_t ReconnectInitialInterval = 5;
+        const uint16_t ReconnectMaximumInterval = 60;
+        const bool FallbackAPEnabled = true;
+        const char* FallbackAPSSID = ""; // Empty uses the device hostname.
+        const char* FallbackAPPassword = "DeviceIQ-Setup";
+        const uint16_t FallbackAPRetention = 300;
     } Network;
     struct update {
         const char* ManifestURL = "https://server.dts-network.com:8081/update-dpk.json";

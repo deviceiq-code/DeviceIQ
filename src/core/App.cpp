@@ -73,13 +73,18 @@ bool App::InitializeLogger() {
 
 bool App::InitializeNetwork() {
     Network.ConnectionTimeout(Settings.Network.ConnectionTimeout());
-    Network.OnlineChecking(Settings.Network.OnlineChecking());
-    Network.OnlineCheckingTimeout(Settings.Network.OnlineCheckingTimeout());
+    Network.ReconnectEnabled(Settings.Network.ReconnectEnabled());
+    Network.ReconnectInitialInterval(Settings.Network.ReconnectInitialInterval());
+    Network.ReconnectMaximumInterval(Settings.Network.ReconnectMaximumInterval());
+    Network.FallbackAPEnabled(Settings.Network.FallbackAPEnabled());
+    Network.FallbackAPRetention(Settings.Network.FallbackAPRetention());
     Network.DHCP_Client(Settings.Network.DHCPClient());
     Network.SSID(Settings.Network.SSID());
     const bool stationPasswordValid = Network.Passphrase(Settings.Network.Passphrase());
     Network.Hostname(Settings.Network.Hostname());
-    Network.SoftAP_SSID(Settings.Network.Hostname());
+    const String fallbackSSID = Settings.Network.FallbackAPSSID();
+    Network.SoftAP_SSID(fallbackSSID.isEmpty() ? Settings.Network.Hostname() : fallbackSSID);
+    const bool fallbackPasswordValid = Network.SoftAP_Password(Settings.Network.FallbackAPPassword());
     Network.IP_Address(Settings.Network.IP_Address());
     Network.Netmask(Settings.Network.Netmask());
     Network.Gateway(Settings.Network.Gateway());
@@ -88,6 +93,9 @@ bool App::InitializeNetwork() {
 
     if (!stationPasswordValid) {
         Logger.Log("Invalid WiFi passphrase", logger::LogLevels::Error);
+    }
+    if (!fallbackPasswordValid) {
+        Logger.Log("Invalid fallback SoftAP password", logger::LogLevels::Error);
     }
 
     Network.OnModeChanged(LogNetworkStatus);

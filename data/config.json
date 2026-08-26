@@ -18,8 +18,13 @@
         "SSID": "IOT-2",
         "Passphrase": "1921682GenesisIOT-2",
         "Connection Timeout": 30,
-        "Online Checking": true,
-        "Online Checking Timeout": 10
+        "Reconnect Enabled": true,
+        "Reconnect Initial Interval": 5,
+        "Reconnect Maximum Interval": 60,
+        "Fallback AP Enabled": true,
+        "Fallback AP SSID": "",
+        "Fallback AP Password": "DeviceIQ-Setup",
+        "Fallback AP Retention": 300
     },
     "Update": {
         "Manifest URL": "https://server.dts-network.com:8081/update-dpk.json",

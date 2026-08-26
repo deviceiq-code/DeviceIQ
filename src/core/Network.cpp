@@ -47,33 +47,75 @@ uint16_t network::ConnectionTimeout() const noexcept {
     return lock.IsLocked() ? pConnectionTimeout : 0;
 }
 
-void network::OnlineChecking(bool value) noexcept {
+void network::ReconnectEnabled(bool value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
 
-    pOnlineChecking = value;
+    pReconnectEnabled = value;
 
     Notify(NotificationBits::ControlChanged);
 }
 
-bool network::OnlineChecking() const noexcept {
+bool network::ReconnectEnabled() const noexcept {
     Lock lock(pMutex);
 
-    return lock.IsLocked() && pOnlineChecking;
+    return lock.IsLocked() && pReconnectEnabled;
 }
 
-void network::OnlineCheckingTimeout(uint16_t value) noexcept {
+void network::ReconnectInitialInterval(uint16_t value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
-    pOnlineCheckingTimeout = value == 0 ? 1 : value;
+    pReconnectInitialInterval = value == 0 ? 1 : value;
 
     Notify(NotificationBits::ControlChanged);
 }
 
-uint16_t network::OnlineCheckingTimeout() const noexcept {
+uint16_t network::ReconnectInitialInterval() const noexcept {
     Lock lock(pMutex);
 
-    return lock.IsLocked() ? pOnlineCheckingTimeout : 0;
+    return lock.IsLocked() ? pReconnectInitialInterval : 0;
+}
+
+void network::ReconnectMaximumInterval(uint16_t value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    pReconnectMaximumInterval = value == 0 ? 1 : value;
+
+    Notify(NotificationBits::ControlChanged);
+}
+
+uint16_t network::ReconnectMaximumInterval() const noexcept {
+    Lock lock(pMutex);
+
+    return lock.IsLocked() ? pReconnectMaximumInterval : 0;
+}
+
+void network::FallbackAPEnabled(bool value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    pFallbackAPEnabled = value;
+
+    Notify(NotificationBits::ControlChanged);
+}
+
+bool network::FallbackAPEnabled() const noexcept {
+    Lock lock(pMutex);
+
+    return lock.IsLocked() && pFallbackAPEnabled;
+}
+
+void network::FallbackAPRetention(uint16_t value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    pFallbackAPRetention = value;
+
+    Notify(NotificationBits::ControlChanged);
+}
+
+uint16_t network::FallbackAPRetention() const noexcept {
+    Lock lock(pMutex);
+
+    return lock.IsLocked() ? pFallbackAPRetention : 0;
 }
 
 void network::DHCP_Client(bool value) noexcept {
@@ -364,13 +406,16 @@ TickType_t network::SecondsToTicks(uint16_t seconds) noexcept {
     return static_cast<TickType_t>(ticks);
 }
 
+bool network::TimeReached(TickType_t now, TickType_t target) noexcept {
+    return static_cast<int32_t>(now - target) >= 0;
+}
+
 void network::TaskEntry(void* parameter) {
     static_cast<network*>(parameter)->Task();
 }
 
 void network::Task() {
     pLastModeCheck = xTaskGetTickCount();
-    pLastOnlineCheck = pLastModeCheck;
     pPendingNotifications = NotificationBits::ConnectRequested;
 
     while (true) {
@@ -381,12 +426,10 @@ void network::Task() {
         if ((pPendingNotifications & (NotificationBits::ConnectRequested | NotificationBits::ConfigurationChanged)) != 0) {
             pPendingNotifications &= ~(NotificationBits::ConnectRequested | NotificationBits::ConfigurationChanged);
             ConnectInternal();
-            pLastOnlineCheck = xTaskGetTickCount();
         }
 
         if ((pPendingNotifications & NotificationBits::ControlChanged) != 0) {
             pPendingNotifications &= ~NotificationBits::ControlChanged;
-            pLastOnlineCheck = xTaskGetTickCount();
         }
 
         if ((pPendingNotifications & NotificationBits::WiFiEventReceived) != 0) {
@@ -400,75 +443,116 @@ void network::Task() {
 
 void network::Control() {
     const TickType_t now = xTaskGetTickCount();
+    const Configuration configuration = ConfigurationSnapshot();
+    const bool stationConnected = WiFi.status() == WL_CONNECTED;
+
+    if (!configuration.fallbackAPEnabled && pSoftAPActive) StopSoftAP();
 
     if ((now - pLastModeCheck) >= pdMS_TO_TICKS(MODE_CHECK_INTERVAL_MS)) {
         pLastModeCheck = now;
         UpdateConnectionState();
     }
 
-    bool shouldReconnect = false;
-
-    {
-        Lock lock(pMutex);
-        if (!lock.IsLocked()) return;
-
-        if (!pOnlineChecking) {
-            pLastOnlineCheck = now;
-            return;
+    if (stationConnected) {
+        if (!pStationConnected) {
+            pStationConnected = true;
+            pStationConnectionPending = false;
+            pStationConnectedAt = now;
+            pCurrentReconnectInterval = configuration.reconnectInitialInterval;
+            UpdateConnectionState();
         }
 
-        if ((now - pLastOnlineCheck) >= SecondsToTicks(pOnlineCheckingTimeout)) {
-            pLastOnlineCheck = now;
-            shouldReconnect = pConnectionMode != APMode::WifiClient;
+        if (pSoftAPActive &&
+            (configuration.fallbackAPRetention == 0 ||
+             (now - pStationConnectedAt) >= SecondsToTicks(configuration.fallbackAPRetention))) {
+            StopSoftAP();
         }
+        return;
     }
 
-    if (shouldReconnect) ConnectInternal();
+    if (pStationConnected) {
+        pStationConnected = false;
+        pStationConnectionPending = false;
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        pNextReconnectAt = now;
+        UpdateConnectionState();
+    }
+
+    if (pStationConnectionPending) {
+        if ((now - pStationConnectionStartedAt) < SecondsToTicks(configuration.connectionTimeout)) return;
+
+        WiFi.disconnect(false, false);
+        pStationConnectionPending = false;
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        ScheduleReconnect(configuration, now);
+        UpdateConnectionState();
+        return;
+    }
+
+    if (configuration.ssid.isEmpty()) {
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        return;
+    }
+
+    if (!configuration.reconnectEnabled) {
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        return;
+    }
+
+    if (TimeReached(now, pNextReconnectAt) && !BeginStationConnection(configuration)) {
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        ScheduleReconnect(configuration, now);
+    }
 }
 
 network::APMode network::ConnectInternal() {
     const Configuration configuration = ConfigurationSnapshot();
+    WiFi.disconnect(true, false);
+    pStationConnected = false;
+    pStationConnectionPending = false;
+    pSoftAPActive = false;
+    pCurrentReconnectInterval = configuration.reconnectInitialInterval;
+    pNextReconnectAt = xTaskGetTickCount();
 
-    if (configuration.ssid.isEmpty()) return StartSoftAP(configuration);
+    if (configuration.ssid.isEmpty()) {
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        UpdateConnectionState();
+        return ConnectionMode();
+    }
 
-    WiFi.mode(WIFI_STA);
+    if (!BeginStationConnection(configuration)) {
+        if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
+        ScheduleReconnect(configuration, xTaskGetTickCount());
+    }
+
+    UpdateConnectionState();
+    return ConnectionMode();
+}
+
+bool network::BeginStationConnection(const Configuration& configuration) {
+    if (configuration.ssid.isEmpty()) return false;
+
+    WiFi.mode(pSoftAPActive ? WIFI_AP_STA : WIFI_STA);
     WiFi.setHostname(configuration.hostname.c_str());
 
-    const bool networkConfigured = configuration.dhcpClient ? WiFi.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0)) : WiFi.config(configuration.ipAddress, configuration.gateway, configuration.netmask, configuration.dns[0], configuration.dns[1]);
-
-    if (!networkConfigured) return StartSoftAP(configuration);
+    const bool configured = configuration.dhcpClient
+        ? WiFi.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0))
+        : WiFi.config(configuration.ipAddress, configuration.gateway, configuration.netmask, configuration.dns[0], configuration.dns[1]);
+    if (!configured) return false;
 
     WiFi.begin(
         configuration.ssid.c_str(),
         configuration.passphrase.isEmpty() ? nullptr : configuration.passphrase.c_str()
     );
-
-    const TickType_t startedAt = xTaskGetTickCount();
-    const TickType_t timeout = SecondsToTicks(configuration.connectionTimeout);
-
-    while (WiFi.status() != WL_CONNECTED && (xTaskGetTickCount() - startedAt) < timeout) {
-        uint32_t notifications = 0;
-        xTaskNotifyWait(0, 0xFFFFFFFFUL, &notifications, pdMS_TO_TICKS(TASK_POLL_INTERVAL_MS));
-        pPendingNotifications |= notifications;
-
-        if ((notifications & (NotificationBits::ConnectRequested | NotificationBits::ConfigurationChanged)) != 0) {
-            WiFi.disconnect(true, false);
-            UpdateConnectionState();
-            return APMode::Offline;
-        }
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-        UpdateConnectionState();
-        return APMode::WifiClient;
-    }
-
-    return StartSoftAP(configuration);
+    pStationConnectionStartedAt = xTaskGetTickCount();
+    pStationConnectionPending = true;
+    return true;
 }
 
-network::APMode network::StartSoftAP(const Configuration& configuration) {
-    WiFi.disconnect(true, false);
-    WiFi.mode(WIFI_AP);
+bool network::StartSoftAP(const Configuration& configuration) {
+    if (pSoftAPActive && (WiFi.getMode() & WIFI_MODE_AP) != 0) return true;
+
+    WiFi.mode(configuration.ssid.isEmpty() ? WIFI_AP : WIFI_AP_STA);
 
     const String ssid = configuration.softAPSSID.isEmpty() ? (configuration.hostname.isEmpty() ? String("DeviceIQ") : configuration.hostname) : configuration.softAPSSID;
 
@@ -478,10 +562,31 @@ network::APMode network::StartSoftAP(const Configuration& configuration) {
         configuration.softAPPassword.isEmpty() ? nullptr : configuration.softAPPassword.c_str()
     );
 
-    if (!started) WiFi.mode(WIFI_OFF);
-
+    pSoftAPActive = started;
+    if (!started) WiFi.mode(configuration.ssid.isEmpty() ? WIFI_OFF : WIFI_STA);
     UpdateConnectionState();
-    return started ? APMode::SoftAP : APMode::Offline;
+    return started;
+}
+
+void network::StopSoftAP() {
+    if (!pSoftAPActive) return;
+    WiFi.softAPdisconnect(false);
+    WiFi.mode(WIFI_STA);
+    pSoftAPActive = false;
+    UpdateConnectionState();
+}
+
+void network::ScheduleReconnect(const Configuration& configuration, TickType_t now) {
+    const uint16_t initialInterval = configuration.reconnectInitialInterval == 0 ? 1 : configuration.reconnectInitialInterval;
+    const uint16_t maximumInterval = configuration.reconnectMaximumInterval < initialInterval
+        ? initialInterval
+        : configuration.reconnectMaximumInterval;
+
+    if (pCurrentReconnectInterval < initialInterval) pCurrentReconnectInterval = initialInterval;
+    pNextReconnectAt = now + SecondsToTicks(pCurrentReconnectInterval);
+
+    const uint32_t doubled = static_cast<uint32_t>(pCurrentReconnectInterval) * 2U;
+    pCurrentReconnectInterval = static_cast<uint16_t>(doubled > maximumInterval ? maximumInterval : doubled);
 }
 
 void network::UpdateConnectionState() {
@@ -537,5 +642,22 @@ network::Configuration network::ConfigurationSnapshot() const {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return Configuration{};
 
-    return Configuration{pConnectionTimeout, pOnlineChecking, pOnlineCheckingTimeout, pDHCP_Client, pSSID, pPassphrase, pSoftAP_SSID, pSoftAP_Password, pHostname, pIP_Address, pNetmask, pGateway, {pDNS_Server[0], pDNS_Server[1]}};
+    return Configuration{
+        pConnectionTimeout,
+        pReconnectEnabled,
+        pReconnectInitialInterval,
+        pReconnectMaximumInterval,
+        pFallbackAPEnabled,
+        pFallbackAPRetention,
+        pDHCP_Client,
+        pSSID,
+        pPassphrase,
+        pSoftAP_SSID,
+        pSoftAP_Password,
+        pHostname,
+        pIP_Address,
+        pNetmask,
+        pGateway,
+        {pDNS_Server[0], pDNS_Server[1]}
+    };
 }

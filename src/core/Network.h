@@ -24,10 +24,16 @@ class network {
         void ConnectionTimeout(uint16_t value) noexcept;
         [[nodiscard]] uint16_t ConnectionTimeout() const noexcept;
 
-        void OnlineChecking(bool value) noexcept;
-        [[nodiscard]] bool OnlineChecking() const noexcept;
-        void OnlineCheckingTimeout(uint16_t value) noexcept;
-        [[nodiscard]] uint16_t OnlineCheckingTimeout() const noexcept;
+        void ReconnectEnabled(bool value) noexcept;
+        [[nodiscard]] bool ReconnectEnabled() const noexcept;
+        void ReconnectInitialInterval(uint16_t value) noexcept;
+        [[nodiscard]] uint16_t ReconnectInitialInterval() const noexcept;
+        void ReconnectMaximumInterval(uint16_t value) noexcept;
+        [[nodiscard]] uint16_t ReconnectMaximumInterval() const noexcept;
+        void FallbackAPEnabled(bool value) noexcept;
+        [[nodiscard]] bool FallbackAPEnabled() const noexcept;
+        void FallbackAPRetention(uint16_t value) noexcept;
+        [[nodiscard]] uint16_t FallbackAPRetention() const noexcept;
 
         void DHCP_Client(bool value) noexcept;
         [[nodiscard]] bool DHCP_Client() const noexcept;
@@ -84,8 +90,11 @@ class network {
 
         struct Configuration {
             uint16_t connectionTimeout;
-            bool onlineChecking;
-            uint16_t onlineCheckingTimeout;
+            bool reconnectEnabled;
+            uint16_t reconnectInitialInterval;
+            uint16_t reconnectMaximumInterval;
+            bool fallbackAPEnabled;
+            uint16_t fallbackAPRetention;
             bool dhcpClient;
             String ssid;
             String passphrase;
@@ -111,12 +120,16 @@ class network {
         static bool IsValidStationPassword(const String& value) noexcept;
         static bool IsValidSoftAPPassword(const String& value) noexcept;
         static TickType_t SecondsToTicks(uint16_t seconds) noexcept;
+        static bool TimeReached(TickType_t now, TickType_t target) noexcept;
 
         static void TaskEntry(void* parameter);
         void Task();
         void Control();
         APMode ConnectInternal();
-        APMode StartSoftAP(const Configuration& configuration);
+        bool BeginStationConnection(const Configuration& configuration);
+        bool StartSoftAP(const Configuration& configuration);
+        void StopSoftAP();
+        void ScheduleReconnect(const Configuration& configuration, TickType_t now);
         void UpdateConnectionState();
         void Notify(uint32_t bits) noexcept;
         [[nodiscard]] Configuration ConfigurationSnapshot() const;
@@ -128,12 +141,14 @@ class network {
 
         uint32_t pPendingNotifications = 0;
         TickType_t pLastModeCheck = 0;
-        TickType_t pLastOnlineCheck = 0;
 
         // Configuration. Timeout values are expressed in seconds.
         uint16_t pConnectionTimeout = 30;
-        bool pOnlineChecking = true;
-        uint16_t pOnlineCheckingTimeout = 10;
+        bool pReconnectEnabled = true;
+        uint16_t pReconnectInitialInterval = 5;
+        uint16_t pReconnectMaximumInterval = 60;
+        bool pFallbackAPEnabled = true;
+        uint16_t pFallbackAPRetention = 300;
         bool pDHCP_Client = true;
 
         String pSSID;
@@ -148,6 +163,13 @@ class network {
         IPAddress pDNS_Server[2]{IPAddress(8, 8, 8, 8), IPAddress(8, 8, 4, 4)};
 
         // Runtime state, updated only by the network task.
+        bool pStationConnected = false;
+        bool pStationConnectionPending = false;
+        bool pSoftAPActive = false;
+        TickType_t pStationConnectionStartedAt = 0;
+        TickType_t pStationConnectedAt = 0;
+        TickType_t pNextReconnectAt = 0;
+        uint16_t pCurrentReconnectInterval = 0;
         APMode pConnectionMode = APMode::Offline;
         IPAddress pCurrentIPAddress{0, 0, 0, 0};
         IPAddress pCurrentNetmask{0, 0, 0, 0};

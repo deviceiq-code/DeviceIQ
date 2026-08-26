@@ -62,8 +62,13 @@ class settings {
                 String pSSID;
                 String pPassphrase;
                 uint16_t pConnectionTimeout{};
-                bool pOnlineChecking{};
-                uint16_t pOnlineCheckingTimeout{};
+                bool pReconnectEnabled{};
+                uint16_t pReconnectInitialInterval{};
+                uint16_t pReconnectMaximumInterval{};
+                bool pFallbackAPEnabled{};
+                String pFallbackAPSSID;
+                String pFallbackAPPassword;
+                uint16_t pFallbackAPRetention{};
 
                 static bool isValidNetmask(const IPAddress& mask) noexcept;
                 static void stripControlChars(String& s) noexcept;
@@ -98,11 +103,26 @@ class settings {
                 [[nodiscard]] uint16_t ConnectionTimeout() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pConnectionTimeout : 0; }
                 void ConnectionTimeout(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pConnectionTimeout = (value == 0) ? Defaults.Network.ConnectionTimeout : value; }
 
-                [[nodiscard]] bool OnlineChecking() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pOnlineChecking : false; }
-                void OnlineChecking(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pOnlineChecking = value; }
+                [[nodiscard]] bool ReconnectEnabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pReconnectEnabled : false; }
+                void ReconnectEnabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pReconnectEnabled = value; }
 
-                [[nodiscard]] uint16_t OnlineCheckingTimeout() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pOnlineCheckingTimeout : 0; }
-                void OnlineCheckingTimeout(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pOnlineCheckingTimeout = (value == 0) ? Defaults.Network.OnlineCheckingTimeout : value; }
+                [[nodiscard]] uint16_t ReconnectInitialInterval() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pReconnectInitialInterval : 0; }
+                void ReconnectInitialInterval(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pReconnectInitialInterval = (value == 0) ? Defaults.Network.ReconnectInitialInterval : value; }
+
+                [[nodiscard]] uint16_t ReconnectMaximumInterval() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pReconnectMaximumInterval : 0; }
+                void ReconnectMaximumInterval(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pReconnectMaximumInterval = (value == 0) ? Defaults.Network.ReconnectMaximumInterval : value; }
+
+                [[nodiscard]] bool FallbackAPEnabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFallbackAPEnabled : false; }
+                void FallbackAPEnabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pFallbackAPEnabled = value; }
+
+                [[nodiscard]] String FallbackAPSSID() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFallbackAPSSID : String(); }
+                void FallbackAPSSID(String value) noexcept;
+
+                [[nodiscard]] String FallbackAPPassword() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFallbackAPPassword : String(); }
+                void FallbackAPPassword(String value) noexcept;
+
+                [[nodiscard]] uint16_t FallbackAPRetention() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFallbackAPRetention : 0; }
+                void FallbackAPRetention(uint16_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pFallbackAPRetention = value; }
         } Network;
         class update {
             private:

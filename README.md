@@ -181,6 +181,36 @@ DeviceIQ is fully task-oriented.
 
 Configuration files are stored as JSON.
 
+## Wi-Fi fallback and reconnection
+
+Network connection attempts run independently from components and automations.
+After the initial `Connection Timeout`, DeviceIQ enables its fallback access
+point and continues reconnecting to the configured Wi-Fi in `WIFI_AP_STA`
+mode. The fallback access point therefore remains available while station
+reconnection attempts are in progress.
+
+Reconnect intervals use exponential backoff between `Reconnect Initial
+Interval` and `Reconnect Maximum Interval`. After the station reconnects, the
+fallback access point remains active for `Fallback AP Retention` seconds and
+is then disabled. A value of `0` disables it immediately after reconnection.
+
+```json
+"Network": {
+  "Connection Timeout": 30,
+  "Reconnect Enabled": true,
+  "Reconnect Initial Interval": 5,
+  "Reconnect Maximum Interval": 60,
+  "Fallback AP Enabled": true,
+  "Fallback AP SSID": "",
+  "Fallback AP Password": "DeviceIQ-Setup",
+  "Fallback AP Retention": 300
+}
+```
+
+An empty fallback SSID uses the device hostname. Change the example fallback
+password before deployment. Existing configurations using `Online Checking`
+and `Online Checking Timeout` are still accepted and migrated when saved.
+
 Example:
 
 ```json
