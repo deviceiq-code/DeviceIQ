@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "core/App.h"
 
-App app;
+app App;
 
 void setup() {
     esp_log_level_set("*", ESP_LOG_NONE);
@@ -9,7 +9,7 @@ void setup() {
     Serial.begin(115200);
     Serial.print("Starting DeviceIQ...\r\n\r\n");
 
-    app.Start();
+    App.Start();
 }
 
 void loop() { vTaskDelete(NULL); }

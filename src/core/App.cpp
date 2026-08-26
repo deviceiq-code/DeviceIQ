@@ -5,7 +5,7 @@
 #include "Users.h"
 #include "SystemInfo.h"
 
-void App::Start() {
+void app::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
 
     if (!InitializeFileSystem()) return;
@@ -48,7 +48,7 @@ void App::Start() {
     LogConfigurationStatus(configurationLoaded);
 }
 
-bool App::InitializeFileSystem() {
+bool app::InitializeFileSystem() {
     if (!FileSystem.Start(true)) {
         Serial.println("Error initializing FileSystem object");
         return false;
@@ -57,7 +57,7 @@ bool App::InitializeFileSystem() {
     return true;
 }
 
-bool App::InitializeLogger() {
+bool app::InitializeLogger() {
     Logger.LogLevel(Settings.Log.LogLevel());
     Logger.Endpoint(Settings.Log.Endpoint());
     Logger.SyslogServerHost(Settings.Log.SyslogServerHost());
@@ -71,7 +71,7 @@ bool App::InitializeLogger() {
     return true;
 }
 
-bool App::InitializeNetwork() {
+bool app::InitializeNetwork() {
     Network.ConnectionTimeout(Settings.Network.ConnectionTimeout());
     Network.ReconnectEnabled(Settings.Network.ReconnectEnabled());
     Network.ReconnectInitialInterval(Settings.Network.ReconnectInitialInterval());
@@ -109,7 +109,7 @@ bool App::InitializeNetwork() {
     return true;
 }
 
-bool App::InitializeClock() {
+bool app::InitializeClock() {
     if (!Settings.General.NTPUpdate()) {
         Logger.Log("Date and time: NTP disabled, using local clock", logger::LogLevels::Information);
         return true;
@@ -127,7 +127,7 @@ bool App::InitializeClock() {
     return true;
 }
 
-bool App::InitializeComponents() {
+bool app::InitializeComponents() {
     if (!Settings.InstallComponents()) {
         Logger.Log("Components configuration missing or invalid; using built-in defaults", logger::LogLevels::Warning);
     }
@@ -141,7 +141,7 @@ bool App::InitializeComponents() {
     return true;
 }
 
-bool App::InitializeMQTT() {
+bool app::InitializeMQTT() {
     if (!Settings.MQTT.Enabled()) {
         Logger.Log("MQTT disabled", logger::LogLevels::Information);
         return true;
@@ -156,7 +156,7 @@ bool App::InitializeMQTT() {
     return true;
 }
 
-bool App::InitializeStatePersistence() {
+bool app::InitializeStatePersistence() {
     if (pStatePersistenceTaskHandle != nullptr) return true;
 
     const BaseType_t result = xTaskCreate(
@@ -182,7 +182,7 @@ bool App::InitializeStatePersistence() {
     return true;
 }
 
-bool App::InitializeAutomation() {
+bool app::InitializeAutomation() {
     if (pAutomationTaskHandle != nullptr) return true;
 
     const BaseType_t result = xTaskCreate(
@@ -207,11 +207,11 @@ bool App::InitializeAutomation() {
     return true;
 }
 
-void App::ClockTaskEntry(void* parameter) {
-    static_cast<App*>(parameter)->ClockTask();
+void app::ClockTaskEntry(void* parameter) {
+    static_cast<app*>(parameter)->ClockTask();
 }
 
-void App::ClockTask() {
+void app::ClockTask() {
     while (true) {
         if (Network.ConnectionMode() != network::APMode::WifiClient) {
             vTaskDelay(pdMS_TO_TICKS(NTP_OFFLINE_RETRY_MS));
@@ -231,15 +231,15 @@ void App::ClockTask() {
     }
 }
 
-void App::StatePersistenceTaskEntry(void* parameter) {
-    static_cast<App*>(parameter)->StatePersistenceTask();
+void app::StatePersistenceTaskEntry(void* parameter) {
+    static_cast<app*>(parameter)->StatePersistenceTask();
 }
 
-void App::AutomationTaskEntry(void* parameter) {
-    static_cast<App*>(parameter)->AutomationTask();
+void app::AutomationTaskEntry(void* parameter) {
+    static_cast<app*>(parameter)->AutomationTask();
 }
 
-void App::AutomationTask() {
+void app::AutomationTask() {
     ComponentEvent event;
     while (true) {
         if (ComponentController.ReceiveEvent(event, portMAX_DELAY)) {
@@ -249,7 +249,7 @@ void App::AutomationTask() {
     }
 }
 
-void App::StatePersistenceTask() {
+void app::StatePersistenceTask() {
     while (true) {
         const uint32_t intervalMs =
             static_cast<uint32_t>(Settings.General.SaveStatePooling()) * 1000U;
@@ -268,7 +268,7 @@ void App::StatePersistenceTask() {
     }
 }
 
-bool App::InitializeTelnetServer() {
+bool app::InitializeTelnetServer() {
     TelnetServer.Enabled(Settings.TelnetServer.Enabled());
     TelnetServer.Port(Settings.TelnetServer.Port());
 
@@ -301,7 +301,7 @@ bool App::InitializeTelnetServer() {
     return true;
 }
 
-bool App::RegisterTelnetCommands() {
+bool app::RegisterTelnetCommands() {
     const bool rebootRegistered = TelnetServer.OnCommand("reboot", "Reboot the device\r\n\r\nreboot", [&](WiFiClient& client, String*) {
         client.write(String(String(Version::ProductFamily) + " is rebooting...\r\n").c_str());
         client.stop();
@@ -450,7 +450,7 @@ bool App::RegisterTelnetCommands() {
         hwinfoRegistered && memRegistered && fsRegistered && versionRegistered;
 }
 
-void App::DeviceRestart() {
+void app::DeviceRestart() {
     if (!Settings.SaveComponentsState()) {
         Logger.Log("Error saving component state before restart", logger::LogLevels::Error);
     }
@@ -460,7 +460,7 @@ void App::DeviceRestart() {
     ESP.restart();
 }
 
-void App::LogConfigurationStatus(bool configurationLoaded) {
+void app::LogConfigurationStatus(bool configurationLoaded) {
     if (configurationLoaded) {
         Logger.Log(String("Configuration initialized - file " + String(Defaults.ConfigFileName) + " read"), logger::LogLevels::Information);
     } else {
@@ -468,7 +468,7 @@ void App::LogConfigurationStatus(bool configurationLoaded) {
     }
 }
 
-void App::LogNetworkStatus() {
+void app::LogNetworkStatus() {
     const network::APMode mode = Network.ConnectionMode();
 
     if (mode == network::APMode::Offline) {

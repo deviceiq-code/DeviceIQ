@@ -2,9 +2,9 @@
 
 #include <Arduino.h>
 
-class App {
+class app {
     public:
-        App() = default;
+        app() = default;
         void Start();
 
     private:
