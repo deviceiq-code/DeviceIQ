@@ -159,14 +159,7 @@ bool app::InitializeMQTT() {
 bool app::InitializeStatePersistence() {
     if (pStatePersistenceTaskHandle != nullptr) return true;
 
-    const BaseType_t result = xTaskCreate(
-        StatePersistenceTaskEntry,
-        "StateSave",
-        STATE_PERSISTENCE_TASK_STACK_SIZE,
-        this,
-        STATE_PERSISTENCE_TASK_PRIORITY,
-        &pStatePersistenceTaskHandle
-    );
+    const BaseType_t result = xTaskCreate(StatePersistenceTaskEntry, "StateSave", STATE_PERSISTENCE_TASK_STACK_SIZE, this, STATE_PERSISTENCE_TASK_PRIORITY, &pStatePersistenceTaskHandle);
 
     if (result != pdPASS) {
         pStatePersistenceTaskHandle = nullptr;
@@ -174,25 +167,14 @@ bool app::InitializeStatePersistence() {
         return false;
     }
 
-    Logger.Log(
-        "Component state persistence initialized (interval: " +
-            String(Settings.General.SaveStatePooling()) + " seconds)",
-        logger::LogLevels::Information
-    );
+    Logger.Log("Component state persistence initialized (interval: " + String(Settings.General.SaveStatePooling()) + " seconds)", logger::LogLevels::Information);
     return true;
 }
 
 bool app::InitializeAutomation() {
     if (pAutomationTaskHandle != nullptr) return true;
 
-    const BaseType_t result = xTaskCreate(
-        AutomationTaskEntry,
-        "Automation",
-        AUTOMATION_TASK_STACK_SIZE,
-        this,
-        AUTOMATION_TASK_PRIORITY,
-        &pAutomationTaskHandle
-    );
+    const BaseType_t result = xTaskCreate(AutomationTaskEntry, "Automation", AUTOMATION_TASK_STACK_SIZE, this, AUTOMATION_TASK_PRIORITY, &pAutomationTaskHandle);
 
     if (result != pdPASS) {
         pAutomationTaskHandle = nullptr;
@@ -205,10 +187,6 @@ bool app::InitializeAutomation() {
         logger::LogLevels::Information
     );
     return true;
-}
-
-void app::ClockTaskEntry(void* parameter) {
-    static_cast<app*>(parameter)->ClockTask();
 }
 
 void app::ClockTask() {
@@ -229,14 +207,6 @@ void app::ClockTask() {
             vTaskDelay(pdMS_TO_TICKS(NTP_FAILURE_RETRY_MS));
         }
     }
-}
-
-void app::StatePersistenceTaskEntry(void* parameter) {
-    static_cast<app*>(parameter)->StatePersistenceTask();
-}
-
-void app::AutomationTaskEntry(void* parameter) {
-    static_cast<app*>(parameter)->AutomationTask();
 }
 
 void app::AutomationTask() {

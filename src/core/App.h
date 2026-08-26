@@ -23,9 +23,9 @@ class app {
         void LogConfigurationStatus(bool configurationLoaded);
 
         static void LogNetworkStatus();
-        static void ClockTaskEntry(void* parameter);
-        static void StatePersistenceTaskEntry(void* parameter);
-        static void AutomationTaskEntry(void* parameter);
+        static void ClockTaskEntry(void* parameter) { static_cast<app*>(parameter)->ClockTask(); }
+        static void StatePersistenceTaskEntry(void* parameter) { static_cast<app*>(parameter)->StatePersistenceTask(); }
+        static void AutomationTaskEntry(void* parameter) { static_cast<app*>(parameter)->AutomationTask(); }
         void StatePersistenceTask();
         void AutomationTask();
         void ClockTask();
