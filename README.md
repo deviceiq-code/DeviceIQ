@@ -266,6 +266,25 @@ properties, add, rename, and remove update `/config.json` immediately and report
 that a restart is required. Use the existing `reboot` command to load those
 changes. Mutating subcommands require an administrative session.
 
+### System diagnostics CLI
+
+```text
+hwinfo
+mem
+mem b
+mem kb
+mem mb
+fs
+```
+
+`hwinfo` is public and reports the ESP32 model, revision, cores, clocks,
+internal chip temperature, MAC addresses, flash, firmware, memory, SDK, reset
+reason, uptime, and FreeRTOS task count. `mem` and `fs` require an
+administrative session. `mem` shows bytes by default; `b`, `kb`, and `mb`
+select bytes, KiB, and MiB. It reports total, used, available, minimum-free, and
+largest-block values for internal heap and PSRAM. `fs` shows LittleFS capacity,
+usage, entry counts, and known DeviceIQ file sizes.
+
 ---
 
 # Goals

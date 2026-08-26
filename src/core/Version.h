@@ -24,6 +24,18 @@ namespace Version {
         static String Info() { return String(Major) + "." + String(Minor) + "." + String(Revision);}
     };
 
+    static String SerialNumber() {
+        uint8_t mac[6]{};
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+
+        char serial[18];
+        snprintf(
+            serial, sizeof(serial), "DIQ-%02X%02X%02X%02X-%02X%02X",
+            mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
+        );
+        return String(serial);
+    }
+
     static String Info() { return String(Version::ProductFamily) + " " + String(Version::ProductName) + String(" ") + SoftwareVersion::Info(); }
 
     using Software = SoftwareVersion;

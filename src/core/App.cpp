@@ -3,6 +3,7 @@
 #include "App.h"
 #include "Globals.h"
 #include "Users.h"
+#include "SystemInfo.h"
 
 void App::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
@@ -39,6 +40,7 @@ void App::Start() {
     if (!InitializeNetwork()) return;
     if (!InitializeClock()) return;
     if (!InitializeComponents()) return;
+    (void)InitializeMQTT();
     if (!InitializeAutomation()) return;
     if (!InitializeStatePersistence()) return;
     if (!InitializeTelnetServer()) return;
@@ -131,6 +133,21 @@ bool App::InitializeComponents() {
     return true;
 }
 
+bool App::InitializeMQTT() {
+    if (!Settings.MQTT.Enabled()) {
+        Logger.Log("MQTT disabled", logger::LogLevels::Information);
+        return true;
+    }
+
+    if (!MQTTClient.Start()) {
+        Logger.Log("Error initializing MQTT", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log("MQTT task initialized", logger::LogLevels::Information);
+    return true;
+}
+
 bool App::InitializeStatePersistence() {
     if (pStatePersistenceTaskHandle != nullptr) return true;
 
@@ -217,7 +234,10 @@ void App::AutomationTaskEntry(void* parameter) {
 void App::AutomationTask() {
     ComponentEvent event;
     while (true) {
-        if (ComponentController.ReceiveEvent(event, portMAX_DELAY)) (void)Automation.Execute(event);
+        if (ComponentController.ReceiveEvent(event, portMAX_DELAY)) {
+            (void)MQTTClient.Notify(event);
+            (void)Automation.Execute(event);
+        }
     }
 }
 
@@ -375,16 +395,51 @@ bool App::RegisterTelnetCommands() {
         false
     );
 
+    const bool hwinfoRegistered = TelnetServer.OnCommand("hwinfo", "Show ESP32 hardware information\r\n\r\nhwinfo", [](WiFiClient& client, String*) {
+        String output;
+        SystemInfo::Hardware(output);
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+    }, false);
+
+    const bool memRegistered = TelnetServer.OnCommand("mem", "Show memory usage\r\n\r\nmem [b|kb|mb]", [](WiFiClient& client, String* parameters) {
+        String parameter = parameters[0];
+        parameter.toLowerCase();
+
+        SystemInfo::MemoryUnit unit = SystemInfo::MemoryUnit::Bytes;
+        if (parameter.isEmpty() || parameter == "b") {
+            unit = SystemInfo::MemoryUnit::Bytes;
+        } else if (parameter == "kb") {
+            unit = SystemInfo::MemoryUnit::Kilobytes;
+        } else if (parameter == "mb") {
+            unit = SystemInfo::MemoryUnit::Megabytes;
+        } else {
+            client.write("Usage: mem [b|kb|mb]\r\n");
+            return;
+        }
+
+        String output;
+        SystemInfo::Memory(output, unit);
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+    }, true);
+
+    const bool fsRegistered = TelnetServer.OnCommand("fs", "Show filesystem information\r\n\r\nfs", [](WiFiClient& client, String*) {
+        String output;
+        (void)SystemInfo::FileSystem(output);
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+    }, true);
+
     const bool versionRegistered = TelnetServer.OnCommand("ver", "Show device version info\r\n\r\nver", [](WiFiClient& client, String*) {
         String result;
         result += "Version        | Product: " + String(Version::ProductName) + "\r\n";
         result += "               | Family: " + String(Version::ProductFamily) + "\r\n";
+        result += "               | Serial: " + Version::SerialNumber() + "\r\n";
         result += "               | Hardware: " + Version::Hardware::Info() + "\r\n";
         result += "               | Software: " + Version::Software::Info() + "\r\n";
         client.write(result.c_str());
     }, false);
 
-    return rebootRegistered && dumpcfgRegistered && logonRegistered && compRegistered && versionRegistered;
+    return rebootRegistered && dumpcfgRegistered && logonRegistered && compRegistered &&
+        hwinfoRegistered && memRegistered && fsRegistered && versionRegistered;
 }
 
 void App::DeviceRestart() {

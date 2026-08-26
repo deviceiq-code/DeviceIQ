@@ -1,5 +1,24 @@
 #include "FileSystem.h"
 
+namespace {
+    void CountEntries(File directory, filesystem::Statistics& output) {
+        File entry = directory.openNextFile();
+        while (entry) {
+            if (entry.isDirectory()) {
+                ++output.directories;
+                CountEntries(entry, output);
+            } else {
+                const size_t size = entry.size();
+                ++output.files;
+                output.fileBytes += size;
+                if (size > output.largestFileBytes) output.largestFileBytes = size;
+            }
+            entry.close();
+            entry = directory.openNextFile();
+        }
+    }
+}
+
 bool filesystem::Start(bool formatOnFail) {
     if (pMounted) return true;
 
@@ -15,6 +34,27 @@ bool filesystem::Start(bool formatOnFail) {
 
     pMounted = true;
 
+    return true;
+}
+
+bool filesystem::GetStatistics(Statistics& output, TickType_t timeout) {
+    output = Statistics();
+    if (!pMounted) return false;
+
+    Lock lock(pMutex, timeout);
+    if (!lock.IsLocked()) return false;
+
+    output.totalBytes = LittleFS.totalBytes();
+    output.usedBytes = LittleFS.usedBytes();
+
+    File root = LittleFS.open("/", FILE_READ);
+    if (!root || !root.isDirectory()) {
+        if (root) root.close();
+        return false;
+    }
+
+    CountEntries(root, output);
+    root.close();
     return true;
 }
 

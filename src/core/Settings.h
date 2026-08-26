@@ -221,6 +221,8 @@ class settings {
                 uint16_t pPort{};
                 String pUser;
                 String pPassword;
+                bool pDiscoveryEnabled{};
+                String pDiscoveryPrefix;
             public:
                 explicit mqtt(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
                 [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
@@ -237,6 +239,11 @@ class settings {
 
                 [[nodiscard]] String Password() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPassword : String(); }
                 void Password(String value) noexcept;
+
+                [[nodiscard]] bool DiscoveryEnabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pDiscoveryEnabled : false; }
+                void DiscoveryEnabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pDiscoveryEnabled = value; }
+                [[nodiscard]] String DiscoveryPrefix() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pDiscoveryPrefix : String(); }
+                void DiscoveryPrefix(String value) noexcept;
         } MQTT;
 
         settings() noexcept;

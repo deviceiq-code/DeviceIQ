@@ -9,12 +9,21 @@
 class filesystem {
     public:
         enum class Result : uint8_t { Ok, NotInitialized, LockTimeout, InvalidArgument, NotFound, OpenFailed, ReadFailed, WriteFailed, RemoveFailed, RenameFailed, CreateDirectoryFailed, RemoveDirectoryFailed, MountFailed };
+        struct Statistics {
+            size_t totalBytes = 0;
+            size_t usedBytes = 0;
+            size_t fileBytes = 0;
+            size_t largestFileBytes = 0;
+            size_t files = 0;
+            size_t directories = 0;
+        };
         
         filesystem() = default;
 
         bool Start(bool formatOnFail = true);
         bool IsMounted() const { return pMounted; }
         bool Exists(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
+        bool GetStatistics(Statistics& output, TickType_t timeout = pdMS_TO_TICKS(500));
         bool Exists(const String& path, TickType_t timeout = pdMS_TO_TICKS(500)) { return Exists(path.c_str(), timeout); }
         size_t Size(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Read(const char* path, String& output, TickType_t timeout = pdMS_TO_TICKS(500));

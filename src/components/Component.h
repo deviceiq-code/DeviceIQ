@@ -88,6 +88,7 @@ class component {
         [[nodiscard]] virtual bool HasPersistentState() const noexcept { return false; }
 
         [[nodiscard]] bool ResolveEvent(const String& name, uint16_t& code) const noexcept;
+        [[nodiscard]] bool ResolveEvent(uint16_t code, String& name) const noexcept;
         [[nodiscard]] bool ResolveCommand(const String& name, uint16_t& code) const noexcept;
         [[nodiscard]] virtual ComponentPropertyResult SetProperty(const String& name, const String& value, TickType_t timeout = 0) noexcept;
         virtual void GetInfo(String& output) const;

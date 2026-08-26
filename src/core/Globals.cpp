@@ -8,3 +8,4 @@ network Network;
 telnetserver TelnetServer;
 ComponentManager ComponentController;
 automation Automation;
+mqttclient MQTTClient;

@@ -457,6 +457,30 @@ void settings::mqtt::Password(String value) noexcept {
     pPassword = std::move(value);
 }
 
+void settings::mqtt::DiscoveryPrefix(String value) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return;
+    value.trim();
+
+    if (value.isEmpty() || value.length() > 64) {
+        pDiscoveryPrefix = Defaults.MQTT.DiscoveryPrefix;
+        return;
+    }
+
+    for (size_t index = 0; index < value.length(); ++index) {
+        const char current = value.charAt(index);
+        const bool valid = (current >= 'A' && current <= 'Z') ||
+            (current >= 'a' && current <= 'z') ||
+            (current >= '0' && current <= '9') || current == '_' || current == '-';
+        if (!valid) {
+            pDiscoveryPrefix = Defaults.MQTT.DiscoveryPrefix;
+            return;
+        }
+    }
+
+    pDiscoveryPrefix = std::move(value);
+}
+
 void settings::LoadDefaults() {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
@@ -517,6 +541,8 @@ void settings::LoadDefaults() {
     MQTT.Port(Defaults.MQTT.Port);
     MQTT.User(Defaults.MQTT.User);
     MQTT.Password(Defaults.MQTT.Password);
+    MQTT.DiscoveryEnabled(Defaults.MQTT.DiscoveryEnabled);
+    MQTT.DiscoveryPrefix(Defaults.MQTT.DiscoveryPrefix);
 }
 
 bool settings::Load(const String& configfilename) noexcept {
@@ -647,6 +673,8 @@ bool settings::Load(const String& configfilename) noexcept {
             MQTT.Port((uint16_t)(mq["Port"] | Defaults.MQTT.Port));
             MQTT.User(String(mq["User"] | Defaults.MQTT.User));
             MQTT.Password(String(mq["Password"] | Defaults.MQTT.Password));
+            MQTT.DiscoveryEnabled((bool)(mq["Discovery Enabled"] | Defaults.MQTT.DiscoveryEnabled));
+            MQTT.DiscoveryPrefix(String(mq["Discovery Prefix"] | Defaults.MQTT.DiscoveryPrefix));
         }
 
         // Telnet
@@ -1236,6 +1264,8 @@ bool settings::Save(const String& configfilename) const noexcept {
             mq["Port"] = MQTT.Port();
             mq["User"] = MQTT.User();
             mq["Password"] = MQTT.Password();
+            mq["Discovery Enabled"] = MQTT.DiscoveryEnabled();
+            mq["Discovery Prefix"] = MQTT.DiscoveryPrefix();
         }
 
         // Telnet

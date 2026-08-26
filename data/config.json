@@ -49,11 +49,13 @@
         "Token": "default_token"
     },
     "MQTT": {
-        "Enabled": false,
-        "Broker": "",
+        "Enabled": true,
+        "Broker": "mqtt.genesis.home.arpa",
         "Port": 1883,
-        "User": "",
-        "Password": ""
+        "User": "user",
+        "Password": "tdha443@zzv",
+        "Discovery Enabled": true,
+        "Discovery Prefix": "homeassistant"
     },
     "Telnet": {
         "Enabled": true,

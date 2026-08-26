@@ -18,6 +18,19 @@ bool component::ResolveEvent(const String& name, uint16_t& code) const noexcept 
     return false;
 }
 
+bool component::ResolveEvent(uint16_t code, String& name) const noexcept {
+    size_t count = 0;
+    const ComponentDescriptor* descriptors = EventDescriptors(count);
+
+    for (size_t index = 0; index < count; ++index) {
+        if (descriptors[index].code == code) {
+            name = descriptors[index].name;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool component::ResolveCommand(const String& name, uint16_t& code) const noexcept {
     size_t count = 0;
     const ComponentDescriptor* descriptors = CommandDescriptors(count);

@@ -73,6 +73,8 @@ struct defaults {
         const uint16_t Port = 1883;
         const char* User = "";
         const char* Password = "";
+        const bool DiscoveryEnabled = true;
+        const char* DiscoveryPrefix = "homeassistant";
     } MQTT;
     struct components {
         const bool Enabled = true;

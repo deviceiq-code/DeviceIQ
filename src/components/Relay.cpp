@@ -16,6 +16,11 @@ bool relay::Toggle(TickType_t timeout) noexcept {
 ComponentPropertyResult relay::SetProperty(const String& name, const String& value, TickType_t timeout) noexcept {
     if (!name.equalsIgnoreCase("state")) return component::SetProperty(name, value, timeout);
 
+    if (value.equalsIgnoreCase("toggle")) {
+        if (!Enabled()) return ComponentPropertyResult::ComponentDisabled;
+        return Toggle(timeout) ? ComponentPropertyResult::Accepted : ComponentPropertyResult::CommandRejected;
+    }
+
     bool state = false;
     if (!ParseBoolean(value, state)) return ComponentPropertyResult::InvalidValue;
     if (!Enabled()) return ComponentPropertyResult::ComponentDisabled;
