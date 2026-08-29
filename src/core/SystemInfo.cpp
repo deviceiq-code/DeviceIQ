@@ -5,6 +5,7 @@
 #include <esp32-hal-cpu.h>
 
 #include "Globals.h"
+#include "CLIFormat.h"
 
 namespace {
     const char* FlashModeName(FlashMode_t mode) noexcept {
@@ -91,6 +92,7 @@ namespace {
 
     void AppendMemoryRow(String& output, const char* name, uint32_t total, uint32_t available, uint32_t minimum, uint32_t largest, SystemInfo::MemoryUnit unit) {
         const uint32_t used = total >= available ? total - available : 0;
+        output += CLIFormat::ContinuationPrefix();
         output += name;
         for (size_t padding = strlen(name); padding < 11; ++padding) output += ' ';
         AppendMemoryColumn(output, total, unit);
@@ -138,11 +140,11 @@ void SystemInfo::Memory(String& output, MemoryUnit unit) {
 
     output.reserve(768);
     switch (unit) {
-        case MemoryUnit::Kilobytes: output += "Memory values in KiB\r\n\r\n"; break;
-        case MemoryUnit::Megabytes: output += "Memory values in MiB\r\n\r\n"; break;
-        default: output += "Memory values in bytes\r\n\r\n"; break;
+        case MemoryUnit::Kilobytes: output += CLIFormat::Line("Memory", "Values in KiB"); break;
+        case MemoryUnit::Megabytes: output += CLIFormat::Line("Memory", "Values in MiB"); break;
+        default: output += CLIFormat::Line("Memory", "Values in bytes"); break;
     }
-    output += "Type            Total       Used  Available    MinFree   MaxBlock\r\n";
+    output += CLIFormat::ContinuationPrefix() + "Type            Total       Used  Available    MinFree   MaxBlock\r\n";
     AppendMemoryRow(output, "Heap", heapTotal, heapAvailable, ESP.getMinFreeHeap(), ESP.getMaxAllocHeap(), unit);
     AppendMemoryRow(output, "PSRAM", psramTotal, psramAvailable, ESP.getMinFreePsram(), ESP.getMaxAllocPsram(), unit);
     const uint32_t largestBlock = ESP.getMaxAllocHeap() >= ESP.getMaxAllocPsram()
@@ -153,8 +155,9 @@ void SystemInfo::Memory(String& output, MemoryUnit unit) {
     const uint32_t fragmentation = heapAvailable == 0 || ESP.getMaxAllocHeap() >= heapAvailable
         ? 0
         : 100U - static_cast<uint32_t>((static_cast<uint64_t>(ESP.getMaxAllocHeap()) * 100ULL) / heapAvailable);
-    output += "\r\nHeap fragmentation | " + String(fragmentation) + "%\r\n";
-    output += "CLI stack minimum  | " + MemoryValue(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t), unit) + " ";
+    output += CLIFormat::Line("", "");
+    output += CLIFormat::Line("Heap", "Fragmentation: " + String(fragmentation) + "%");
+    output += CLIFormat::Prefix("CLI") + "Stack minimum: " + MemoryValue(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t), unit) + " ";
     output += unit == MemoryUnit::Bytes ? "bytes free\r\n" : (unit == MemoryUnit::Kilobytes ? "KiB free\r\n" : "MiB free\r\n");
 }
 

@@ -4,6 +4,7 @@
 #include "Globals.h"
 #include "Users.h"
 #include "SystemInfo.h"
+#include "CLIFormat.h"
 #include "components/Blinds.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
@@ -312,7 +313,7 @@ bool app::InitializeTelnetServer() {
 
 bool app::RegisterTelnetCommands() {
     const bool rebootRegistered = TelnetServer.OnCommand("reboot", "Reboot the device\r\n\r\nreboot", [&](WiFiClient& client, String*) {
-        client.write(String(String(Version::ProductFamily) + " is rebooting...\r\n").c_str());
+        client.write(CLIFormat::Line("System", String(Version::ProductFamily) + " is rebooting...").c_str());
         client.stop();
         DeviceRestart();
     }, true);
@@ -322,20 +323,25 @@ bool app::RegisterTelnetCommands() {
         String content;
 
         if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok) {
-            const String error = "Config         | Error reading config file '" + path + "'.\r\n";
+            const String error = CLIFormat::Line("Config", "Error reading config file '" + path + "'.");
             client.write(error.c_str());
             return;
         }
 
-        const String header = "Config         | File: " + path + "\r\n\r\n";
+        const String header = CLIFormat::Line("Config", "File: " + path) + CLIFormat::Line("", "Content:");
         client.write(header.c_str());
 
-        constexpr size_t chunkSize = 2048;
-        for (size_t offset = 0; offset < content.length(); offset += chunkSize) {
-            const size_t remaining = content.length() - offset;
-            client.write(reinterpret_cast<const uint8_t*>(content.c_str() + offset), remaining < chunkSize ? remaining : chunkSize);
+        size_t offset = 0;
+        while (offset < content.length()) {
+            const int newline = content.indexOf('\n', offset);
+            const size_t end = newline < 0 ? content.length() : static_cast<size_t>(newline);
+            size_t contentEnd = end;
+            if (contentEnd > offset && content[contentEnd - 1] == '\r') --contentEnd;
+            const String line = CLIFormat::ContinuationPrefix() + content.substring(offset, contentEnd) + "\r\n";
+            client.write(reinterpret_cast<const uint8_t*>(line.c_str()), line.length());
+            if (newline < 0) break;
+            offset = static_cast<size_t>(newline) + 1;
         }
-        client.write("\r\n");
     }, true);
 
     const bool logonRegistered = TelnetServer.OnCommand("logon", "Log into the system with specific credentials\r\n\r\nlogon [username] [password]", [](WiFiClient& client, String* parameter) {
@@ -404,7 +410,7 @@ bool app::RegisterTelnetCommands() {
 
             if (mutation && !TelnetServer.IsSessionAdmin(client)) {
                 Logger.Log("CLI component mutation denied for " + client.remoteIP().toString() + ": comp " + subcommand, logger::LogLevels::Warning);
-                client.write("Permission denied.\r\n");
+                client.write(CLIFormat::Line("Component", "Permission denied.").c_str());
                 return;
             }
 
@@ -420,7 +426,8 @@ bool app::RegisterTelnetCommands() {
                     success ? logger::LogLevels::Information : logger::LogLevels::Warning
                 );
             }
-            client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
+            const String formatted = CLIFormat::Block("Component", output);
+            client.write(reinterpret_cast<const uint8_t*>(formatted.c_str()), formatted.length());
         },
         false
     );
@@ -443,7 +450,7 @@ bool app::RegisterTelnetCommands() {
         } else if (parameter == "mb") {
             unit = SystemInfo::MemoryUnit::Megabytes;
         } else {
-            client.write("Usage: mem [b|kb|mb]\r\n");
+            client.write(CLIFormat::Line("Memory", "Usage: mem [b|kb|mb]").c_str());
             return;
         }
 

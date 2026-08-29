@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 #include "Defaults.h"
+#include "CLIFormat.h"
 #include "Globals.h"
 #include "NetworkDiagnostics.h"
 
@@ -147,25 +148,33 @@ void telnetserver::RegisterBuiltInCommands() {
     });
 
     (void)OnCommand("exit", "Close session and exit terminal\r\n\r\nexit", [this](WiFiClient& client, String*) {
-        client.write("Session closed.\r\n");
+        client.write(CLIFormat::Line("Session", "Closed.").c_str());
         Session* session = FindSession(client);
         if (session != nullptr) CloseSession(*session);
         else client.stop();
     });
 
     (void)OnCommand("sessions", "Show current Telnet sessions\r\n\r\nsessions", [this](WiFiClient& client, String*) {
-        client.write("Current sessions:\r\n\r\n");
+        bool first = true;
         for (const Session& session : pSessions) {
             if (!session.active) continue;
-            const String line = session.user + "@" + session.client.remoteIP().toString() + ":" + String(session.client.remotePort()) + (session.admin ? " - Admin" : "") + "\r\n";
+            const String line = (first ? CLIFormat::Prefix("Sessions") : CLIFormat::ContinuationPrefix()) +
+                session.user + "@" + session.client.remoteIP().toString() + ":" + String(session.client.remotePort()) +
+                (session.admin ? " - Admin" : "") + "\r\n";
             client.write(reinterpret_cast<const uint8_t*>(line.c_str()), line.length());
+            first = false;
         }
+        if (first) client.write(CLIFormat::Line("Sessions", "No active sessions.").c_str());
     });
 
     (void)OnCommand("whoami", "Show information about current user\r\n\r\nwhoami", [this](WiFiClient& client, String*) {
         Session* session = FindSession(client);
         if (session == nullptr) return;
-        const String line = session->user + "@" + session->client.remoteIP().toString() + ":" + String(session->client.remotePort()) + (session->admin ? " - Admin" : "") + "\r\n";
+        const String line = CLIFormat::Line(
+            "Identity",
+            session->user + "@" + session->client.remoteIP().toString() + ":" + String(session->client.remotePort()) +
+                (session->admin ? " - Admin" : "")
+        );
         client.write(reinterpret_cast<const uint8_t*>(line.c_str()), line.length());
     });
 
@@ -176,7 +185,7 @@ void telnetserver::RegisterBuiltInCommands() {
             if (!output.isEmpty()) output += ' ';
             output += parameters[index];
         }
-        output += "\r\n";
+        output = CLIFormat::Line("Echo", output);
         client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     });
 
@@ -186,21 +195,21 @@ void telnetserver::RegisterBuiltInCommands() {
         "count must be between 1 and 20 (default: 4)",
         [](WiFiClient& client, String* parameters) {
             if (parameters[0].isEmpty()) {
-                client.write("Ping           | Error: Missing destination\r\n");
+                client.write(CLIFormat::Line("Ping", "Error: Missing destination").c_str());
                 return;
             }
 
             uint16_t count = NetworkDiagnostics::DefaultPingCount;
             if (!parameters[1].isEmpty()) {
                 if (!parameters[1].equalsIgnoreCase("-n") || parameters[2].isEmpty() || !parameters[3].isEmpty()) {
-                    client.write("Usage: ping [destination] [-n count]\r\n");
+                    client.write(CLIFormat::Line("Ping", "Usage: ping [destination] [-n count]").c_str());
                     return;
                 }
 
                 char* end = nullptr;
                 const long parsed = std::strtol(parameters[2].c_str(), &end, 10);
                 if (end == parameters[2].c_str() || *end != '\0' || parsed < 1 || parsed > NetworkDiagnostics::MaximumPingCount) {
-                    client.write("Ping           | Error: count must be between 1 and 20\r\n");
+                    client.write(CLIFormat::Line("Ping", "Error: count must be between 1 and 20").c_str());
                     return;
                 }
                 count = static_cast<uint16_t>(parsed);
@@ -214,22 +223,24 @@ void telnetserver::RegisterBuiltInCommands() {
         if (!parameters[0].isEmpty()) {
             for (size_t index = 0; index < pCommandCount; ++index) {
                 if (pCommands[index].name == parameters[0]) {
-                    const String output = pCommands[index].help + "\r\n";
+                    const String output = CLIFormat::Block("Help", pCommands[index].help);
                     client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
                     return;
                 }
             }
-            const String output = parameters[0] + " - Invalid command.\r\n";
+            const String output = CLIFormat::Line("Help", "Invalid command: " + parameters[0]);
             client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
             return;
         }
 
-        client.write("Available commands:\r\n\r\n");
+        String commands;
         for (size_t index = 0; index < pCommandCount; ++index) {
-            client.write(reinterpret_cast<const uint8_t*>(pCommands[index].name.c_str()), pCommands[index].name.length());
-            client.write(index + 1 == pCommandCount ? "\r\n" : "  ");
+            if (!commands.isEmpty()) commands += "  ";
+            commands += pCommands[index].name;
         }
-        client.write("\r\nUse . to repeat the last command.\r\n");
+        const String output = CLIFormat::Line("Help", commands) +
+            CLIFormat::Line("", "Use . to repeat the last command.");
+        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     });
 }
 
@@ -296,7 +307,7 @@ void telnetserver::AcceptClient(WiFiServer& server) {
     }
 
     if (availableSession == nullptr) {
-        client.write("Server busy.\r\n");
+        client.write(CLIFormat::Line("Telnet", "Server busy.").c_str());
         client.stop();
         return;
     }
@@ -459,12 +470,13 @@ void telnetserver::ProcessLine(Session& session) {
     }
 
     if (command == nullptr) {
-        const String output = commandName + " - Invalid command.\r\n\r\n";
+        const String output = CLIFormat::Line("CLI", "Invalid command: " + commandName) + "\r\n";
         session.client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     } else if (command->admin && !session.admin) {
-        session.client.write("Permission denied.\r\n\r\n");
+        const String output = CLIFormat::Line("CLI", "Permission denied.") + "\r\n";
+        session.client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     } else if (parameters[0] == "-h" || parameters[0] == "-?" || parameters[0] == "--help") {
-        const String output = command->help + "\r\n\r\n";
+        const String output = CLIFormat::Block("Help", command->help) + "\r\n";
         session.client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     } else {
         command->callback(session.client, parameters);
