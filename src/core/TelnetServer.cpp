@@ -1,7 +1,10 @@
 #include "TelnetServer.h"
 
+#include <cstdlib>
+
 #include "Defaults.h"
 #include "Globals.h"
+#include "NetworkDiagnostics.h"
 
 namespace {
     constexpr const char* GuestUser = "guest";
@@ -129,6 +132,15 @@ bool telnetserver::IsSessionAdmin(WiFiClient& client) {
     return session != nullptr && session->admin;
 }
 
+bool telnetserver::SessionInformation(WiFiClient& client, SessionInfo& info) {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return false;
+    Session* session = FindSession(client);
+    if (session == nullptr) return false;
+    info = GetSessionInfo(*session);
+    return true;
+}
+
 void telnetserver::RegisterBuiltInCommands() {
     (void)OnCommand("clear", "Clear terminal screen\r\n\r\nclear", [](WiFiClient& client, String*) {
         client.write("\x1B[2J\x1B[H");
@@ -167,6 +179,36 @@ void telnetserver::RegisterBuiltInCommands() {
         output += "\r\n";
         client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
     });
+
+    (void)OnCommand(
+        "ping",
+        "Ping an IP address or host\r\n\r\nping [destination] [-n count]\r\n"
+        "count must be between 1 and 20 (default: 4)",
+        [](WiFiClient& client, String* parameters) {
+            if (parameters[0].isEmpty()) {
+                client.write("Ping           | Error: Missing destination\r\n");
+                return;
+            }
+
+            uint16_t count = NetworkDiagnostics::DefaultPingCount;
+            if (!parameters[1].isEmpty()) {
+                if (!parameters[1].equalsIgnoreCase("-n") || parameters[2].isEmpty() || !parameters[3].isEmpty()) {
+                    client.write("Usage: ping [destination] [-n count]\r\n");
+                    return;
+                }
+
+                char* end = nullptr;
+                const long parsed = std::strtol(parameters[2].c_str(), &end, 10);
+                if (end == parameters[2].c_str() || *end != '\0' || parsed < 1 || parsed > NetworkDiagnostics::MaximumPingCount) {
+                    client.write("Ping           | Error: count must be between 1 and 20\r\n");
+                    return;
+                }
+                count = static_cast<uint16_t>(parsed);
+            }
+
+            NetworkDiagnostics::Ping(client, parameters[0], count);
+        }
+    );
 
     (void)OnCommand("help", "Show available commands\r\n\r\nhelp [command]", [this](WiFiClient& client, String* parameters) {
         if (!parameters[0].isEmpty()) {

@@ -439,6 +439,8 @@ mem b
 mem kb
 mem mb
 fs
+ping 192.168.1.1
+ping example.com -n 10
 ```
 
 `hwinfo` is public and reports the ESP32 model, revision, cores, clocks,
@@ -447,7 +449,9 @@ reason, uptime, and FreeRTOS task count. `mem` and `fs` require an
 administrative session. `mem` shows bytes by default; `b`, `kb`, and `mb`
 select bytes, KiB, and MiB. It reports total, used, available, minimum-free, and
 largest-block values for internal heap and PSRAM. `fs` shows LittleFS capacity,
-usage, entry counts, and known DeviceIQ file sizes.
+usage, entry counts, and known DeviceIQ file sizes. `ping` is a public built-in
+Telnet command, accepts an IPv4 address or DNS name, sends four ICMP requests by
+default, and accepts `-n` values from 1 through 20.
 
 ---
 

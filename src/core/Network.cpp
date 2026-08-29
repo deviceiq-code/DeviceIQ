@@ -1,4 +1,5 @@
 #include "Network.h"
+#include "Globals.h"
 
 network::network() noexcept : pMutex(xSemaphoreCreateMutexStatic(&pMutexStorage)) {
     configASSERT(pMutex != nullptr);
@@ -451,6 +452,7 @@ void network::Control() {
 
     if (stationConnected) {
         if (!pStationConnected) {
+            pStationFailureLogged = false;
             pStationConnected = true;
             pStationConnectionPending = false;
             pStationConnectedAt = now;
@@ -477,6 +479,10 @@ void network::Control() {
     if (pStationConnectionPending) {
         if ((now - pStationConnectionStartedAt) < SecondsToTicks(configuration.connectionTimeout)) return;
 
+        if (!pStationFailureLogged) {
+            Logger.Log("Network: WiFi station connection timed out after " + String(configuration.connectionTimeout) + " seconds", logger::LogLevels::Warning);
+            pStationFailureLogged = true;
+        }
         WiFi.disconnect(false, false);
         pStationConnectionPending = false;
         if (configuration.fallbackAPEnabled) (void)StartSoftAP(configuration);
@@ -534,7 +540,13 @@ bool network::BeginStationConnection(const Configuration& configuration) {
     const bool configured = configuration.dhcpClient
         ? WiFi.config(IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0), IPAddress(0, 0, 0, 0))
         : WiFi.config(configuration.ipAddress, configuration.gateway, configuration.netmask, configuration.dns[0], configuration.dns[1]);
-    if (!configured) return false;
+    if (!configured) {
+        if (!pStationFailureLogged) {
+            Logger.Log("Network: failed to apply WiFi IP configuration", logger::LogLevels::Error);
+            pStationFailureLogged = true;
+        }
+        return false;
+    }
 
     WiFi.begin(
         configuration.ssid.c_str(),
@@ -559,7 +571,16 @@ bool network::StartSoftAP(const Configuration& configuration) {
     );
 
     pSoftAPActive = started;
-    if (!started) WiFi.mode(configuration.ssid.isEmpty() ? WIFI_OFF : WIFI_STA);
+    if (!started) {
+        if (!pSoftAPFailureLogged) {
+            Logger.Log("Network: failed to start fallback SoftAP", logger::LogLevels::Error);
+            pSoftAPFailureLogged = true;
+        }
+        WiFi.mode(configuration.ssid.isEmpty() ? WIFI_OFF : WIFI_STA);
+    } else if (pSoftAPFailureLogged) {
+        Logger.Log("Network: fallback SoftAP recovered", logger::LogLevels::Information);
+        pSoftAPFailureLogged = false;
+    }
     UpdateConnectionState();
     return started;
 }
@@ -580,6 +601,7 @@ void network::ScheduleReconnect(const Configuration& configuration, TickType_t n
 
     if (pCurrentReconnectInterval < initialInterval) pCurrentReconnectInterval = initialInterval;
     pNextReconnectAt = now + SecondsToTicks(pCurrentReconnectInterval);
+    Logger.Log("Network: WiFi reconnect scheduled in " + String(pCurrentReconnectInterval) + " seconds", logger::LogLevels::Debug);
 
     const uint32_t doubled = static_cast<uint32_t>(pCurrentReconnectInterval) * 2U;
     pCurrentReconnectInterval = static_cast<uint16_t>(doubled > maximumInterval ? maximumInterval : doubled);

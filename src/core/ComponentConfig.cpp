@@ -369,18 +369,34 @@ namespace {
 }
 
 bool settings::InstallComponents(const String& configfilename) noexcept {
-    if (ComponentController.IsStarted() || ComponentController.Count() != 0) return false;
+    if (ComponentController.IsStarted() || ComponentController.Count() != 0) {
+        Logger.Log("Components installation rejected: component runtime is already populated", logger::LogLevels::Error);
+        return false;
+    }
 
     const String path = configfilename.length() ? configfilename : String(Defaults.ConfigFileName);
     String content;
-    if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok || content.isEmpty()) return false;
+    if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok || content.isEmpty()) {
+        Logger.Log("Components installation failed: unable to read configuration file " + path, logger::LogLevels::Error);
+        return false;
+    }
 
     JsonDocument document;
-    if (deserializeJson(document, content)) return false;
-    if ((document["ComponentSchemaVersion"] | 0) != ComponentSchemaVersion) return false;
+    const DeserializationError jsonError = deserializeJson(document, content);
+    if (jsonError) {
+        Logger.Log("Components installation failed: invalid JSON (" + String(jsonError.c_str()) + ")", logger::LogLevels::Error);
+        return false;
+    }
+    if ((document["ComponentSchemaVersion"] | 0) != ComponentSchemaVersion) {
+        Logger.Log("Components installation failed: ComponentSchemaVersion must be " + String(ComponentSchemaVersion), logger::LogLevels::Error);
+        return false;
+    }
 
     const JsonObjectConst components = document["Components"].as<JsonObjectConst>();
-    if (components.isNull() || components.size() > MaxConfiguredComponents) return false;
+    if (components.isNull() || components.size() > MaxConfiguredComponents) {
+        Logger.Log("Components installation failed: Components must be an object with at most " + String(MaxConfiguredComponents) + " entries", logger::LogLevels::Error);
+        return false;
+    }
 
     struct ComponentIdentity {
         String name;
@@ -398,28 +414,49 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
 
     for (JsonPairConst entry : components) {
         int16_t configuredID = 0;
-        if (!ParseComponentID(entry.key().c_str(), configuredID) || !entry.value().is<JsonObjectConst>()) return false;
+        if (!ParseComponentID(entry.key().c_str(), configuredID) || !entry.value().is<JsonObjectConst>()) {
+            Logger.Log("Components installation failed: invalid component key or object '" + String(entry.key().c_str()) + "'", logger::LogLevels::Error);
+            return false;
+        }
         const JsonObjectConst object = entry.value().as<JsonObjectConst>();
-        if (!HasComponentSections(object)) return false;
+        if (!HasComponentSections(object)) {
+            Logger.Log("Component #" + String(configuredID) + ": expected Setup, Properties and Events sections", logger::LogLevels::Error);
+            return false;
+        }
         const JsonObjectConst setup = ComponentSetup(object);
-        if (!setup["Class"].is<const char*>()) return false;
+        if (!setup["Class"].is<const char*>()) {
+            Logger.Log("Component #" + String(configuredID) + ": Setup.Class is required", logger::LogLevels::Error);
+            return false;
+        }
 
         const String componentClass = setup["Class"].as<const char*>();
         if (componentClass.equalsIgnoreCase("Relay")) {
             RelayConfiguration configuration;
-            if (!ParseRelayConfiguration(object, configuredID, configuration)) return false;
+            if (!ParseRelayConfiguration(object, configuredID, configuration)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid Relay configuration", logger::LogLevels::Error);
+                return false;
+            }
             identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Relay, true};
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
-            if (!ParseButtonConfiguration(object, configuredID, configuration)) return false;
+            if (!ParseButtonConfiguration(object, configuredID, configuration)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid Button configuration", logger::LogLevels::Error);
+                return false;
+            }
             identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Button, true};
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
-            if (!ParseThermometerConfiguration(object, configuredID, configuration)) return false;
+            if (!ParseThermometerConfiguration(object, configuredID, configuration)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid Thermometer configuration", logger::LogLevels::Error);
+                return false;
+            }
             identities[count] = {configuration.name, configuration.id, configuration.bus, configuration.address, component::Classes::Thermometer, true};
         } else if (componentClass.equalsIgnoreCase("Blinds")) {
             BlindsConfiguration configuration;
-            if (!ParseBlindsConfiguration(object, configuredID, configuration, false)) return false;
+            if (!ParseBlindsConfiguration(object, configuredID, configuration, false)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid Blinds configuration", logger::LogLevels::Error);
+                return false;
+            }
             identities[count] = {configuration.name, configuration.id, component::Buses::Group, 0, component::Classes::Blinds, false};
             installable[count] = configuration.openStepTimeMs > 0 && configuration.closeStepTimeMs > 0;
             if (!installable[count]) {
@@ -429,6 +466,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 );
             }
         } else {
+            Logger.Log("Component #" + String(configuredID) + ": unsupported class '" + componentClass + "'", logger::LogLevels::Error);
             return false;
         }
 
@@ -606,7 +644,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         Logger.Log(
             "Component " + member->Name() + ": private member of Blinds '" + owner->Name() +
                 "'; standalone automation and MQTT disabled",
-            logger::LogLevels::Information
+            logger::LogLevels::Debug
         );
     }
 

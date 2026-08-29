@@ -45,10 +45,13 @@ bool logger::Log(const char* message, LogLevels loglevel) {
     LogMessage logMessage;
 
     logMessage.loglevel = loglevel;
+    if (strlen(message) >= MESSAGE_SIZE) pTruncatedMessages.fetch_add(1, std::memory_order_relaxed);
     strncpy(logMessage.text, message, MESSAGE_SIZE - 1);
     logMessage.text[MESSAGE_SIZE - 1] = '\0';
 
-    return xQueueSend(pQueue, &logMessage, 0) == pdTRUE;
+    if (xQueueSend(pQueue, &logMessage, 0) == pdTRUE) return true;
+    pDroppedMessages.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }
 
 void logger::LogToSerial(const char* message, LogLevels loglevel) {
@@ -162,7 +165,8 @@ void logger::LogToSyslog(const char* message, LogLevels loglevel) {
     packet += ">1 ";
     packet += timestamp;
     packet += ' ';
-    packet += Defaults.Network.Hostname();
+    const String hostname = Network.Hostname();
+    packet += hostname.isEmpty() ? String(Defaults.Network.Hostname()) : hostname;
     packet += " " + String(Version::ProductFamily) + " - - - ";
     packet += message;
 
@@ -189,17 +193,25 @@ void logger::Task() {
 
     while (true) {
         if (xQueueReceive(pQueue, &message, portMAX_DELAY) == pdTRUE) {
-            if (pEndpoint & Endpoints::Serial) {
-                LogToSerial(message.text, message.loglevel);
-            }
+            Deliver(message.text, message.loglevel);
 
-            if (pEndpoint & Endpoints::File) {
-                LogToFile(message.text, message.loglevel);
+            const uint32_t dropped = pDroppedMessages.exchange(0, std::memory_order_relaxed);
+            const uint32_t truncated = pTruncatedMessages.exchange(0, std::memory_order_relaxed);
+            char diagnostic[96];
+            if (dropped > 0) {
+                snprintf(diagnostic, sizeof(diagnostic), "Logger queue full: %lu message(s) dropped", static_cast<unsigned long>(dropped));
+                Deliver(diagnostic, LogLevels::Warning);
             }
-
-            if (pEndpoint & Endpoints::Syslog) {
-                LogToSyslog(message.text, message.loglevel);
+            if (truncated > 0) {
+                snprintf(diagnostic, sizeof(diagnostic), "Logger: %lu message(s) truncated to %u characters", static_cast<unsigned long>(truncated), MESSAGE_SIZE - 1);
+                Deliver(diagnostic, LogLevels::Warning);
             }
         }
     }
+}
+
+void logger::Deliver(const char* message, LogLevels loglevel) {
+    if (pEndpoint & Endpoints::Serial) LogToSerial(message, loglevel);
+    if (pEndpoint & Endpoints::File) LogToFile(message, loglevel);
+    if (pEndpoint & Endpoints::Syslog) LogToSyslog(message, loglevel);
 }

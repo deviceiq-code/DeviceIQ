@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
+#include <atomic>
 
 class logger {
     public: 
@@ -28,7 +29,7 @@ class logger {
         inline bool Log(const String& message, LogLevels loglevel) { return Log(message.c_str(), loglevel); }
     private:
         static constexpr uint16_t QUEUE_LENGTH = 20;
-        static constexpr uint16_t MESSAGE_SIZE = 128;
+        static constexpr uint16_t MESSAGE_SIZE = 256;
 
         IPAddress pSyslogAddress;
         HardwareSerial& pSerialport;
@@ -41,12 +42,15 @@ class logger {
         WiFiUDP pUDPClient;
         bool pUDPReady = false;
         bool pSyslogAddressValid = false;
+        std::atomic<uint32_t> pDroppedMessages{0};
+        std::atomic<uint32_t> pTruncatedMessages{0};
 
         struct LogMessage { char text[MESSAGE_SIZE]; LogLevels loglevel; };
 
         void LogToSerial(const char* message, LogLevels loglevel);
         void LogToFile(const char* message, LogLevels loglevel);
         void LogToSyslog(const char* message, LogLevels loglevel);
+        void Deliver(const char* message, LogLevels loglevel);
 
         bool ResolveSyslogAddress();
         

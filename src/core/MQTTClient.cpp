@@ -52,7 +52,9 @@ bool mqttclient::Start() noexcept {
 
 bool mqttclient::Notify(const ComponentEvent& event) noexcept {
     if (!pEnabled || pEventQueue == nullptr || event.source == nullptr) return false;
-    return xQueueSend(pEventQueue, &event, 0) == pdTRUE;
+    if (xQueueSend(pEventQueue, &event, 0) == pdTRUE) return true;
+    pDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }
 
 void mqttclient::TaskEntry(void* parameter) {
@@ -102,11 +104,20 @@ bool mqttclient::Connect() noexcept {
         : pClient.connect(clientID.c_str(), pUser.c_str(), pPassword.c_str(), availability.c_str(), 0, true, "offline");
 
     if (!connected) {
-        Logger.Log("MQTT connection failed (state " + String(pClient.state()) + ")", logger::LogLevels::Warning);
+        ++pConsecutiveConnectFailures;
+        if (pConsecutiveConnectFailures == 1 || (pConsecutiveConnectFailures % 12U) == 0U) {
+            Logger.Log("MQTT connection failed (state " + String(pClient.state()) + ", attempts: " + String(pConsecutiveConnectFailures) + ")", logger::LogLevels::Warning);
+        }
         return false;
     }
 
-    Logger.Log("MQTT connected to " + pBroker + ":" + String(pPort), logger::LogLevels::Information);
+    Logger.Log(
+        pConsecutiveConnectFailures > 0
+            ? "MQTT connection recovered: " + pBroker + ":" + String(pPort)
+            : "MQTT connected to " + pBroker + ":" + String(pPort),
+        logger::LogLevels::Information
+    );
+    pConsecutiveConnectFailures = 0;
     (void)Publish(availability, "online", true);
     PublishAvailability("online");
 
@@ -372,8 +383,17 @@ void mqttclient::AddDiscoveryMetadata(JsonDocument& document, const component& i
 
 bool mqttclient::Publish(const String& topic, const String& payload, bool retained) {
     if (!pClient.connected() || topic.isEmpty()) return false;
-    if (pClient.publish(topic.c_str(), payload.c_str(), retained)) return true;
-    Logger.Log("MQTT publish failed: " + topic, logger::LogLevels::Warning);
+    if (pClient.publish(topic.c_str(), payload.c_str(), retained)) {
+        if (pConsecutivePublishFailures > 0) {
+            Logger.Log("MQTT publishing recovered after " + String(pConsecutivePublishFailures) + " failure(s)", logger::LogLevels::Information);
+            pConsecutivePublishFailures = 0;
+        }
+        return true;
+    }
+    ++pConsecutivePublishFailures;
+    if (pConsecutivePublishFailures == 1 || (pConsecutivePublishFailures % 20U) == 0U) {
+        Logger.Log("MQTT publish failed: " + topic + " (failures: " + String(pConsecutivePublishFailures) + ")", logger::LogLevels::Warning);
+    }
     return false;
 }
 

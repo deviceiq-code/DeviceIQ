@@ -4,6 +4,9 @@
 #include "Globals.h"
 #include "Users.h"
 #include "SystemInfo.h"
+#include "components/Blinds.h"
+#include "components/Relay.h"
+#include "components/Thermometer.h"
 
 void app::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
@@ -105,7 +108,7 @@ bool app::InitializeNetwork() {
         return false;
     }
 
-    Logger.Log("Network initialized", logger::LogLevels::Information);
+    Logger.Log("Network task initialized", logger::LogLevels::Information);
     return true;
 }
 
@@ -129,11 +132,12 @@ bool app::InitializeClock() {
 
 bool app::InitializeComponents() {
     if (!Settings.InstallComponents()) {
-        Logger.Log("Components schema or configuration is invalid; no components installed", logger::LogLevels::Warning);
+        Logger.Log("Components schema or configuration is invalid; no components installed", logger::LogLevels::Error);
     }
 
     if (!ComponentController.Start()) {
-        Logger.Log("Error initializing component task", logger::LogLevels::Error);
+        const String detail = ComponentController.StartError();
+        Logger.Log("Error initializing components" + (detail.isEmpty() ? String() : ": " + detail), logger::LogLevels::Error);
         return false;
     }
 
@@ -190,6 +194,7 @@ bool app::InitializeAutomation() {
 }
 
 void app::ClockTask() {
+    uint32_t consecutiveFailures = 0;
     while (true) {
         if (Network.ConnectionMode() != network::APMode::WifiClient) {
             vTaskDelay(pdMS_TO_TICKS(NTP_OFFLINE_RETRY_MS));
@@ -200,10 +205,22 @@ void app::ClockTask() {
         const bool updated = Clock.NTPUpdate(server);
 
         if (updated) {
-            Logger.Log("Date and time: Updated from NTP server " + server, logger::LogLevels::Information);
+            Logger.Log(
+                consecutiveFailures > 0
+                    ? "Date and time: NTP synchronization recovered using " + server
+                    : "Date and time: Updated from NTP server " + server,
+                logger::LogLevels::Information
+            );
+            consecutiveFailures = 0;
             vTaskDelay(pdMS_TO_TICKS(NTP_UPDATE_INTERVAL_MS));
         } else {
-            Logger.Log("Date and time: Failed to update from NTP server " + server, logger::LogLevels::Error);
+            ++consecutiveFailures;
+            if (consecutiveFailures == 1 || (consecutiveFailures % 10U) == 0U) {
+                Logger.Log(
+                    "Date and time: NTP update failed using " + server + " (attempts: " + String(consecutiveFailures) + ")",
+                    logger::LogLevels::Warning
+                );
+            }
             vTaskDelay(pdMS_TO_TICKS(NTP_FAILURE_RETRY_MS));
         }
     }
@@ -212,10 +229,32 @@ void app::ClockTask() {
 void app::AutomationTask() {
     ComponentEvent event;
     while (true) {
-        if (ComponentController.ReceiveEvent(event, portMAX_DELAY)) {
+        if (ComponentController.ReceiveEvent(event, pdMS_TO_TICKS(1000))) {
+            if (event.source != nullptr) {
+                if (event.source->Class() == component::Classes::Relay && event.code == relay::EventCodes::WriteFailed) {
+                    Logger.Log("Relay #" + String(event.source->ID()) + " " + event.source->Name() + ": output write failed", logger::LogLevels::Error);
+                } else if (event.source->Class() == component::Classes::Thermometer && event.code == thermometer::EventCodes::ReadFailed) {
+                    Logger.Log("Thermometer #" + String(event.source->ID()) + " " + event.source->Name() + ": sensor read failed", logger::LogLevels::Warning);
+                } else if (event.source->Class() == component::Classes::Thermometer && event.code == thermometer::EventCodes::ReadRecovered) {
+                    Logger.Log("Thermometer #" + String(event.source->ID()) + " " + event.source->Name() + ": sensor reading recovered", logger::LogLevels::Information);
+                } else if (event.source->Class() == component::Classes::Blinds && event.code == blinds::EventCodes::Fault) {
+                    const int32_t code = event.value;
+                    const char* reason = (code == 1 || code == -1) ? "relay output write failed" :
+                        (code == 2 || code == -2) ? "both movement directions became active" :
+                        (code == 3 || code == -3) ? "invalid travel time" : "unknown fault";
+                    Logger.Log("Blinds #" + String(event.source->ID()) + " " + event.source->Name() + ": " + reason + " (code " + String(code) + ")", logger::LogLevels::Error);
+                }
+            }
             (void)MQTTClient.Notify(event);
             (void)Automation.Execute(event);
         }
+
+        const uint32_t droppedCommands = ComponentController.TakeDroppedCommands();
+        const uint32_t droppedEvents = ComponentController.TakeDroppedEvents();
+        const uint32_t droppedMQTTEvents = MQTTClient.TakeDroppedEvents();
+        if (droppedCommands > 0) Logger.Log("Component command queue full: " + String(droppedCommands) + " command(s) dropped", logger::LogLevels::Warning);
+        if (droppedEvents > 0) Logger.Log("Component event queue full: " + String(droppedEvents) + " event(s) dropped", logger::LogLevels::Warning);
+        if (droppedMQTTEvents > 0) Logger.Log("MQTT event queue full: " + String(droppedMQTTEvents) + " event(s) dropped", logger::LogLevels::Warning);
     }
 }
 
@@ -364,13 +403,23 @@ bool app::RegisterTelnetCommands() {
                 subcommand == "remove" || subcommand == "add";
 
             if (mutation && !TelnetServer.IsSessionAdmin(client)) {
+                Logger.Log("CLI component mutation denied for " + client.remoteIP().toString() + ": comp " + subcommand, logger::LogLevels::Warning);
                 client.write("Permission denied.\r\n");
                 return;
             }
 
             String output;
             output.reserve(768);
-            (void)Settings.ExecuteComponentCommand(parameters, output);
+            const bool success = Settings.ExecuteComponentCommand(parameters, output);
+            if (mutation) {
+                telnetserver::SessionInfo session;
+                const String identity = TelnetServer.SessionInformation(client, session) ? session.user : String("unknown");
+                Logger.Log(
+                    "CLI component mutation " + String(success ? "accepted" : "rejected") + " for " + identity + "@" +
+                        client.remoteIP().toString() + ": comp " + subcommand,
+                    success ? logger::LogLevels::Information : logger::LogLevels::Warning
+                );
+            }
             client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
         },
         false
@@ -454,5 +503,5 @@ void app::LogNetworkStatus() {
         return;
     }
 
-    Logger.Log("Network: SoftAP Mode, connected to " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
+    Logger.Log("Network: SoftAP active as " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + ")", logger::LogLevels::Information);
 }

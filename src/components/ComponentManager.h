@@ -5,6 +5,7 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <memory>
+#include <atomic>
 
 #include "Component.h"
 
@@ -35,6 +36,9 @@ class ComponentManager final : private ComponentRuntime {
         [[nodiscard]] bool PropertyChanged() const noexcept;
         [[nodiscard]] bool StateChanged() const noexcept;
         [[nodiscard]] bool PersistenceRequired() const noexcept;
+        [[nodiscard]] const String& StartError() const noexcept { return pStartError; }
+        [[nodiscard]] uint32_t TakeDroppedCommands() noexcept { return pDroppedCommands.exchange(0, std::memory_order_relaxed); }
+        [[nodiscard]] uint32_t TakeDroppedEvents() noexcept { return pDroppedEvents.exchange(0, std::memory_order_relaxed); }
         void ClearPropertyChanged() noexcept;
         void ClearStateChanged() noexcept;
 
@@ -68,4 +72,7 @@ class ComponentManager final : private ComponentRuntime {
         QueueHandle_t pEventQueue = nullptr;
 
         TaskHandle_t pTaskHandle = nullptr;
+        String pStartError;
+        std::atomic<uint32_t> pDroppedCommands{0};
+        std::atomic<uint32_t> pDroppedEvents{0};
 };

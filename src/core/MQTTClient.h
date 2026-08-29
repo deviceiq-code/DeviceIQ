@@ -7,6 +7,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
+#include <atomic>
 
 #include "components/Component.h"
 
@@ -20,6 +21,7 @@ class mqttclient final {
         [[nodiscard]] bool Enabled() const noexcept { return pEnabled; }
         [[nodiscard]] bool Connected() noexcept { return pClient.connected(); }
         [[nodiscard]] bool Notify(const ComponentEvent& event) noexcept;
+        [[nodiscard]] uint32_t TakeDroppedEvents() noexcept { return pDroppedEvents.exchange(0, std::memory_order_relaxed); }
 
     private:
         static constexpr UBaseType_t EVENT_QUEUE_LENGTH = 32;
@@ -69,6 +71,9 @@ class mqttclient final {
         bool pDiscoveryEnabled = true;
         bool pDiscoveryRequested = false;
         TickType_t pLastConnectAttempt = 0;
+        uint32_t pConsecutiveConnectFailures = 0;
+        uint32_t pConsecutivePublishFailures = 0;
+        std::atomic<uint32_t> pDroppedEvents{0};
         TaskHandle_t pTaskHandle = nullptr;
 
         StaticQueue_t pEventQueueControl{};

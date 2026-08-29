@@ -41,6 +41,7 @@ class telnetserver {
         bool OnCommand(String command, String helpMessage, command_callback_t callback, bool admin = false);
         [[nodiscard]] bool SetSessionIdentity(WiFiClient& client, String username, bool admin);
         [[nodiscard]] bool IsSessionAdmin(WiFiClient& client);
+        [[nodiscard]] bool SessionInformation(WiFiClient& client, SessionInfo& info);
 
     private:
         class Lock {

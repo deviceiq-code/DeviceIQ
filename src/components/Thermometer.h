@@ -20,7 +20,8 @@ class thermometer final : public component {
             TemperatureChanged = 1,
             HumidityChanged,
             Changed,
-            ReadFailed
+            ReadFailed,
+            ReadRecovered
         };
 
         static constexpr uint32_t DEFAULT_POLLING_INTERVAL_MS = 5000;

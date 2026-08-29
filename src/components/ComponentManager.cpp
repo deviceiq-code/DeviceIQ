@@ -36,26 +36,37 @@ bool ComponentManager::AssignOwner(component& member, component& owner) noexcept
 
 bool ComponentManager::Start() noexcept {
     if (IsStarted()) return true;
+    pStartError.clear();
 
     if (pCommandQueue == nullptr) pCommandQueue = xQueueCreateStatic(COMMAND_QUEUE_LENGTH, sizeof(ComponentCommand), pCommandQueueStorage, &pCommandQueueControl);
     if (pEventQueue == nullptr) pEventQueue = xQueueCreateStatic(EVENT_QUEUE_LENGTH, sizeof(ComponentEvent), pEventQueueStorage, &pEventQueueControl);
-    if (pCommandQueue == nullptr || pEventQueue == nullptr) return false;
+    if (pCommandQueue == nullptr || pEventQueue == nullptr) {
+        pStartError = "unable to create command/event queues";
+        return false;
+    }
 
     for (size_t index = 0; index < pComponentCount; ++index) {
         if (pComponents[index]->Configured()) continue;
-        if (!pComponents[index]->Configure()) return false;
+        if (!pComponents[index]->Configure()) {
+            pStartError = "component #" + String(pComponents[index]->ID()) + " " + pComponents[index]->Name() + " failed during resource configuration";
+            return false;
+        }
         pComponents[index]->SetConfigured(true);
     }
 
     for (size_t index = 0; index < pComponentCount; ++index) {
         if (pComponents[index]->Initialized()) continue;
-        if (!pComponents[index]->Initialize()) return false;
+        if (!pComponents[index]->Initialize()) {
+            pStartError = "component #" + String(pComponents[index]->ID()) + " " + pComponents[index]->Name() + " failed during hardware initialization";
+            return false;
+        }
         pComponents[index]->SetInitialized(true);
     }
 
     const BaseType_t result = xTaskCreate(TaskEntry, "Components", TASK_STACK_SIZE, this, TASK_PRIORITY, &pTaskHandle);
     if (result != pdPASS) {
         pTaskHandle = nullptr;
+        pStartError = "unable to create component task";
         return false;
     }
 
@@ -64,12 +75,16 @@ bool ComponentManager::Start() noexcept {
 
 bool ComponentManager::SendCommand(const ComponentCommand& command, TickType_t timeout) noexcept {
     if (pCommandQueue == nullptr || command.target == nullptr || !IsRegistered(command.target)) return false;
-    return xQueueSend(pCommandQueue, &command, timeout) == pdTRUE;
+    if (xQueueSend(pCommandQueue, &command, timeout) == pdTRUE) return true;
+    pDroppedCommands.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }
 
 bool ComponentManager::SendCommandFromISR(const ComponentCommand& command, BaseType_t* higherPriorityTaskWoken) noexcept {
     if (pCommandQueue == nullptr || command.target == nullptr) return false;
-    return xQueueSendFromISR(pCommandQueue, &command, higherPriorityTaskWoken) == pdTRUE;
+    if (xQueueSendFromISR(pCommandQueue, &command, higherPriorityTaskWoken) == pdTRUE) return true;
+    pDroppedCommands.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }
 
 bool ComponentManager::ReceiveEvent(ComponentEvent& event, TickType_t timeout) noexcept {
@@ -193,7 +208,9 @@ bool ComponentManager::Publish(const ComponentEvent& event) noexcept {
         owner->HandleMemberEvent(event);
         return true;
     }
-    return xQueueSend(pEventQueue, &event, 0) == pdTRUE;
+    if (xQueueSend(pEventQueue, &event, 0) == pdTRUE) return true;
+    pDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }
 
 bool ComponentManager::PublishFromISR(const ComponentEvent& event, BaseType_t* higherPriorityTaskWoken) noexcept {
@@ -201,5 +218,7 @@ bool ComponentManager::PublishFromISR(const ComponentEvent& event, BaseType_t* h
     // Owned components are currently polled from the component task. Reject an
     // unexpected ISR publication rather than invoking an aggregate from ISR.
     if (event.source->Owner() != nullptr) return false;
-    return xQueueSendFromISR(pEventQueue, &event, higherPriorityTaskWoken) == pdTRUE;
+    if (xQueueSendFromISR(pEventQueue, &event, higherPriorityTaskWoken) == pdTRUE) return true;
+    pDroppedEvents.fetch_add(1, std::memory_order_relaxed);
+    return false;
 }

@@ -179,4 +179,6 @@ class network {
         String pMACAddress;
         callback_t pOnModeChanged;
         bool pStatusPublished = false;
+        bool pStationFailureLogged = false;
+        bool pSoftAPFailureLogged = false;
 };

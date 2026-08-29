@@ -150,7 +150,8 @@ const ComponentDescriptor* thermometer::EventDescriptors(size_t& count) const no
         {"TemperatureChanged", EventCodes::TemperatureChanged},
         {"HumidityChanged", EventCodes::HumidityChanged},
         {"Changed", EventCodes::Changed},
-        {"ReadFailed", EventCodes::ReadFailed}
+        {"ReadFailed", EventCodes::ReadFailed},
+        {"ReadRecovered", EventCodes::ReadRecovered}
     };
     count = sizeof(descriptors) / sizeof(descriptors[0]);
     return descriptors;
@@ -203,12 +204,15 @@ void thermometer::ApplyReading(float temperature, float humidity) noexcept {
         return;
     }
 
+    const bool recovered = pFailureReported;
     const int32_t previousTemperature = pTemperature.exchange(encodedTemperature, std::memory_order_relaxed);
     const int32_t previousHumidity = pHumidity.exchange(encodedHumidity, std::memory_order_relaxed);
     const bool temperatureChanged = previousTemperature != encodedTemperature;
     const bool humidityChanged = HasHumidity() && previousHumidity != encodedHumidity;
     pAvailable.store(true, std::memory_order_relaxed);
     pFailureReported = false;
+
+    if (recovered) (void)PublishEvent(EventCodes::ReadRecovered, encodedTemperature);
 
     if (temperatureChanged) (void)PublishEvent(EventCodes::TemperatureChanged, encodedTemperature);
     if (humidityChanged) (void)PublishEvent(EventCodes::HumidityChanged, encodedHumidity);
