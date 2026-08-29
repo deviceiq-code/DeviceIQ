@@ -126,7 +126,8 @@ Represents hardware abstractions.
 
 - Relay
 - Button
-- Sensor
+- Thermometer (DHT11, DHT12, DHT21, DHT22, and DS18B20)
+- Blinds
 - PWM Output
 - RGB Controller
 
@@ -215,15 +216,17 @@ Example:
 
 ```json
 {
-  "Components": [
-    {
-      "Name": "OnboardLed",
-      "ID": 1,
-      "Class": "Relay",
-      "Bus": "Onboard",
-      "Address": 2,
-      "Type": "NormallyOpen",
-      "DriveMode": "ActiveHigh",
+  "ComponentSchemaVersion": 1,
+  "Components": {
+    "1": {
+      "Setup": {
+        "Name": "OnboardLed",
+        "Class": "Relay",
+        "Bus": "Onboard",
+        "Address": 2,
+        "Type": "NormallyOpen",
+        "DriveMode": "ActiveHigh"
+      },
       "Properties": {
         "Enabled": true,
         "State": false
@@ -232,17 +235,18 @@ Example:
         "Changed": "log(%NAME% changed)"
       }
     },
-    {
-      "Name": "WallButton",
-      "ID": 2,
-      "Class": "Button",
-      "Bus": "Onboard",
-      "Address": 4,
-      "ActiveLevel": "Low",
-      "InputMode": "PullUp",
-      "DebounceTimeMs": 50,
-      "LongClickTimeMs": 1000,
-      "MultiClickTimeMs": 400,
+    "2": {
+      "Setup": {
+        "Name": "WallButton",
+        "Class": "Button",
+        "Bus": "Onboard",
+        "Address": 4,
+        "ActiveLevel": "Low",
+        "InputMode": "PullUp",
+        "DebounceTimeMs": 50,
+        "LongClickTimeMs": 1000,
+        "MultiClickTimeMs": 400
+      },
       "Properties": {
         "Enabled": true
       },
@@ -252,17 +256,60 @@ Example:
         "Clicked": "compset(GarageLights state=toggle)"
       }
     }
-  ]
+  }
 }
 ```
 
-At startup, onboard components are validated and created from this array. If the
-section is missing or invalid, DeviceIQ falls back to its built-in components.
+Component schema 1 is mandatory. `Components` is an object whose decimal keys
+are the stable component IDs. Every component has exactly three sections:
+`Setup` for its name, construction, and hardware settings; `Properties` for
+persistent runtime values; and `Events` for automation bindings. IDs are not
+repeated inside `Setup`. Other component layouts are rejected and are not
+migrated automatically.
+
+At startup, configured components are validated and created from this object. If
+the schema or component catalog is invalid, no components are installed.
 
 Relay runtime state is persisted back to `/config.json` every `General.Save
 State Pooling` seconds when it changes. Button input state is
 physical and is not persisted. A power loss before the next persistence cycle
 can therefore lose the most recent change.
+
+### Thermometers
+
+`Thermometer` supports DHT11, DHT12, DHT21, DHT22, and DS18B20 sensors. DHT11,
+DHT21, DHT22, and DS18B20 use `Bus: "Onboard"`, where `Address` is the GPIO.
+DHT12 supports either one-wire on `Onboard` or I2C; its default I2C address is
+`92` (`0x5C`).
+
+```json
+{
+  "8": {
+    "Setup": {
+      "Name": "RoomClimate",
+      "Class": "Thermometer",
+      "Bus": "Onboard",
+      "Address": 8,
+      "Type": "DHT22",
+      "PollingIntervalMs": 5000
+    },
+    "Properties": {
+      "Enabled": true
+    },
+    "Events": {
+      "TemperatureChanged": "log(%NAME% temperature changed)",
+      "HumidityChanged": "log(%NAME% humidity changed)",
+      "ReadFailed": "log(%NAME% read failed)"
+    }
+  }
+}
+```
+
+`TemperatureChanged` and `HumidityChanged` carry the reading multiplied by 100
+in the integer event value. `Changed` is emitted after either measurement
+changes. DS18B20 conversion is asynchronous and does not block the component
+task. MQTT Discovery creates a temperature sensor and, for DHT models, a
+humidity sensor in Home Assistant.
 
 ### Blinds groups
 
@@ -275,28 +322,55 @@ reversing direction.
 
 ```json
 {
-  "Name": "BedroomBlinds",
-  "ID": 7,
-  "Class": "Blinds",
-  "Bus": "Group",
-  "Relay Up": "BedroomBlindRelayUp",
-  "Relay Down": "BedroomBlindRelayDown",
-  "Button Up": "BedroomBlindButtonUp",
-  "Button Down": "BedroomBlindButtonDown",
-  "StepTimeMs": 250,
-  "ReversalDelayMs": 250,
-  "Properties": {
-    "Enabled": true,
-    "Position": 0
-  },
-  "Events": {}
+  "7": {
+    "Setup": {
+      "Name": "BedroomBlinds",
+      "Class": "Blinds",
+      "Bus": "Group",
+      "RelayUp": 3,
+      "RelayDown": 4,
+      "ButtonUp": 5,
+      "ButtonDown": 6,
+      "OpenStepTimeMs": 280,
+      "CloseStepTimeMs": 240,
+      "OpenCorrectionFactor": 0.35,
+      "CloseCorrectionFactor": 0.20,
+      "EndstopMarginMs": 2000,
+      "ReversalDelayMs": 250
+    },
+    "Properties": {
+      "Enabled": true,
+      "Position": 0
+    },
+    "Events": {}
+  }
 }
 ```
 
-`StepTimeMs` is the estimated travel time for one percent, so `250` represents
-approximately 25 seconds from fully closed to fully open. Holding a direction
-button moves while pressed and stops on release. A double click starts complete
-travel. `Clicked`, `LongClicked`, and `TripleClicked` are private no-ops.
+`OpenStepTimeMs` and `CloseStepTimeMs` are the estimated travel times for one
+percent in each direction and are required. Omitting either makes the `Blinds`
+definition invalid. The invalid group and its dedicated relays/buttons are not
+installed, while unrelated components continue to start. In the example, a
+complete opening is estimated at 28 seconds and a complete closing at 24
+seconds.
+
+`OpenCorrectionFactor` and `CloseCorrectionFactor` redistribute each
+direction's total travel time using a monotonic nonlinear curve. They are
+optional and default to `0.0`, which gives linear movement. Valid values range
+from `0.0` through `0.95`. Opening correction makes the beginning slower and
+the end faster; closing correction applies the mirrored behavior. The factors
+change only the shape of the estimate, not its total travel time.
+
+`EndstopMarginMs` is optional and defaults to `0`. For targets `0` and `100`,
+the corresponding relay remains energized for this additional period after the
+estimated endpoint. The position is confirmed as fully closed or fully open
+only after the margin expires. This assumes that the motor's internal limit
+switch safely interrupts it at the physical endpoint. Intermediate positions
+never use the margin.
+
+Holding a direction button moves while pressed and stops on release. A double
+click starts complete travel. `Clicked`, `LongClicked`, and `TripleClicked` are
+private no-ops.
 
 The public properties are `state` (`open`, `close`, or `stop`) and `position`
 (`0` through `100`). Home Assistant receives one MQTT cover for the group; its
@@ -328,7 +402,9 @@ comp rename [component_name|#component_id] name=newname
 comp remove [component_name|#component_id]
 comp add relay name=Lamp address=5
 comp add button name=WallButton address=6 inputMode=PullUp
-comp add blinds name=BedroomBlinds relayUp=UpRelay relayDown=DownRelay buttonUp=UpButton buttonDown=DownButton
+comp add thermometer name=RoomClimate address=8 type=DHT22 pollingIntervalMs=5000
+comp add thermometer name=I2CClimate bus=I2C address=92 type=DHT12
+comp add blinds name=BedroomBlinds relayUp=3 relayDown=4 buttonUp=5 buttonDown=6 openStepTimeMs=280 closeStepTimeMs=240 openCorrectionFactor=0.35 closeCorrectionFactor=0.20 endstopMarginMs=2000
 ```
 
 `state` is applied immediately in runtime and persisted automatically. Other

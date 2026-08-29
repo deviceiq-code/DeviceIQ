@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/Thermometer.h"
 
 #include <ArduinoJson.h>
 settings::settings() noexcept
@@ -1319,26 +1320,26 @@ bool settings::Save(const String& configfilename) const noexcept {
     // This prevents state persistence from undoing add/remove/rename changes
     // that are waiting for a reboot.
     {
-        JsonArray components = doc["Components"].to<JsonArray>();
-        const JsonArrayConst existingComponents = existingDoc["Components"].as<JsonArrayConst>();
+        constexpr uint8_t ComponentSchemaVersion = 1;
+        doc["ComponentSchemaVersion"] = ComponentSchemaVersion;
+        JsonObject components = doc["Components"].to<JsonObject>();
+        const JsonObjectConst existingComponents = existingDoc["Components"].as<JsonObjectConst>();
 
-        if (!existingComponents.isNull()) {
-            for (JsonObjectConst existing : existingComponents) components.add(existing);
+        if ((existingDoc["ComponentSchemaVersion"] | 0) == ComponentSchemaVersion && !existingComponents.isNull()) {
+            components.set(existingComponents);
 
             for (size_t index = 0; index < ComponentController.Count(); ++index) {
                 const component* runtimeComponent = ComponentController.At(index);
                 if (runtimeComponent == nullptr || !runtimeComponent->IsPublic() || !runtimeComponent->HasPersistentState()) continue;
 
-                for (JsonObject configured : components) {
-                    if ((configured["ID"] | INT32_MIN) != runtimeComponent->ID()) continue;
-
+                JsonObject configured = components[String(runtimeComponent->ID())].as<JsonObject>();
+                if (!configured.isNull()) {
                     JsonObject properties = configured["Properties"].to<JsonObject>();
                     if (runtimeComponent->Class() == component::Classes::Relay) {
                         properties["State"] = static_cast<const relay&>(*runtimeComponent).State();
                     } else if (runtimeComponent->Class() == component::Classes::Blinds) {
                         properties["Position"] = static_cast<const blinds&>(*runtimeComponent).Position();
                     }
-                    break;
                 }
             }
         } else {
@@ -1346,12 +1347,12 @@ bool settings::Save(const String& configfilename) const noexcept {
                 const component* source = ComponentController.At(index);
                 if (source == nullptr) continue;
 
-                JsonObject item = components.add<JsonObject>();
-                item["Name"] = source->Name();
-                item["ID"] = source->ID();
-                item["Class"] = component::ClassName(source->Class());
-                item["Bus"] = component::BusName(source->Bus());
-                item["Address"] = source->Address();
+                JsonObject item = components[String(source->ID())].to<JsonObject>();
+                JsonObject setup = item["Setup"].to<JsonObject>();
+                setup["Name"] = source->Name();
+                setup["Class"] = component::ClassName(source->Class());
+                setup["Bus"] = component::BusName(source->Bus());
+                setup["Address"] = source->Address();
 
                 JsonObject properties = item["Properties"].to<JsonObject>();
                 properties["Enabled"] = source->Enabled();
@@ -1359,25 +1360,33 @@ bool settings::Save(const String& configfilename) const noexcept {
 
                 if (source->Class() == component::Classes::Relay) {
                     const relay& relayComponent = static_cast<const relay&>(*source);
-                    item["Type"] = relayComponent.Type() == relay::RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed";
-                    item["DriveMode"] = relayComponent.DriveMode() == relay::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
+                    setup["Type"] = relayComponent.Type() == relay::RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed";
+                    setup["DriveMode"] = relayComponent.DriveMode() == relay::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
                     properties["State"] = source->IsPublic() ? relayComponent.State() : false;
                 } else if (source->Class() == component::Classes::Button) {
                     const button& buttonComponent = static_cast<const button&>(*source);
-                    item["ActiveLevel"] = buttonComponent.ActiveLevel() == button::ActiveLevels::High ? "High" : "Low";
-                    item["InputMode"] = buttonComponent.InputMode() == button::InputModes::PullUp ? "PullUp" : buttonComponent.InputMode() == button::InputModes::PullDown ? "PullDown" : "Floating";
-                    item["DebounceTimeMs"] = buttonComponent.DebounceTime();
-                    item["LongClickTimeMs"] = buttonComponent.LongClickTime();
-                    item["MultiClickTimeMs"] = buttonComponent.MultiClickTime();
+                    setup["ActiveLevel"] = buttonComponent.ActiveLevel() == button::ActiveLevels::High ? "High" : "Low";
+                    setup["InputMode"] = buttonComponent.InputMode() == button::InputModes::PullUp ? "PullUp" : buttonComponent.InputMode() == button::InputModes::PullDown ? "PullDown" : "Floating";
+                    setup["DebounceTimeMs"] = buttonComponent.DebounceTime();
+                    setup["LongClickTimeMs"] = buttonComponent.LongClickTime();
+                    setup["MultiClickTimeMs"] = buttonComponent.MultiClickTime();
+                } else if (source->Class() == component::Classes::Thermometer) {
+                    const thermometer& thermometerComponent = static_cast<const thermometer&>(*source);
+                    setup["Type"] = thermometer::TypeName(thermometerComponent.Type());
+                    setup["PollingIntervalMs"] = thermometerComponent.PollingInterval();
                 } else if (source->Class() == component::Classes::Blinds) {
                     const blinds& blindsComponent = static_cast<const blinds&>(*source);
-                    item.remove("Address");
-                    item["Relay Up"] = blindsComponent.RelayUp().Name();
-                    item["Relay Down"] = blindsComponent.RelayDown().Name();
-                    if (blindsComponent.ButtonUp() != nullptr) item["Button Up"] = blindsComponent.ButtonUp()->Name();
-                    if (blindsComponent.ButtonDown() != nullptr) item["Button Down"] = blindsComponent.ButtonDown()->Name();
-                    item["StepTimeMs"] = blindsComponent.StepTime();
-                    item["ReversalDelayMs"] = blindsComponent.ReversalDelay();
+                    setup.remove("Address");
+                    setup["RelayUp"] = blindsComponent.RelayUp().ID();
+                    setup["RelayDown"] = blindsComponent.RelayDown().ID();
+                    if (blindsComponent.ButtonUp() != nullptr) setup["ButtonUp"] = blindsComponent.ButtonUp()->ID();
+                    if (blindsComponent.ButtonDown() != nullptr) setup["ButtonDown"] = blindsComponent.ButtonDown()->ID();
+                    setup["OpenStepTimeMs"] = blindsComponent.OpenStepTime();
+                    setup["CloseStepTimeMs"] = blindsComponent.CloseStepTime();
+                    setup["OpenCorrectionFactor"] = blindsComponent.OpenCorrectionFactor();
+                    setup["CloseCorrectionFactor"] = blindsComponent.CloseCorrectionFactor();
+                    setup["EndstopMarginMs"] = blindsComponent.EndstopMargin();
+                    setup["ReversalDelayMs"] = blindsComponent.ReversalDelay();
                     properties["Position"] = blindsComponent.Position();
                 }
             }

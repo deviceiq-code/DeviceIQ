@@ -4,6 +4,7 @@
 #include "components/Blinds.h"
 #include "components/Button.h"
 #include "components/Relay.h"
+#include "components/Thermometer.h"
 
 mqttclient* mqttclient::pActiveInstance = nullptr;
 
@@ -150,6 +151,9 @@ void mqttclient::ProcessEvent(const ComponentEvent& event) {
     } else if (event.source->Class() == component::Classes::Button &&
         (event.code == button::EventCodes::Pressed || event.code == button::EventCodes::Released)) {
         PublishComponentState(*event.source);
+    } else if (event.source->Class() == component::Classes::Thermometer &&
+        event.code == thermometer::EventCodes::Changed) {
+        PublishComponentState(*event.source);
     } else if (event.source->Class() == component::Classes::Blinds && event.code == blinds::EventCodes::Changed) {
         PublishComponentState(*event.source);
     }
@@ -215,6 +219,13 @@ void mqttclient::PublishComponentState(const component& item) {
     } else if (item.Class() == component::Classes::Button) {
         const button& value = static_cast<const button&>(item);
         (void)Publish(ComponentTopic(item, "Get", "state"), value.State() ? "pressed" : "released", true);
+    } else if (item.Class() == component::Classes::Thermometer) {
+        const thermometer& value = static_cast<const thermometer&>(item);
+        if (!value.Available()) return;
+        (void)Publish(ComponentTopic(item, "Get", "temperature"), String(value.Temperature(), 2), true);
+        if (value.HasHumidity()) {
+            (void)Publish(ComponentTopic(item, "Get", "humidity"), String(value.Humidity(), 2), true);
+        }
     } else if (item.Class() == component::Classes::Blinds) {
         const blinds& value = static_cast<const blinds&>(item);
         const char* state = value.State() != blinds::Motion::Stopped ? blinds::MotionName(value.State()) :
@@ -231,6 +242,7 @@ void mqttclient::PublishDiscovery() {
         if (item == nullptr || !item->IsPublic() || !ValidTopicSegment(item->Name())) continue;
         if (item->Class() == component::Classes::Relay) PublishRelayDiscovery(*item);
         else if (item->Class() == component::Classes::Button) PublishButtonDiscovery(*item);
+        else if (item->Class() == component::Classes::Thermometer) PublishThermometerDiscovery(*item);
         else if (item->Class() == component::Classes::Blinds) PublishBlindsDiscovery(*item);
     }
 }
@@ -278,6 +290,39 @@ void mqttclient::PublishButtonDiscovery(const component& item) {
     String eventPayload;
     if (serializeJson(eventDocument, eventPayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/event/" + eventUnique + "/config", eventPayload, true);
+    }
+}
+
+void mqttclient::PublishThermometerDiscovery(const component& item) {
+    const thermometer& value = static_cast<const thermometer&>(item);
+
+    const String temperatureUnique = UniqueID(item, "temperature");
+    JsonDocument temperatureDocument;
+    AddDiscoveryMetadata(temperatureDocument, item, temperatureUnique);
+    temperatureDocument["name"] = item.Name() + " Temperature";
+    temperatureDocument["stat_t"] = ComponentTopic(item, "Get", "temperature");
+    temperatureDocument["dev_cla"] = "temperature";
+    temperatureDocument["unit_of_meas"] = "°C";
+    temperatureDocument["stat_cla"] = "measurement";
+    temperatureDocument["sug_dsp_prc"] = 1;
+    String temperaturePayload;
+    if (serializeJson(temperatureDocument, temperaturePayload) > 0) {
+        (void)Publish(pDiscoveryPrefix + "/sensor/" + temperatureUnique + "/config", temperaturePayload, true);
+    }
+
+    if (!value.HasHumidity()) return;
+    const String humidityUnique = UniqueID(item, "humidity");
+    JsonDocument humidityDocument;
+    AddDiscoveryMetadata(humidityDocument, item, humidityUnique);
+    humidityDocument["name"] = item.Name() + " Humidity";
+    humidityDocument["stat_t"] = ComponentTopic(item, "Get", "humidity");
+    humidityDocument["dev_cla"] = "humidity";
+    humidityDocument["unit_of_meas"] = "%";
+    humidityDocument["stat_cla"] = "measurement";
+    humidityDocument["sug_dsp_prc"] = 1;
+    String humidityPayload;
+    if (serializeJson(humidityDocument, humidityPayload) > 0) {
+        (void)Publish(pDiscoveryPrefix + "/sensor/" + humidityUnique + "/config", humidityPayload, true);
     }
 }
 

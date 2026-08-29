@@ -1,5 +1,6 @@
 #include "Blinds.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <freertos/task.h>
 
@@ -11,7 +12,11 @@ blinds::blinds(
     button* buttonUp,
     button* buttonDown,
     uint8_t initialPosition,
-    uint32_t stepTimeMs,
+    uint32_t openStepTimeMs,
+    uint32_t closeStepTimeMs,
+    float openCorrectionFactor,
+    float closeCorrectionFactor,
+    uint32_t endstopMarginMs,
     uint32_t reversalDelayMs,
     bool enabled
 ) :
@@ -22,9 +27,15 @@ blinds::blinds(
     pButtonDown(buttonDown),
     pPosition(initialPosition),
     pTargetPosition(initialPosition),
-    pStepTimeMs(stepTimeMs),
+    pOpenStepTimeMs(openStepTimeMs),
+    pCloseStepTimeMs(closeStepTimeMs),
+    pOpenCorrectionFactor(openCorrectionFactor),
+    pCloseCorrectionFactor(closeCorrectionFactor),
+    pEndstopMarginMs(endstopMarginMs),
     pReversalDelayMs(reversalDelayMs),
-    pStepTicks(pdMS_TO_TICKS(stepTimeMs) == 0 ? 1 : pdMS_TO_TICKS(stepTimeMs)),
+    pOpenTravelTicks(static_cast<TickType_t>(pdMS_TO_TICKS(static_cast<uint64_t>(openStepTimeMs) * 100ULL))),
+    pCloseTravelTicks(static_cast<TickType_t>(pdMS_TO_TICKS(static_cast<uint64_t>(closeStepTimeMs) * 100ULL))),
+    pEndstopMarginTicks(pdMS_TO_TICKS(endstopMarginMs)),
     pReversalDelayTicks(pdMS_TO_TICKS(reversalDelayMs)) {}
 
 ComponentPropertyResult blinds::SetProperty(const String& name, const String& value, TickType_t timeout) noexcept {
@@ -62,7 +73,11 @@ void blinds::GetInfo(String& output) const {
     output += "RelayDown      | " + pRelayDown.Name() + "\r\n";
     output += "ButtonUp       | " + String(pButtonUp == nullptr ? "" : pButtonUp->Name()) + "\r\n";
     output += "ButtonDown     | " + String(pButtonDown == nullptr ? "" : pButtonDown->Name()) + "\r\n";
-    output += "StepTimeMs     | " + String(StepTime()) + "\r\n";
+    output += "OpenStepTimeMs | " + String(OpenStepTime()) + "\r\n";
+    output += "CloseStepTimeMs| " + String(CloseStepTime()) + "\r\n";
+    output += "OpenCorrection | " + String(OpenCorrectionFactor(), 3) + "\r\n";
+    output += "CloseCorrection| " + String(CloseCorrectionFactor(), 3) + "\r\n";
+    output += "EndstopMarginMs| " + String(EndstopMargin()) + "\r\n";
     output += "ReversalDelayMs| " + String(ReversalDelay()) + "\r\n";
 }
 
@@ -76,7 +91,12 @@ const char* blinds::MotionName(Motion value) noexcept {
 }
 
 bool blinds::Configure() noexcept {
-    return &pRelayUp != &pRelayDown &&
+    return pOpenStepTimeMs > 0 && pCloseStepTimeMs > 0 &&
+        pOpenTravelTicks > 0 && pCloseTravelTicks > 0 &&
+        std::isfinite(pOpenCorrectionFactor) && std::isfinite(pCloseCorrectionFactor) &&
+        pOpenCorrectionFactor >= 0.0f && pOpenCorrectionFactor <= MAX_CORRECTION_FACTOR &&
+        pCloseCorrectionFactor >= 0.0f && pCloseCorrectionFactor <= MAX_CORRECTION_FACTOR &&
+        &pRelayUp != &pRelayDown &&
         pRelayUp.Owner() == this && pRelayDown.Owner() == this &&
         (pButtonUp == nullptr || pButtonUp->Owner() == this) &&
         (pButtonDown == nullptr || pButtonDown->Owner() == this);
@@ -170,7 +190,8 @@ void blinds::StartMovement(Motion direction, MoveSource source, uint8_t target, 
         StopMovement();
         return;
     }
-    if (target == Position()) {
+    const bool endpointRefresh = (target == 0 || target == 100) && pEndstopMarginTicks > 0;
+    if (target == Position() && !endpointRefresh) {
         StopMovement();
         return;
     }
@@ -183,6 +204,7 @@ void blinds::StartMovement(Motion direction, MoveSource source, uint8_t target, 
         (void)pRelayUp.Off();
         (void)pRelayDown.Off();
         SetMotion(Motion::Stopped);
+        pInEndstopMargin = false;
         pPendingMotion = direction;
         pPendingSource = source;
         pPendingTarget = target;
@@ -196,6 +218,7 @@ void blinds::StartMovement(Motion direction, MoveSource source, uint8_t target, 
 
 void blinds::Energize(Motion direction, MoveSource source, uint8_t target) noexcept {
     pMoveSource = source;
+    pInEndstopMargin = false;
     pTargetPosition.store(target, std::memory_order_relaxed);
     if (direction == Motion::Opening) {
         (void)pRelayDown.Off();
@@ -216,6 +239,7 @@ void blinds::StopMovement(bool publishEvent) noexcept {
     pPendingMotion = Motion::Stopped;
     pPendingSource = MoveSource::None;
     pMoveSource = MoveSource::None;
+    pInEndstopMargin = false;
     (void)pRelayUp.Off();
     (void)pRelayDown.Off();
     pTargetPosition.store(Position(), std::memory_order_relaxed);
@@ -288,6 +312,7 @@ void blinds::HandleRelayEvent(const ComponentEvent& event) noexcept {
             return;
         }
         pLastPositionAt = event.timestamp;
+        pCurveProgress = InverseCurve(static_cast<float>(Position()) / 100.0f, Motion::Opening);
         SetMotion(Motion::Opening);
     } else if (event.source == &pRelayDown) {
         if (pRelayUp.State()) {
@@ -296,6 +321,7 @@ void blinds::HandleRelayEvent(const ComponentEvent& event) noexcept {
             return;
         }
         pLastPositionAt = event.timestamp;
+        pCurveProgress = InverseCurve(1.0f - static_cast<float>(Position()) / 100.0f, Motion::Closing);
         SetMotion(Motion::Closing);
     }
 }
@@ -307,18 +333,43 @@ void blinds::UpdatePosition(TickType_t now) noexcept {
         return;
     }
 
+    if (pInEndstopMargin) {
+        if (static_cast<TickType_t>(now - pEndstopMarginStartedAt) >= pEndstopMarginTicks) {
+            CompleteMovement(TargetPosition());
+        }
+        return;
+    }
+
     const TickType_t elapsed = static_cast<TickType_t>(now - pLastPositionAt);
-    const uint32_t steps = elapsed / pStepTicks;
-    if (steps == 0) return;
-    pLastPositionAt += static_cast<TickType_t>(steps * pStepTicks);
+    if (elapsed == 0) return;
+    pLastPositionAt = now;
+
+    const TickType_t totalTicks = TotalTravelTicks(motion);
+    if (totalTicks == 0) {
+        StopMovement();
+        (void)PublishEvent(EventCodes::Fault, motion == Motion::Opening ? 3 : -3);
+        return;
+    }
+    pCurveProgress = min(1.0f, pCurveProgress + static_cast<float>(elapsed) / static_cast<float>(totalTicks));
 
     const uint8_t previous = Position();
     const uint8_t target = TargetPosition();
-    uint8_t position = previous;
-    if (motion == Motion::Opening) {
-        position = static_cast<uint8_t>(min<uint32_t>(target, static_cast<uint32_t>(previous) + steps));
-    } else {
-        position = static_cast<uint8_t>(steps >= previous - target ? target : previous - steps);
+    const float directionalPosition = Curve(pCurveProgress, motion);
+    const float rawPosition = motion == Motion::Opening ? directionalPosition : 1.0f - directionalPosition;
+    uint8_t position = static_cast<uint8_t>(constrain(static_cast<int>(std::lround(rawPosition * 100.0f)), 0, 100));
+    const float targetDirectionalPosition = motion == Motion::Opening
+        ? static_cast<float>(target) / 100.0f
+        : 1.0f - static_cast<float>(target) / 100.0f;
+    const float targetProgress = InverseCurve(targetDirectionalPosition, motion);
+    const bool reachedTarget = pCurveProgress >= targetProgress;
+    if (reachedTarget) position = target;
+
+    const bool endpoint = target == 0 || target == 100;
+    if (reachedTarget && endpoint && pEndstopMarginTicks > 0) {
+        const uint8_t marginPosition = target == 100 ? 99 : 1;
+        position = motion == Motion::Opening
+            ? max(previous, marginPosition)
+            : min(previous, marginPosition);
     }
 
     if (position != previous) {
@@ -327,9 +378,47 @@ void blinds::UpdatePosition(TickType_t now) noexcept {
         (void)PublishEvent(EventCodes::Changed, static_cast<int32_t>(position));
     }
 
-    if (position == target) {
-        StopMovement(false);
-        (void)PublishEvent(position == 100 ? EventCodes::Opened : position == 0 ? EventCodes::Closed : EventCodes::Stopped, position);
-        (void)PublishEvent(EventCodes::Changed, position);
+    if (!reachedTarget) return;
+    if (endpoint && pEndstopMarginTicks > 0) {
+        pInEndstopMargin = true;
+        pEndstopMarginStartedAt = now;
+        return;
     }
+    CompleteMovement(target);
+}
+
+void blinds::CompleteMovement(uint8_t position) noexcept {
+    const uint8_t previous = Position();
+    if (position != previous) {
+        pPosition.store(position, std::memory_order_relaxed);
+        MarkStateChanged();
+    }
+    StopMovement(false);
+    (void)PublishEvent(position == 100 ? EventCodes::Opened : position == 0 ? EventCodes::Closed : EventCodes::Stopped, position);
+    (void)PublishEvent(EventCodes::Changed, position);
+}
+
+float blinds::Curve(float progress, Motion direction) const noexcept {
+    progress = constrain(progress, 0.0f, 1.0f);
+    const float correction = direction == Motion::Opening ? pOpenCorrectionFactor : pCloseCorrectionFactor;
+    return direction == Motion::Opening
+        ? progress - correction * progress * (1.0f - progress)
+        : progress + correction * progress * (1.0f - progress);
+}
+
+float blinds::InverseCurve(float value, Motion direction) const noexcept {
+    value = constrain(value, 0.0f, 1.0f);
+    float lower = 0.0f;
+    float upper = 1.0f;
+    for (uint8_t iteration = 0; iteration < 16; ++iteration) {
+        const float middle = (lower + upper) * 0.5f;
+        if (Curve(middle, direction) < value) lower = middle;
+        else upper = middle;
+    }
+    return (lower + upper) * 0.5f;
+}
+
+TickType_t blinds::TotalTravelTicks(Motion direction) const noexcept {
+    return direction == Motion::Opening ? pOpenTravelTicks :
+        direction == Motion::Closing ? pCloseTravelTicks : 0;
 }

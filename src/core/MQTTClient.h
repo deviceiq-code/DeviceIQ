@@ -46,6 +46,7 @@ class mqttclient final {
         void PublishDiscovery();
         void PublishRelayDiscovery(const component& item);
         void PublishButtonDiscovery(const component& item);
+        void PublishThermometerDiscovery(const component& item);
         void PublishBlindsDiscovery(const component& item);
         void AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId);
         [[nodiscard]] bool Publish(const String& topic, const String& payload, bool retained = false);

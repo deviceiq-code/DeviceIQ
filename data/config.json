@@ -66,36 +66,39 @@
         "Enabled": true,
         "Port": 23
     },
-    "Components": [
-        {
-            "Name": "GarageLights",
-            "ID": 1,
-            "Class": "Relay",
-            "Bus": "Onboard",
-            "Address": 2,
+    "ComponentSchemaVersion": 1,
+    "Components": {
+        "1": {
+            "Setup": {
+                "Name": "GarageLights",
+                "Class": "Relay",
+                "Bus": "Onboard",
+                "Address": 2,
+                "Type": "NormallyOpen",
+                "DriveMode": "ActiveHigh"
+            },
             "Properties": {
                 "State": true
             },
-            "Type": "NormallyOpen",
-            "DriveMode": "ActiveHigh",
             "Events": {
                 "Changed": "log(%NAME% changed)"
             }
         },
-        {
-            "Name": "WallButton",
-            "ID": 2,
-            "Class": "Button",
-            "Bus": "Onboard",
-            "Address": 0,
+        "2": {
+            "Setup": {
+                "Name": "WallButton",
+                "Class": "Button",
+                "Bus": "Onboard",
+                "Address": 0,
+                "ActiveLevel": "Low",
+                "InputMode": "PullUp",
+                "DebounceTimeMs": 50,
+                "LongClickTimeMs": 1000,
+                "MultiClickTimeMs": 400
+            },
             "Properties": {
                 "Enabled": true
             },
-            "ActiveLevel": "Low",
-            "InputMode": "PullUp",
-            "DebounceTimeMs": 50,
-            "LongClickTimeMs": 1000,
-            "MultiClickTimeMs": 400,
             "Events": {
                 "Pressed": "log(%NAME% pressed)",
                 "Released": "log(%NAME% released)",
@@ -105,77 +108,86 @@
                 "TripleClicked": "log(%NAME% tripleclicked)"
             }
         },
-        {
-            "Name": "BedroomBlindRelayUp",
-            "ID": 3,
-            "Class": "Relay",
-            "Bus": "Onboard",
-            "Address": 4,
+        "3": {
+            "Setup": {
+                "Name": "BedroomBlindRelayUp",
+                "Class": "Relay",
+                "Bus": "Onboard",
+                "Address": 4,
+                "Type": "NormallyOpen",
+                "DriveMode": "ActiveHigh"
+            },
             "Properties": {
                 "Enabled": true,
                 "State": false
             },
-            "Type": "NormallyOpen",
-            "DriveMode": "ActiveHigh",
             "Events": {}
         },
-        {
-            "Name": "BedroomBlindRelayDown",
-            "ID": 4,
-            "Class": "Relay",
-            "Bus": "Onboard",
-            "Address": 5,
+        "4": {
+            "Setup": {
+                "Name": "BedroomBlindRelayDown",
+                "Class": "Relay",
+                "Bus": "Onboard",
+                "Address": 5,
+                "Type": "NormallyOpen",
+                "DriveMode": "ActiveHigh"
+            },
             "Properties": {
                 "Enabled": true,
                 "State": false
             },
-            "Type": "NormallyOpen",
-            "DriveMode": "ActiveHigh",
             "Events": {}
         },
-        {
-            "Name": "BedroomBlindButtonUp",
-            "ID": 5,
-            "Class": "Button",
-            "Bus": "Onboard",
-            "Address": 6,
+        "5": {
+            "Setup": {
+                "Name": "BedroomBlindButtonUp",
+                "Class": "Button",
+                "Bus": "Onboard",
+                "Address": 6,
+                "ActiveLevel": "Low",
+                "InputMode": "PullUp",
+                "DebounceTimeMs": 50,
+                "LongClickTimeMs": 1000,
+                "MultiClickTimeMs": 400
+            },
             "Properties": {
                 "Enabled": true
             },
-            "ActiveLevel": "Low",
-            "InputMode": "PullUp",
-            "DebounceTimeMs": 50,
-            "LongClickTimeMs": 1000,
-            "MultiClickTimeMs": 400,
             "Events": {}
         },
-        {
-            "Name": "BedroomBlindButtonDown",
-            "ID": 6,
-            "Class": "Button",
-            "Bus": "Onboard",
-            "Address": 7,
+        "6": {
+            "Setup": {
+                "Name": "BedroomBlindButtonDown",
+                "Class": "Button",
+                "Bus": "Onboard",
+                "Address": 7,
+                "ActiveLevel": "Low",
+                "InputMode": "PullUp",
+                "DebounceTimeMs": 50,
+                "LongClickTimeMs": 1000,
+                "MultiClickTimeMs": 400
+            },
             "Properties": {
                 "Enabled": true
             },
-            "ActiveLevel": "Low",
-            "InputMode": "PullUp",
-            "DebounceTimeMs": 50,
-            "LongClickTimeMs": 1000,
-            "MultiClickTimeMs": 400,
             "Events": {}
         },
-        {
-            "Name": "BedroomBlinds",
-            "ID": 7,
-            "Class": "Blinds",
-            "Bus": "Group",
-            "Relay Up": "BedroomBlindRelayUp",
-            "Relay Down": "BedroomBlindRelayDown",
-            "Button Up": "BedroomBlindButtonUp",
-            "Button Down": "BedroomBlindButtonDown",
-            "StepTimeMs": 250,
-            "ReversalDelayMs": 250,
+        "7": {
+            "Setup": {
+                "Name": "BedroomBlinds",
+                "Class": "Blinds",
+                "Bus": "Group",
+                "RelayUp": 3,
+                "RelayDown": 4,
+                "ButtonUp": 5,
+                "ButtonDown": 6,
+                "OpenStepTimeMs": 280,
+                "CloseStepTimeMs": 240,
+                "OpenCorrectionFactor": 0.35,
+                "CloseCorrectionFactor": 0.20,
+                "EndstopMarginMs": 2000,
+                "ReversalDelayMs": 250
+            },
             "Properties": {
                 "Enabled": true,
                 "Position": 0
@@ -184,8 +196,26 @@
                 "Opened": "log(%NAME% opened)",
                 "Closed": "log(%NAME% closed)"
             }
+        },
+        "8": {
+            "Setup": {
+                "Name": "RoomClimate",
+                "Class": "Thermometer",
+                "Bus": "Onboard",
+                "Address": 15,
+                "Type": "DHT22",
+                "PollingIntervalMs": 5000
+            },
+            "Properties": {
+                "Enabled": true
+            },
+            "Events": {
+                "TemperatureChanged": "log(%NAME% temperature changed)",
+                "HumidityChanged": "log(%NAME% humidity changed)",
+                "ReadFailed": "log(%NAME% read failed)"
+            }
         }
-    ],
+    },
     "Users": [
         {
             "Username": "admin",

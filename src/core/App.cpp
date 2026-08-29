@@ -129,7 +129,7 @@ bool app::InitializeClock() {
 
 bool app::InitializeComponents() {
     if (!Settings.InstallComponents()) {
-        Logger.Log("Components configuration missing or invalid; using built-in defaults", logger::LogLevels::Warning);
+        Logger.Log("Components schema or configuration is invalid; no components installed", logger::LogLevels::Warning);
     }
 
     if (!ComponentController.Start()) {
@@ -354,7 +354,8 @@ bool app::RegisterTelnetCommands() {
         "comp trigger [component_name|#component_id] event [value=integer]\r\n"
         "comp rename [component_name|#component_id] name=newname\r\n"
         "comp remove [component_name|#component_id]\r\n"
-        "comp add relay|button|blinds name=value [id=value] ...",
+        "comp add relay|button|thermometer|blinds name=value [id=value] ...\r\n"
+        "Blinds member references use numeric component IDs.",
         [](WiFiClient& client, String* parameters) {
             String subcommand = parameters[0];
             subcommand.toLowerCase();

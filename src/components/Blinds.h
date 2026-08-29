@@ -30,8 +30,13 @@ class blinds final : public component {
             Fault
         };
 
-        static constexpr uint32_t DEFAULT_STEP_TIME_MS = 250;
+        static constexpr uint32_t DEFAULT_OPEN_STEP_TIME_MS = 250;
+        static constexpr uint32_t DEFAULT_CLOSE_STEP_TIME_MS = 250;
+        static constexpr float DEFAULT_OPEN_CORRECTION_FACTOR = 0.0f;
+        static constexpr float DEFAULT_CLOSE_CORRECTION_FACTOR = 0.0f;
+        static constexpr uint32_t DEFAULT_ENDSTOP_MARGIN_MS = 0;
         static constexpr uint32_t DEFAULT_REVERSAL_DELAY_MS = 250;
+        static constexpr float MAX_CORRECTION_FACTOR = 0.95f;
 
         blinds(
             String name,
@@ -41,7 +46,11 @@ class blinds final : public component {
             button* buttonUp = nullptr,
             button* buttonDown = nullptr,
             uint8_t initialPosition = 0,
-            uint32_t stepTimeMs = DEFAULT_STEP_TIME_MS,
+            uint32_t openStepTimeMs = DEFAULT_OPEN_STEP_TIME_MS,
+            uint32_t closeStepTimeMs = DEFAULT_CLOSE_STEP_TIME_MS,
+            float openCorrectionFactor = DEFAULT_OPEN_CORRECTION_FACTOR,
+            float closeCorrectionFactor = DEFAULT_CLOSE_CORRECTION_FACTOR,
+            uint32_t endstopMarginMs = DEFAULT_ENDSTOP_MARGIN_MS,
             uint32_t reversalDelayMs = DEFAULT_REVERSAL_DELAY_MS,
             bool enabled = true
         );
@@ -52,7 +61,11 @@ class blinds final : public component {
         [[nodiscard]] Motion State() const noexcept { return pMotion.load(std::memory_order_relaxed); }
         [[nodiscard]] uint8_t Position() const noexcept { return pPosition.load(std::memory_order_relaxed); }
         [[nodiscard]] uint8_t TargetPosition() const noexcept { return pTargetPosition.load(std::memory_order_relaxed); }
-        [[nodiscard]] uint32_t StepTime() const noexcept { return pStepTimeMs; }
+        [[nodiscard]] uint32_t OpenStepTime() const noexcept { return pOpenStepTimeMs; }
+        [[nodiscard]] uint32_t CloseStepTime() const noexcept { return pCloseStepTimeMs; }
+        [[nodiscard]] float OpenCorrectionFactor() const noexcept { return pOpenCorrectionFactor; }
+        [[nodiscard]] float CloseCorrectionFactor() const noexcept { return pCloseCorrectionFactor; }
+        [[nodiscard]] uint32_t EndstopMargin() const noexcept { return pEndstopMarginMs; }
         [[nodiscard]] uint32_t ReversalDelay() const noexcept { return pReversalDelayMs; }
         [[nodiscard]] const relay& RelayUp() const noexcept { return pRelayUp; }
         [[nodiscard]] const relay& RelayDown() const noexcept { return pRelayDown; }
@@ -83,6 +96,10 @@ class blinds final : public component {
         void HandleButtonEvent(const ComponentEvent& event) noexcept;
         void HandleRelayEvent(const ComponentEvent& event) noexcept;
         void UpdatePosition(TickType_t now) noexcept;
+        void CompleteMovement(uint8_t position) noexcept;
+        [[nodiscard]] float Curve(float progress, Motion direction) const noexcept;
+        [[nodiscard]] float InverseCurve(float value, Motion direction) const noexcept;
+        [[nodiscard]] TickType_t TotalTravelTicks(Motion direction) const noexcept;
 
         relay& pRelayUp;
         relay& pRelayDown;
@@ -91,12 +108,21 @@ class blinds final : public component {
         std::atomic<Motion> pMotion{Motion::Stopped};
         std::atomic<uint8_t> pPosition{0};
         std::atomic<uint8_t> pTargetPosition{0};
-        const uint32_t pStepTimeMs;
+        const uint32_t pOpenStepTimeMs;
+        const uint32_t pCloseStepTimeMs;
+        const float pOpenCorrectionFactor;
+        const float pCloseCorrectionFactor;
+        const uint32_t pEndstopMarginMs;
         const uint32_t pReversalDelayMs;
-        const TickType_t pStepTicks;
+        const TickType_t pOpenTravelTicks;
+        const TickType_t pCloseTravelTicks;
+        const TickType_t pEndstopMarginTicks;
         const TickType_t pReversalDelayTicks;
         TickType_t pLastPositionAt = 0;
         TickType_t pReverseStartedAt = 0;
+        TickType_t pEndstopMarginStartedAt = 0;
+        float pCurveProgress = 0.0f;
+        bool pInEndstopMargin = false;
         Motion pPendingMotion = Motion::Stopped;
         MoveSource pMoveSource = MoveSource::None;
         MoveSource pPendingSource = MoveSource::None;

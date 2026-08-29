@@ -84,10 +84,11 @@ struct defaults {
     struct components {
         const bool Enabled = true;
         struct blinds {
-            const uint16_t StepMs = 250;
-            const float OpenAccel = 0.0f;
-            const float CloseAccel = 0.0f;
-            const uint8_t CalibrationMultiplier = 3;
+            const uint32_t OpenStepTimeMs = 250;
+            const uint32_t CloseStepTimeMs = 250;
+            const float OpenCorrectionFactor = 0.0f;
+            const float CloseCorrectionFactor = 0.0f;
+            const uint32_t EndstopMarginMs = 0;
         } Blinds;
     } Components;
     const char* ConfigFileName = "/config.json";
