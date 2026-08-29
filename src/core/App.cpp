@@ -349,6 +349,7 @@ bool app::RegisterTelnetCommands() {
         "comp",
         "Manage components\r\n\r\n"
         "comp list\r\n"
+        "comp tree\r\n"
         "comp status [component_name|#component_id]\r\n"
         "comp set [component_name|#component_id] property=value\r\n"
         "comp trigger [component_name|#component_id] event [value=integer]\r\n"

@@ -1048,7 +1048,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
     String subcommand = parameters[0];
     subcommand.toLowerCase();
     if (subcommand.isEmpty()) {
-        output = "Usage: comp list | status [selector] | set selector property=value | trigger selector event [value=integer] | rename selector name=value | remove selector | add class key=value...\r\n";
+        output = "Usage: comp list | tree | status [selector] | set selector property=value | trigger selector event [value=integer] | rename selector name=value | remove selector | add class key=value...\r\n";
         return false;
     }
 
@@ -1078,6 +1078,102 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
     if (components.isNull()) {
         output = "Components configuration is missing.\r\n";
         return false;
+    }
+
+    if (subcommand == "tree") {
+        if (!parameters[1].isEmpty()) {
+            output = "Usage: comp tree\r\n";
+            return false;
+        }
+
+        struct BusView {
+            component::Buses value;
+            const char* name;
+        };
+        const BusView buses[] = {
+            {component::Buses::Onboard, "Onboard"},
+            {component::Buses::I2C, "I2C"},
+            {component::Buses::Group, "Group"}
+        };
+
+        const auto configuredStatus = [&](JsonObjectConst item, int16_t id) -> const char* {
+            component* runtime = ComponentController.FindByID(id);
+            if (runtime == nullptr) return "restart required";
+            return ConfigurationMatchesRuntime(item, id, *runtime) ? "running" : "restart required";
+        };
+
+        const auto appendBlindsMember = [&](const char* role, JsonVariantConst reference) {
+            if (!reference.is<int>()) {
+                output += "|       |-- " + String(role) + " -> [not configured]\r\n";
+                return;
+            }
+            const int memberID = reference.as<int>();
+            JsonObjectConst member = components[String(memberID)].as<JsonObjectConst>();
+            if (member.isNull()) {
+                output += "|       |-- " + String(role) + " -> #" + String(memberID) + " [missing]\r\n";
+                return;
+            }
+            const JsonObjectConst memberSetup = ComponentSetup(member);
+            output += "|       |-- " + String(role) + " -> #" + String(memberID) + " " +
+                String(memberSetup["Class"] | "") + " " + String(memberSetup["Name"] | "") + "\r\n";
+        };
+
+        output = "Components\r\n";
+        bool anyBus = false;
+        for (const BusView& bus : buses) {
+            bool hasComponents = false;
+            for (JsonPair entry : components) {
+                const JsonObjectConst setup = entry.value()["Setup"].as<JsonObjectConst>();
+                const String configuredBus = setup["Bus"] | "";
+                if (configuredBus.equalsIgnoreCase(bus.name)) {
+                    hasComponents = true;
+                    break;
+                }
+            }
+            if (!hasComponents) {
+                for (size_t index = 0; index < ComponentController.Count(); ++index) {
+                    component* runtime = ComponentController.At(index);
+                    if (runtime != nullptr && runtime->Bus() == bus.value && components[String(runtime->ID())].isNull()) {
+                        hasComponents = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasComponents) continue;
+
+            anyBus = true;
+            output += "|-- " + String(bus.name) + "\r\n";
+            for (JsonPair entry : components) {
+                int16_t id = 0;
+                if (!ParseComponentID(entry.key().c_str(), id) || !entry.value().is<JsonObjectConst>()) {
+                    output += "|   |-- [invalid component key or definition]\r\n";
+                    continue;
+                }
+                const JsonObjectConst item = entry.value().as<JsonObjectConst>();
+                const JsonObjectConst setup = ComponentSetup(item);
+                const String configuredBus = setup["Bus"] | "";
+                if (!configuredBus.equalsIgnoreCase(bus.name)) continue;
+
+                output += "|   |-- #" + String(id) + " " + String(setup["Class"] | "") + " " +
+                    String(setup["Name"] | "") + " [" + configuredStatus(item, id) + "]\r\n";
+                const String componentClass = setup["Class"] | "";
+                if (componentClass.equalsIgnoreCase("Blinds")) {
+                    appendBlindsMember("RelayUp", setup["RelayUp"]);
+                    appendBlindsMember("RelayDown", setup["RelayDown"]);
+                    if (!setup["ButtonUp"].isNull()) appendBlindsMember("ButtonUp", setup["ButtonUp"]);
+                    if (!setup["ButtonDown"].isNull()) appendBlindsMember("ButtonDown", setup["ButtonDown"]);
+                }
+            }
+
+            for (size_t index = 0; index < ComponentController.Count(); ++index) {
+                component* runtime = ComponentController.At(index);
+                if (runtime == nullptr || runtime->Bus() != bus.value || !components[String(runtime->ID())].isNull()) continue;
+                output += "|   |-- #" + String(runtime->ID()) + " " + String(component::ClassName(runtime->Class())) +
+                    " " + runtime->Name() + " [pending removal]\r\n";
+            }
+        }
+        if (!anyBus) output += "`-- [empty]\r\n";
+        return true;
     }
 
     if (subcommand == "list") {
@@ -1468,6 +1564,6 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         return true;
     }
 
-    output = "Unknown comp subcommand. Use: comp list|status|set|rename|remove|add\r\n";
+    output = "Unknown comp subcommand. Use: comp list|tree|status|set|trigger|rename|remove|add\r\n";
     return false;
 }

@@ -394,6 +394,7 @@ reported in the log without stopping component processing.
 
 ```text
 comp list
+comp tree
 comp status [component_name|#component_id]
 comp set [component_name|#component_id] state=on
 comp set [component_name|#component_id] enabled=false
@@ -406,6 +407,11 @@ comp add thermometer name=RoomClimate address=8 type=DHT22 pollingIntervalMs=500
 comp add thermometer name=I2CClimate bus=I2C address=92 type=DHT12
 comp add blinds name=BedroomBlinds relayUp=3 relayDown=4 buttonUp=5 buttonDown=6 openStepTimeMs=280 closeStepTimeMs=240 openCorrectionFactor=0.35 closeCorrectionFactor=0.20 endstopMarginMs=2000
 ```
+
+`comp tree` groups the catalog by `Onboard`, `I2C`, and `Group` buses. Blinds
+entries also show their relay and button ID references as child branches.
+Runtime differences are marked as `restart required`, while runtime components
+removed from the configuration are marked as `pending removal`.
 
 `state` is applied immediately in runtime and persisted automatically. Other
 properties, add, rename, and remove update `/config.json` immediately and report
