@@ -1,6 +1,7 @@
 #include "CLI.h"
 
 #include "ComponentCommands.h"
+#include "LogCommands.h"
 #include "NetworkCommands.h"
 #include "SystemCommands.h"
 #include "TelnetCommands.h"
@@ -14,6 +15,7 @@ bool cli::RegisterCommands() {
     const bool component = RegisterComponentCommands();
     const bool network = RegisterNetworkCommands();
     const bool telnet = RegisterTelnetCommands();
+    const bool log = RegisterLogCommands();
 
-    return system && user && component && network && telnet;
+    return system && user && component && network && telnet && log;
 }
