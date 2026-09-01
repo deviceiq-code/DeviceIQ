@@ -2,12 +2,10 @@
 
 #include "App.h"
 #include "Globals.h"
-#include "Users.h"
-#include "SystemInfo.h"
-#include "CLIFormat.h"
 #include "components/Blinds.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
+#include "cli/CLI.h"
 
 void app::Start() {
     Clock.SetEpoch(Defaults.InitialTimeAndDate);
@@ -281,6 +279,8 @@ void app::StatePersistenceTask() {
 bool app::InitializeTelnetServer() {
     TelnetServer.Enabled(Settings.TelnetServer.Enabled());
     TelnetServer.Port(Settings.TelnetServer.Port());
+    TelnetServer.IdleTimeout(Settings.TelnetServer.IdleTimeoutMs());
+    TelnetServer.MaxSessions(Settings.TelnetServer.MaxSessions());
 
     if (!TelnetServer.Enabled()) {
         Logger.Log("Telnet Server: Disabled", logger::LogLevels::Information);
@@ -289,7 +289,7 @@ bool app::InitializeTelnetServer() {
 
     TelnetServer.WelcomeMessage(":: " + String(Version::ProductFamily) + " " +Settings.Network.Hostname() + " - Welcome");
 
-    if (!RegisterTelnetCommands()) {
+    if (!cli::RegisterCommands()) {
         Logger.Log("Error registering Telnet Server commands", logger::LogLevels::Error);
         return false;
     }
@@ -309,184 +309,6 @@ bool app::InitializeTelnetServer() {
 
     Logger.Log("Telnet Server: Enabled on port " + String(TelnetServer.Port()), logger::LogLevels::Information);
     return true;
-}
-
-bool app::RegisterTelnetCommands() {
-    const bool rebootRegistered = TelnetServer.OnCommand("reboot", "Reboot the device\r\n\r\nreboot", [&](WiFiClient& client, String*) {
-        client.write(CLIFormat::Line("System", String(Version::ProductFamily) + " is rebooting...").c_str());
-        client.stop();
-        DeviceRestart();
-    }, true);
-
-    const bool dumpcfgRegistered = TelnetServer.OnCommand("dumpcfg", "Prints the configuration file\r\n\r\ndumpcfg", [&](WiFiClient& client, String*) {
-        const String path = Defaults.ConfigFileName;
-        String content;
-
-        if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok) {
-            const String error = CLIFormat::Line("Config", "Error reading config file '" + path + "'.");
-            client.write(error.c_str());
-            return;
-        }
-
-        const String header = CLIFormat::Line("Config", "File: " + path) + CLIFormat::Line("", "Content:");
-        client.write(header.c_str());
-
-        size_t offset = 0;
-        while (offset < content.length()) {
-            const int newline = content.indexOf('\n', offset);
-            const size_t end = newline < 0 ? content.length() : static_cast<size_t>(newline);
-            size_t contentEnd = end;
-            if (contentEnd > offset && content[contentEnd - 1] == '\r') --contentEnd;
-            const String line = CLIFormat::ContinuationPrefix() + content.substring(offset, contentEnd) + "\r\n";
-            client.write(reinterpret_cast<const uint8_t*>(line.c_str()), line.length());
-            if (newline < 0) break;
-            offset = static_cast<size_t>(newline) + 1;
-        }
-    }, true);
-
-    const bool logonRegistered = TelnetServer.OnCommand("logon", "Log into the system with specific credentials\r\n\r\nlogon [username] [password]", [](WiFiClient& client, String* parameter) {
-        String result;
-
-        if (parameter[0].isEmpty() || parameter[1].isEmpty()) {
-            result += "Logon          | Missing username and password.\r\n";
-        } else {
-            const UserReturn authentication = Settings.Users.Authenticate(parameter[0], parameter[1]);
-
-            switch (authentication) {
-                case UserReturn::AuthenticationSuccess : {
-                    UserInfo user;
-                    const UserReturn findResult = Settings.Users.Find(parameter[0], &user);
-
-                    if (findResult == UserReturn::NoError && TelnetServer.SetSessionIdentity(client, user.username, user.admin)) {
-                        result += "Logon          | Logon successful for user " + user.username + ".\r\n";
-                        Logger.Log("Telnet Server: Logon successful for " + user.username + "@" + client.remoteIP().toString() + ":" + String(client.remotePort()), logger::LogLevels::Information);
-                    } else {
-                        result += "Logon          | Unable to update the Telnet session.\r\n";
-                        Logger.Log("Telnet Server: Unable to update authenticated session", logger::LogLevels::Error);
-                    }
-                } break;
-
-                case UserReturn::InvalidCredentials : {
-                    result += "Logon          | Logon failed for user " + parameter[0] + " - Invalid credentials.\r\n";
-                    Logger.Log("Telnet Server: Logon failed for " + parameter[0] + "@" + client.remoteIP().toString() + ":" + String(client.remotePort()) + " - Invalid credentials", logger::LogLevels::Warning);
-                } break;
-
-                case UserReturn::AuthenticationRateLimited : {
-                    result += "Logon          | Too many failed attempts. Try again later.\r\n";
-                    Logger.Log("Telnet Server: Logon rate limited for " + parameter[0] + "@" + client.remoteIP().toString() + ":" + String(client.remotePort()), logger::LogLevels::Warning);
-                } break;
-
-                case UserReturn::SynchronizationError : {
-                    result += "Logon          | Authentication temporarily unavailable.\r\n";
-                    Logger.Log("Telnet Server: User synchronization error during logon", logger::LogLevels::Error);
-                } break;
-
-                default: {
-                    result += "Logon          | Authentication failed.\r\n";
-                    Logger.Log("Telnet Server: Unexpected authentication result", logger::LogLevels::Error);
-                } break;
-            }
-        }
-        client.write(result.c_str());
-    }, false);
-
-    const bool compRegistered = TelnetServer.OnCommand(
-        "comp",
-        "Manage components\r\n\r\n"
-        "comp list\r\n"
-        "comp tree\r\n"
-        "comp status [component_name|#component_id]\r\n"
-        "comp set [component_name|#component_id] property=value\r\n"
-        "comp trigger [component_name|#component_id] event [value=integer]\r\n"
-        "comp rename [component_name|#component_id] name=newname\r\n"
-        "comp remove [component_name|#component_id]\r\n"
-        "comp add relay|button|thermometer|blinds name=value [id=value] ...\r\n"
-        "Blinds member references use numeric component IDs.",
-        [](WiFiClient& client, String* parameters) {
-            String subcommand = parameters[0];
-            subcommand.toLowerCase();
-            const bool mutation = subcommand == "set" || subcommand == "trigger" || subcommand == "rename" ||
-                subcommand == "remove" || subcommand == "add";
-
-            if (mutation && !TelnetServer.IsSessionAdmin(client)) {
-                Logger.Log("CLI component mutation denied for " + client.remoteIP().toString() + ": comp " + subcommand, logger::LogLevels::Warning);
-                client.write(CLIFormat::Line("Component", "Permission denied.").c_str());
-                return;
-            }
-
-            String output;
-            output.reserve(768);
-            const bool success = Settings.ExecuteComponentCommand(parameters, output);
-            if (mutation) {
-                telnetserver::SessionInfo session;
-                const String identity = TelnetServer.SessionInformation(client, session) ? session.user : String("unknown");
-                Logger.Log(
-                    "CLI component mutation " + String(success ? "accepted" : "rejected") + " for " + identity + "@" +
-                        client.remoteIP().toString() + ": comp " + subcommand,
-                    success ? logger::LogLevels::Information : logger::LogLevels::Warning
-                );
-            }
-            const String formatted = CLIFormat::Block("Component", output);
-            client.write(reinterpret_cast<const uint8_t*>(formatted.c_str()), formatted.length());
-        },
-        false
-    );
-
-    const bool hwinfoRegistered = TelnetServer.OnCommand("hwinfo", "Show ESP32 hardware information\r\n\r\nhwinfo", [](WiFiClient& client, String*) {
-        String output;
-        SystemInfo::Hardware(output);
-        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-    }, false);
-
-    const bool memRegistered = TelnetServer.OnCommand("mem", "Show memory usage\r\n\r\nmem [b|kb|mb]", [](WiFiClient& client, String* parameters) {
-        String parameter = parameters[0];
-        parameter.toLowerCase();
-
-        SystemInfo::MemoryUnit unit = SystemInfo::MemoryUnit::Bytes;
-        if (parameter.isEmpty() || parameter == "b") {
-            unit = SystemInfo::MemoryUnit::Bytes;
-        } else if (parameter == "kb") {
-            unit = SystemInfo::MemoryUnit::Kilobytes;
-        } else if (parameter == "mb") {
-            unit = SystemInfo::MemoryUnit::Megabytes;
-        } else {
-            client.write(CLIFormat::Line("Memory", "Usage: mem [b|kb|mb]").c_str());
-            return;
-        }
-
-        String output;
-        SystemInfo::Memory(output, unit);
-        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-    }, true);
-
-    const bool fsRegistered = TelnetServer.OnCommand("fs", "Show filesystem information\r\n\r\nfs", [](WiFiClient& client, String*) {
-        String output;
-        (void)SystemInfo::FileSystem(output);
-        client.write(reinterpret_cast<const uint8_t*>(output.c_str()), output.length());
-    }, true);
-
-    const bool versionRegistered = TelnetServer.OnCommand("ver", "Show device version info\r\n\r\nver", [](WiFiClient& client, String*) {
-        String result;
-        result += "Version        | Product: " + String(Version::ProductName) + "\r\n";
-        result += "               | Family: " + String(Version::ProductFamily) + "\r\n";
-        result += "               | Serial: " + Version::SerialNumber() + "\r\n";
-        result += "               | Hardware: " + Version::Hardware::Info() + "\r\n";
-        result += "               | Software: " + Version::Software::Info() + "\r\n";
-        client.write(result.c_str());
-    }, false);
-
-    return rebootRegistered && dumpcfgRegistered && logonRegistered && compRegistered &&
-        hwinfoRegistered && memRegistered && fsRegistered && versionRegistered;
-}
-
-void app::DeviceRestart() {
-    if (!Settings.SaveComponentsState()) {
-        Logger.Log("Error saving component state before restart", logger::LogLevels::Error);
-    }
-
-    Logger.Log("Device restart requested", logger::LogLevels::Information);
-    vTaskDelay(pdMS_TO_TICKS(250));
-    ESP.restart();
 }
 
 void app::LogConfigurationStatus(bool configurationLoaded) {

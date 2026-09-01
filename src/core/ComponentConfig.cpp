@@ -25,6 +25,10 @@ namespace {
         return true;
     }
 
+    JsonObjectConst ComponentState(JsonObjectConst stateRoot, int16_t id) {
+        return stateRoot[String(id)].as<JsonObjectConst>();
+    }
+
     JsonObjectConst ComponentSetup(JsonObjectConst object) {
         return object["Setup"].as<JsonObjectConst>();
     }
@@ -58,7 +62,7 @@ namespace {
         bool enabled = true;
     };
 
-    bool ParseRelayConfiguration(JsonObjectConst object, int16_t id, RelayConfiguration& result) {
+    bool ParseRelayConfiguration(JsonObjectConst object, int16_t id, RelayConfiguration& result, JsonObjectConst stateOverride = JsonObjectConst()) {
         if (!HasComponentSections(object)) return false;
         const JsonObjectConst setup = ComponentSetup(object);
         if (!setup["Name"].is<const char*>() ||
@@ -120,6 +124,11 @@ namespace {
                 result.state = properties["State"].as<bool>();
             }
         }
+
+        // A persisted state.json entry overrides the configured seed value.
+        // Malformed overrides are ignored rather than failing installation,
+        // since the state file is disposable/regenerable.
+        if (stateOverride["State"].is<bool>()) result.state = stateOverride["State"].as<bool>();
 
         if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
         return true;
@@ -287,7 +296,7 @@ namespace {
         bool enabled = true;
     };
 
-    bool ParseBlindsConfiguration(JsonObjectConst object, int16_t id, BlindsConfiguration& result, bool requireDirectionalTimes = true) {
+    bool ParseBlindsConfiguration(JsonObjectConst object, int16_t id, BlindsConfiguration& result, bool requireDirectionalTimes = true, JsonObjectConst stateOverride = JsonObjectConst()) {
         if (!HasComponentSections(object)) return false;
         const JsonObjectConst setup = ComponentSetup(object);
         if (!setup["Name"].is<const char*>() || !setup["Class"].is<const char*>() ||
@@ -363,6 +372,14 @@ namespace {
             }
         }
 
+        // A persisted state.json entry overrides the configured seed value.
+        // Malformed overrides are ignored rather than failing installation,
+        // since the state file is disposable/regenerable.
+        if (stateOverride["Position"].is<int>()) {
+            const int position = stateOverride["Position"].as<int>();
+            if (position >= 0 && position <= 100) result.position = static_cast<uint8_t>(position);
+        }
+
         if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
         return true;
     }
@@ -387,6 +404,23 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         Logger.Log("Components installation failed: invalid JSON (" + String(jsonError.c_str()) + ")", logger::LogLevels::Error);
         return false;
     }
+
+    // Persisted runtime state (Relay.State, Blinds.Position) overrides the
+    // seed Properties above, per component ID. Missing or invalid state is
+    // not an error - it is the expected condition on a device's first boot,
+    // or after the state file is lost - it just falls back to the seed.
+    JsonDocument stateDocument;
+    {
+        String stateContent;
+        if (FileSystem.Read(Defaults.StateFileName, stateContent) == filesystem::Result::Ok && !stateContent.isEmpty()) {
+            if (deserializeJson(stateDocument, stateContent)) {
+                Logger.Log("Persisted component state file is invalid JSON; using configured defaults", logger::LogLevels::Warning);
+                stateDocument.clear();
+            }
+        }
+    }
+    const JsonObjectConst stateRoot = stateDocument.as<JsonObjectConst>();
+
     if ((document["ComponentSchemaVersion"] | 0) != ComponentSchemaVersion) {
         Logger.Log("Components installation failed: ComponentSchemaVersion must be " + String(ComponentSchemaVersion), logger::LogLevels::Error);
         return false;
@@ -542,7 +576,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
 
         if (componentClass.equalsIgnoreCase("Relay")) {
             RelayConfiguration configuration;
-            if (!ParseRelayConfiguration(object, configuredID, configuration)) return false;
+            if (!ParseRelayConfiguration(object, configuredID, configuration, ComponentState(stateRoot, configuredID))) return false;
             instances[index].reset(new (std::nothrow) relay(
                 configuration.name,
                 configuration.id,
@@ -602,7 +636,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         }
 
         BlindsConfiguration configuration;
-        if (!ParseBlindsConfiguration(object, configuredID, configuration)) return false;
+        if (!ParseBlindsConfiguration(object, configuredID, configuration, true, ComponentState(stateRoot, configuredID))) return false;
         const int16_t relayUpIndex = resolveMember(configuration.relayUp, component::Classes::Relay);
         const int16_t relayDownIndex = resolveMember(configuration.relayDown, component::Classes::Relay);
         const int16_t buttonUpIndex = configuration.buttonUp == 0 ? -1 : resolveMember(configuration.buttonUp, component::Classes::Button);
@@ -690,16 +724,35 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
     return true;
 }
 
-bool settings::SaveComponentsState(const String& configfilename) noexcept {
+bool settings::SaveComponentsState(const String& statefilename) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return false;
 
-    // Clear before taking the snapshot. Changes occurring while Save() runs
+    // Clear before taking the snapshot. Changes occurring while this saves
     // set the flags again and will be persisted by the next cycle.
     ComponentController.ClearPropertyChanged();
     ComponentController.ClearStateChanged();
 
-    if (!Save(configfilename)) {
+    const String path = statefilename.length() ? statefilename : String(Defaults.StateFileName);
+
+    // Regenerated from scratch every time, keyed by component ID: a
+    // component removed from the live set (via `comp remove`, pending a
+    // reboot) simply stops appearing here on the next save.
+    JsonDocument doc;
+    for (size_t index = 0; index < ComponentController.Count(); ++index) {
+        const component* item = ComponentController.At(index);
+        if (item == nullptr || !item->IsPublic() || !item->HasPersistentState()) continue;
+
+        JsonObject entry = doc[String(item->ID())].to<JsonObject>();
+        if (item->Class() == component::Classes::Relay) {
+            entry["State"] = static_cast<const relay&>(*item).State();
+        } else if (item->Class() == component::Classes::Blinds) {
+            entry["Position"] = static_cast<const blinds&>(*item).Position();
+        }
+    }
+
+    String serialized;
+    if (serializeJson(doc, serialized) == 0 || FileSystem.WriteAtomic(path.c_str(), serialized) != filesystem::Result::Ok) {
         pSaveComponentsStateFlag = true;
         return false;
     }
@@ -1065,7 +1118,7 @@ namespace {
         document["ComponentSchemaVersion"] = ComponentSchemaVersion;
         String serialized;
         if (serializeJsonPretty(document, serialized) == 0) return false;
-        return FileSystem.Write(Defaults.ConfigFileName, serialized) == filesystem::Result::Ok;
+        return FileSystem.WriteAtomic(Defaults.ConfigFileName, serialized) == filesystem::Result::Ok;
     }
 
     const char* PropertyResultName(ComponentPropertyResult result) {

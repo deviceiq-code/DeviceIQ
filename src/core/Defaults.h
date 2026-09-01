@@ -71,6 +71,8 @@ struct defaults {
     struct telnetserver {
         const uint16_t Port = 23;
         const bool Enabled = true;
+        const uint32_t IdleTimeoutMs = 60000; // 1 minute. 0 disables the idle timeout.
+        const uint8_t MaxSessions = 3;
     } TelnetServer;
     struct mqtt {
         const bool Enabled = false;
@@ -92,6 +94,7 @@ struct defaults {
         } Blinds;
     } Components;
     const char* ConfigFileName = "/config.json";
+    const char* StateFileName = "/state.json";
     const char* LogFileName = "/device.log";
     const uint32_t InitialTimeAndDate = 1708136755;
 };

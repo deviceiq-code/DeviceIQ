@@ -2,20 +2,30 @@
 
 #include <Arduino.h>
 
+#ifndef DEVICEIQ_VERSION_MAJOR
+#define DEVICEIQ_VERSION_MAJOR 1
+#endif
+#ifndef DEVICEIQ_VERSION_MINOR
+#define DEVICEIQ_VERSION_MINOR 0
+#endif
+#ifndef DEVICEIQ_VERSION_REVISION
+#define DEVICEIQ_VERSION_REVISION 0
+#endif
+
 namespace Version {
     constexpr const char* ProductFamily = "DeviceIQ";
     constexpr const char* ProductName   = "Home";
 
     struct SoftwareVersion {
-        static constexpr uint8_t Major = 1;
-        static constexpr uint8_t Minor = 0;
-        static constexpr uint8_t Revision = 0;
+        static constexpr uint8_t Major = DEVICEIQ_VERSION_MAJOR;
+        static constexpr uint8_t Minor = DEVICEIQ_VERSION_MINOR;
+        static constexpr uint8_t Revision = DEVICEIQ_VERSION_REVISION;
 
         static String Info() { return String(Major) + "." + String(Minor) + "." + String(Revision);}
     };
 
     struct HardwareVersion {
-        static constexpr const char* Model = "ESP32-WROOM";
+        static constexpr const char* Model = "ESP32-S3 N16R8";
 
         static constexpr uint8_t Major = 1;
         static constexpr uint8_t Minor = 3;

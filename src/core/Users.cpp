@@ -103,6 +103,10 @@ void user::Clear() noexcept {
 }
 
 bool user::Authenticate(const String& password) const {
+    return VerifyPassword(password, pSalt, pHash);
+}
+
+bool user::VerifyPassword(const String& password, const uint8_t* salt, const uint8_t* hash) noexcept {
     uint8_t computed[PASS_HASHLEN];
 
     mbedtls_md_context_t ctx;
@@ -115,7 +119,7 @@ bool user::Authenticate(const String& password) const {
         return false;
     }
 
-    const int ret = mbedtls_pkcs5_pbkdf2_hmac(&ctx, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), pSalt, PASS_SALTLEN, PASS_PBKDF2_ITERATIONS, PASS_HASHLEN, computed);
+    const int ret = mbedtls_pkcs5_pbkdf2_hmac(&ctx, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), salt, PASS_SALTLEN, PASS_PBKDF2_ITERATIONS, PASS_HASHLEN, computed);
 
     mbedtls_md_free(&ctx);
 
@@ -127,7 +131,7 @@ bool user::Authenticate(const String& password) const {
     volatile uint8_t difference = 0;
 
     for (size_t i = 0; i < PASS_HASHLEN; ++i) {
-        difference |= pHash[i] ^ computed[i];
+        difference |= hash[i] ^ computed[i];
     }
 
     const bool authenticated = difference == 0;
@@ -262,55 +266,113 @@ UserReturn users::SetAdmin(const String& username, bool admin) {
     return UserReturn::UserNotFound;
 }
 
-UserReturn users::Authenticate(const String& username, const String& password) {
-    Lock lock(pMutex);
-    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
+UserReturn users::Authenticate(const String& username, const String& password, IPAddress clientIP) {
+    const uint32_t ip = static_cast<uint32_t>(clientIP);
 
-    const uint32_t now = millis();
-    if (AuthenticationRateLimitedUnlocked(now)) return UserReturn::AuthenticationRateLimited;
+    // The PBKDF2 hash below costs on the order of hundreds of milliseconds.
+    // Only the credential lookup and the rate-limit bookkeeping need the
+    // lock; the hash itself runs unlocked so it does not stall other user
+    // operations (or other concurrent logon attempts) for its duration.
+    uint8_t salt[PASS_SALTLEN];
+    uint8_t hash[PASS_HASHLEN];
 
-    String normalizedUsername = username;
-    if (!user::NormalizeUsername(normalizedUsername)) {
-        RegisterAuthenticationFailureUnlocked(millis());
-        return UserReturn::InvalidCredentials;
-    }
+    {
+        Lock lock(pMutex);
+        if (!lock.IsLocked()) return UserReturn::SynchronizationError;
 
-    for (size_t i = 0; i < pUserCount; ++i) {
-        if (pUsers[i].Username() == normalizedUsername) {
-            if (pUsers[i].Authenticate(password)) {
-                ResetAuthenticationRateLimitUnlocked();
-                return UserReturn::AuthenticationSuccess;
+        const uint32_t now = millis();
+        if (AuthenticationRateLimitedUnlocked(ip, now)) return UserReturn::AuthenticationRateLimited;
+
+        String normalizedUsername = username;
+        if (!user::NormalizeUsername(normalizedUsername)) {
+            RegisterAuthenticationFailureUnlocked(ip, millis());
+            return UserReturn::InvalidCredentials;
+        }
+
+        bool found = false;
+        for (size_t i = 0; i < pUserCount; ++i) {
+            if (pUsers[i].Username() == normalizedUsername) {
+                pUsers[i].CopyCredentials(salt, hash);
+                found = true;
+                break;
             }
+        }
 
-            RegisterAuthenticationFailureUnlocked(millis());
+        if (!found) {
+            RegisterAuthenticationFailureUnlocked(ip, millis());
             return UserReturn::InvalidCredentials;
         }
     }
 
-    RegisterAuthenticationFailureUnlocked(millis());
+    const bool authenticated = user::VerifyPassword(password, salt, hash);
+    mbedtls_platform_zeroize(salt, sizeof(salt));
+    mbedtls_platform_zeroize(hash, sizeof(hash));
+
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
+
+    if (authenticated) {
+        ResetAuthenticationRateLimitUnlocked(ip);
+        return UserReturn::AuthenticationSuccess;
+    }
+
+    RegisterAuthenticationFailureUnlocked(ip, millis());
     return UserReturn::InvalidCredentials;
 }
 
-bool users::AuthenticationRateLimitedUnlocked(uint32_t now) const noexcept {
-    return pAuthenticationDelayMs != 0 &&
-           static_cast<int32_t>(now - pAuthenticationBlockedUntilMs) < 0;
+bool users::AuthenticationRateLimitedUnlocked(uint32_t ip, uint32_t now) const noexcept {
+    for (const AuthRateLimitEntry& entry : pAuthRateLimits) {
+        if (entry.inUse && entry.ip == ip) {
+            return entry.delayMs != 0 && static_cast<int32_t>(now - entry.blockedUntilMs) < 0;
+        }
+    }
+    return false;
 }
 
-void users::RegisterAuthenticationFailureUnlocked(uint32_t now) noexcept {
-    if (pAuthenticationDelayMs == 0) {
-        pAuthenticationDelayMs = AUTH_RATE_LIMIT_INITIAL_DELAY_MS;
-    } else if (pAuthenticationDelayMs >= AUTH_RATE_LIMIT_MAX_DELAY_MS / 2) {
-        pAuthenticationDelayMs = AUTH_RATE_LIMIT_MAX_DELAY_MS;
-    } else {
-        pAuthenticationDelayMs *= 2;
+void users::RegisterAuthenticationFailureUnlocked(uint32_t ip, uint32_t now) noexcept {
+    AuthRateLimitEntry* entry = nullptr;
+    AuthRateLimitEntry* oldest = nullptr;
+
+    for (AuthRateLimitEntry& candidate : pAuthRateLimits) {
+        if (candidate.inUse && candidate.ip == ip) {
+            entry = &candidate;
+            break;
+        }
+        if (!candidate.inUse) {
+            if (entry == nullptr) entry = &candidate;
+            continue;
+        }
+        if (oldest == nullptr || static_cast<int32_t>(candidate.lastAttemptMs - oldest->lastAttemptMs) < 0) {
+            oldest = &candidate;
+        }
     }
 
-    pAuthenticationBlockedUntilMs = now + pAuthenticationDelayMs;
+    // Table full and IP not tracked yet: evict the least-recently-attempted entry.
+    if (entry == nullptr) entry = oldest;
+    if (entry == nullptr) return;
+
+    if (!entry->inUse || entry->ip != ip) {
+        entry->inUse = true;
+        entry->ip = ip;
+        entry->delayMs = 0;
+    }
+
+    entry->delayMs = entry->delayMs == 0 ? AUTH_RATE_LIMIT_INITIAL_DELAY_MS :
+        entry->delayMs >= AUTH_RATE_LIMIT_MAX_DELAY_MS / 2 ? AUTH_RATE_LIMIT_MAX_DELAY_MS : entry->delayMs * 2;
+
+    entry->blockedUntilMs = now + entry->delayMs;
+    entry->lastAttemptMs = now;
 }
 
-void users::ResetAuthenticationRateLimitUnlocked() noexcept {
-    pAuthenticationDelayMs = 0;
-    pAuthenticationBlockedUntilMs = 0;
+void users::ResetAuthenticationRateLimitUnlocked(uint32_t ip) noexcept {
+    for (AuthRateLimitEntry& entry : pAuthRateLimits) {
+        if (entry.inUse && entry.ip == ip) {
+            entry.inUse = false;
+            entry.delayMs = 0;
+            entry.blockedUntilMs = 0;
+            return;
+        }
+    }
 }
 
 UserReturn users::Find(const String& username, UserInfo* outUser) {

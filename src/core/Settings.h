@@ -225,6 +225,8 @@ class settings {
                 SemaphoreHandle_t pMutex;
                 uint16_t pPort{};
                 bool pEnabled{};
+                uint32_t pIdleTimeoutMs{};
+                uint8_t pMaxSessions{};
             public:
                 explicit telnetserver(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
                 [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
@@ -232,6 +234,13 @@ class settings {
 
                 [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
                 void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+
+                // 0 means the idle timeout is disabled; kept as given.
+                [[nodiscard]] uint32_t IdleTimeoutMs() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIdleTimeoutMs : 0; }
+                void IdleTimeoutMs(uint32_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pIdleTimeoutMs = value; }
+
+                [[nodiscard]] uint8_t MaxSessions() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pMaxSessions : 0; }
+                void MaxSessions(uint8_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pMaxSessions = (value == 0) ? Defaults.TelnetServer.MaxSessions : value; }
         } TelnetServer;
         class mqtt {
             private:
@@ -282,7 +291,7 @@ class settings {
         bool Load(const String& configfilename = Defaults.ConfigFileName) noexcept;
         bool Save(const String& configfilename = Defaults.ConfigFileName) const noexcept;
         bool InstallComponents(const String& configfilename = Defaults.ConfigFileName) noexcept;
-        bool SaveComponentsState(const String& configfilename = Defaults.ConfigFileName) noexcept;
+        bool SaveComponentsState(const String& statefilename = Defaults.StateFileName) noexcept;
         bool ExecuteComponentCommand(String* parameters, String& output) noexcept;
 };
 

@@ -430,6 +430,37 @@ comp trigger #4 Pressed value=1
 comp trigger #4 Released
 ```
 
+### Network CLI
+
+```text
+net
+net show
+net ssid [value|clear]
+net rssi
+net ip [address]
+net hostname [value]
+net dhcp [on|off]
+net gateway [address]
+net netmask [address]
+net dns [1|2] [address]
+net passphrase [value|clear]
+net connection-timeout [seconds]
+net reconnect [on|off]
+net reconnect-initial [seconds]
+net reconnect-maximum [seconds]
+net fallback [on|off]
+net fallback-ssid [value|clear]
+net fallback-password [value|clear]
+net fallback-retention [seconds]
+```
+
+`net` and `net show` display both the current connection state and every field
+from the `Network` section of `/config.json`. Omitting a value shows that
+setting; supplying a value updates `/config.json` immediately and requires an
+administrative session. Configuration changes take effect after `reboot`.
+Passphrases are never printed. Use `clear` to configure an empty SSID or
+password.
+
 ### System diagnostics CLI
 
 ```text
@@ -441,6 +472,10 @@ mem mb
 fs
 ping 192.168.1.1
 ping example.com -n 10
+log view
+log view 50
+log view all
+log clear
 ```
 
 `hwinfo` is public and reports the ESP32 model, revision, cores, clocks,
@@ -452,6 +487,11 @@ largest-block values for internal heap and PSRAM. `fs` shows LittleFS capacity,
 usage, entry counts, and known DeviceIQ file sizes. `ping` is a public built-in
 Telnet command, accepts an IPv4 address or DNS name, sends four ICMP requests by
 default, and accepts `-n` values from 1 through 20.
+
+`log` requires an administrative session. `log view` shows the last 10 lines,
+an explicit numeric argument selects another number of trailing lines, and
+`all` prints the complete file. `log clear` removes the current log file; the
+logger creates it again when the next file log entry is written.
 
 ---
 

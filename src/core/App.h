@@ -18,8 +18,6 @@ class app {
         bool InitializeStatePersistence();
         bool InitializeTelnetServer();
 
-        bool RegisterTelnetCommands();
-        void DeviceRestart();
         void LogConfigurationStatus(bool configurationLoaded);
 
         static void LogNetworkStatus();

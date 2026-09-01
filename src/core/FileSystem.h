@@ -30,6 +30,11 @@ class filesystem {
         Result Read(const char* path, uint8_t* buffer, size_t bufferSize, size_t& bytesRead, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Write(const char* path, const uint8_t* data, size_t length, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Write(const char* path, const String& data, TickType_t timeout = pdMS_TO_TICKS(500));
+        // Writes to "<path>.tmp" and renames it over path, so a crash or power
+        // loss mid-write leaves either the old content or the new content in
+        // place, never a truncated file.
+        Result WriteAtomic(const char* path, const uint8_t* data, size_t length, TickType_t timeout = pdMS_TO_TICKS(500));
+        Result WriteAtomic(const char* path, const String& data, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout = pdMS_TO_TICKS(500));
         Result Append(const char* path, const String& data, TickType_t timeout = pdMS_TO_TICKS(500));
         Result AppendRotating(const char* path, const uint8_t* data, size_t length, size_t maxFileSize, TickType_t timeout = pdMS_TO_TICKS(500));
@@ -53,4 +58,8 @@ class filesystem {
         
         SemaphoreHandle_t pMutex = nullptr;
         bool pMounted = false;
+
+        // Removes leftover "*.tmp" files from a WriteAtomic() call that was
+        // interrupted before the rename. Called once, right after mounting.
+        void PurgeOrphanedTempFiles();
 };

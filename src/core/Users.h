@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Arduino.h>
+#include <IPAddress.h>
+#include <cstring>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 
@@ -14,6 +16,7 @@ constexpr size_t PASSWORD_MIN_LENGTH = 8;
 constexpr size_t PASSWORD_MAX_LENGTH = 64;
 constexpr uint32_t AUTH_RATE_LIMIT_INITIAL_DELAY_MS = 1000;
 constexpr uint32_t AUTH_RATE_LIMIT_MAX_DELAY_MS = 30000;
+constexpr size_t AUTH_RATE_LIMIT_TRACKED_IPS = 8;
 
 enum UserReturn : uint8_t { NoError = 0, AuthenticationSuccess, UserExists, UserNotFound, MaxUsersReached, NoAdminRemaining, InvalidUsername, PasswordError, InvalidCredentials, SynchronizationError, AuthenticationRateLimited };
 
@@ -36,6 +39,15 @@ class user {
         bool Authenticate(const String& password) const;
         void Admin(bool value) noexcept { pAdmin = value; }
         void Clear() noexcept;
+        void CopyCredentials(uint8_t (&salt)[PASS_SALTLEN], uint8_t (&hash)[PASS_HASHLEN]) const noexcept {
+            memcpy(salt, pSalt, sizeof(pSalt));
+            memcpy(hash, pHash, sizeof(pHash));
+        }
+
+        // Runs the PBKDF2 computation against a detached salt/hash pair, without
+        // holding any lock. Used by users::Authenticate so the expensive hash
+        // does not block other user operations for its duration.
+        static bool VerifyPassword(const String& password, const uint8_t* salt, const uint8_t* hash) noexcept;
 
         uint8_t pSalt[PASS_SALTLEN] = {0};
         uint8_t pHash[PASS_HASHLEN] = {0};
@@ -55,7 +67,7 @@ class users {
         UserReturn SetAdmin(const String& username, bool admin);
         UserReturn Add(const String& username, const String& password, bool admin = false);
         UserReturn Remove(const String& username);
-        UserReturn Authenticate(const String& username, const String& password);
+        UserReturn Authenticate(const String& username, const String& password, IPAddress clientIP);
         UserReturn Find(const String& username, UserInfo* outUser = nullptr);
         UserReturn Rename(const String& currentUsername, const String& newUsername);
         UserReturn SetPassword(const String& username, const String& newPassword);
@@ -88,17 +100,25 @@ class users {
         };
 
         size_t CountAdminsUnlocked() const noexcept { size_t count = 0; for (size_t i = 0; i < pUserCount; ++i) { if (pUsers[i].Admin()) { ++count; }} return count;}
-        bool AuthenticationRateLimitedUnlocked(uint32_t now) const noexcept;
-        void RegisterAuthenticationFailureUnlocked(uint32_t now) noexcept;
-        void ResetAuthenticationRateLimitUnlocked() noexcept;
+
+        struct AuthRateLimitEntry {
+            uint32_t ip = 0;
+            uint32_t delayMs = 0;
+            uint32_t blockedUntilMs = 0;
+            uint32_t lastAttemptMs = 0;
+            bool inUse = false;
+        };
+
+        bool AuthenticationRateLimitedUnlocked(uint32_t ip, uint32_t now) const noexcept;
+        void RegisterAuthenticationFailureUnlocked(uint32_t ip, uint32_t now) noexcept;
+        void ResetAuthenticationRateLimitUnlocked(uint32_t ip) noexcept;
 
         StaticSemaphore_t pMutexStorage{};
         SemaphoreHandle_t pMutex = nullptr;
 
         user pUsers[MAX_USERS];
         size_t pUserCount = 0;
-        uint32_t pAuthenticationDelayMs = 0;
-        uint32_t pAuthenticationBlockedUntilMs = 0;
+        AuthRateLimitEntry pAuthRateLimits[AUTH_RATE_LIMIT_TRACKED_IPS];
 
         bool hasAdmin() const { for (size_t i = 0; i < pUserCount; ++i) if (pUsers[i].Admin()) return true; return false; }
 };

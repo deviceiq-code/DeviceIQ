@@ -10,6 +10,11 @@
 class telnetserver {
     public:
         static constexpr size_t MAX_COMMAND_PARAMETERS = 10;
+        // Hard upper bound on session slots (physically allocated). The
+        // runtime-configurable session limit (MaxSessions) is clamped to
+        // this range.
+        static constexpr size_t MIN_SESSIONS = 1;
+        static constexpr size_t MAX_SESSIONS = 8;
 
         struct SessionInfo {
             IPAddress remoteIP;
@@ -33,6 +38,13 @@ class telnetserver {
         [[nodiscard]] bool Enabled() const noexcept;
         void Port(uint16_t value) noexcept;
         [[nodiscard]] uint16_t Port() const noexcept;
+        // Applies immediately; no restart required.
+        void IdleTimeout(uint32_t valueMs) noexcept;
+        [[nodiscard]] uint32_t IdleTimeout() const noexcept;
+        // Applies immediately; no restart required. Clamped to
+        // [MIN_SESSIONS, MAX_SESSIONS].
+        void MaxSessions(size_t value) noexcept;
+        [[nodiscard]] size_t MaxSessions() const noexcept;
 
         void WelcomeMessage(String value);
         [[nodiscard]] String WelcomeMessage() const;
@@ -42,6 +54,11 @@ class telnetserver {
         [[nodiscard]] bool SetSessionIdentity(WiFiClient& client, String username, bool admin);
         [[nodiscard]] bool IsSessionAdmin(WiFiClient& client);
         [[nodiscard]] bool SessionInformation(WiFiClient& client, SessionInfo& info);
+
+        static String FormatPrefix(String label);
+        static String FormatContinuationPrefix();
+        static String FormatLine(const String& label, const String& text);
+        static String FormatBlock(const String& label, const String& text);
 
     private:
         class Lock {
@@ -75,13 +92,13 @@ class telnetserver {
             bool active = false;
             bool admin = false;
             bool lastWasCarriageReturn = false;
+            TickType_t lastActivityAt = 0;
         };
 
-        static constexpr size_t MAX_SESSIONS = 3;
-        static constexpr size_t MAX_COMMANDS = 16;
+        static constexpr size_t MAX_COMMANDS = 20;
         static constexpr size_t MAX_INPUT_LENGTH = 128;
         static constexpr size_t MAX_BYTES_PER_CYCLE = 256;
-        static constexpr uint32_t TASK_STACK_SIZE = 4096;
+        static constexpr uint32_t TASK_STACK_SIZE = 8192;
         static constexpr UBaseType_t TASK_PRIORITY = 1;
         static constexpr TickType_t TASK_DELAY = pdMS_TO_TICKS(10);
         static constexpr uint32_t STOP_NOTIFICATION = 1UL << 0;
@@ -99,6 +116,8 @@ class telnetserver {
         TaskHandle_t pTaskHandle = nullptr;
         uint16_t pPort = 23;
         bool pEnabled = true;
+        uint32_t pIdleTimeoutMs = 60000;
+        size_t pMaxSessions = 3;
         String pWelcomeMessage = "DeviceIQ Telnet Server";
         session_callback_t pOnSessionBegin;
         session_callback_t pOnSessionEnd;

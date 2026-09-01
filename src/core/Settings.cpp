@@ -5,6 +5,47 @@
 #include "components/Thermometer.h"
 
 #include <ArduinoJson.h>
+
+namespace {
+    void CompactCredentialArrays(String& json) {
+        String compact;
+        compact.reserve(json.length());
+        size_t offset = 0;
+
+        while (offset < json.length()) {
+            const int saltPosition = json.indexOf("\"Salt\"", offset);
+            const int hashPosition = json.indexOf("\"Hash\"", offset);
+            int keyPosition = -1;
+            if (saltPosition >= 0 && hashPosition >= 0) keyPosition = min(saltPosition, hashPosition);
+            else keyPosition = saltPosition >= 0 ? saltPosition : hashPosition;
+
+            if (keyPosition < 0) {
+                compact += json.substring(offset);
+                break;
+            }
+
+            const int arrayStart = json.indexOf('[', keyPosition);
+            const int arrayEnd = arrayStart < 0 ? -1 : json.indexOf(']', arrayStart);
+            if (arrayStart < 0 || arrayEnd < 0) {
+                compact += json.substring(offset);
+                break;
+            }
+
+            compact += json.substring(offset, static_cast<size_t>(arrayStart) + 1);
+            for (int index = arrayStart + 1; index < arrayEnd; ++index) {
+                const char value = json[index];
+                if (value == ' ' || value == '\t' || value == '\r' || value == '\n') continue;
+                compact += value;
+                if (value == ',') compact += ' ';
+            }
+            compact += ']';
+            offset = static_cast<size_t>(arrayEnd) + 1;
+        }
+
+        json = std::move(compact);
+    }
+}
+
 settings::settings() noexcept
     : pMutex(xSemaphoreCreateRecursiveMutexStatic(&pMutexStorage)),
       Log(pMutex),
@@ -563,6 +604,8 @@ void settings::LoadDefaults() {
     // TelnetServer
     TelnetServer.Port(Defaults.TelnetServer.Port);
     TelnetServer.Enabled(Defaults.TelnetServer.Enabled);
+    TelnetServer.IdleTimeoutMs(Defaults.TelnetServer.IdleTimeoutMs);
+    TelnetServer.MaxSessions(Defaults.TelnetServer.MaxSessions);
 
     // MQTT
     MQTT.Enabled(Defaults.MQTT.Enabled);
@@ -716,6 +759,8 @@ bool settings::Load(const String& configfilename) noexcept {
             JsonObjectConst tn = root["Telnet"].as<JsonObjectConst>();
             TelnetServer.Enabled((bool)(tn["Enabled"] | Defaults.TelnetServer.Enabled));
             TelnetServer.Port((uint16_t)(tn["Port"] | Defaults.TelnetServer.Port));
+            TelnetServer.IdleTimeoutMs((uint32_t)(tn["Idle Timeout"] | Defaults.TelnetServer.IdleTimeoutMs));
+            TelnetServer.MaxSessions((uint8_t)(tn["Max Sessions"] | Defaults.TelnetServer.MaxSessions));
         }
 
         pFirstRun = false;
@@ -756,448 +801,6 @@ bool settings::Load(const String& configfilename) noexcept {
 
     return true;
 }
-
-// bool settings::SaveComponentsState(const String& configfilename) noexcept {
-//     const String path = configfilename.length() ? configfilename : String(Defaults.ConfigFileName);
-//     String content;
-//     if (FileSystem.Read(path.c_str(), content) != filesystem::Result::Ok || content.isEmpty()) return false;
-
-//     JsonDocument doc;
-//     const DeserializationError err = deserializeJson(doc, content);
-//     if (err) return false;
-
-//     JsonObject root = doc.as<JsonObject>();
-//     if (root.isNull()) return false;
-
-//     JsonArray components = root["Components"].as<JsonArray>();
-
-//     if (components.isNull()) return false; // No components found
-
-//     auto findComponentObj = [&](String name) -> JsonObject {
-//         for (JsonObject obj : components) {
-//             const char* jName = obj["Name"] | "";
-//             if (name.equalsIgnoreCase(jName)) return obj;
-//         }
-//         return JsonObject();
-//     };
-
-//     for (Generic* comp : Components) {
-//         JsonObject obj = findComponentObj(comp->Name());
-//         if (obj.isNull()) continue;
-
-//         switch (comp->Class()) {
-//             case CLASS_RELAY : {
-//                 obj["State"] = comp->as<Relay>()->State();
-//             } break;
-//             case CLASS_BLINDS : {
-//                 obj["Position"] = comp->as<Blinds>()->State();
-//             } break;
-//         }
-//     }
-
-//     String serialized;
-//     const size_t written = serializeJsonPretty(doc, serialized);
-//     if (written == 0 || FileSystem.Write(path.c_str(), serialized) != filesystem::Result::Ok) return false;
-
-//     pSaveComponentsStateFlag = false;
-//     return true;
-// }
-
-// bool settings::InstallComponents(const String& configfilename) noexcept {
-//     const String path = configfilename.length() ? configfilename : String(Defaults.ConfigFileName);
-//     File f = devFileSystem->OpenFile(path, "r");
-//     if (!f || !f.available()) {
-//         if (f) f.close();
-//         return false;
-//     }
-
-//     JsonDocument doc;
-//     DeserializationError err = deserializeJson(doc, f);
-//     f.close();
-//     if (err) return false;
-
-//     JsonObjectConst root = doc.as<JsonObjectConst>();
-//     if (root.isNull()) return false;
-
-//     JsonArrayConst components = root["Components"].as<JsonArrayConst>();
-//     if (components.isNull()) {
-//         Serial.println(F("No components found in configuration."));
-//         return false;
-//     }
-
-//     Components.Clear();
-
-//     auto configureComponentEvents = [&](Generic* NewComponent, JsonObjectConst comp) {
-//         if (!NewComponent) return;
-
-//         JsonObjectConst EventsInConfig = comp["Events"];
-//         if (EventsInConfig.isNull()) return;
-
-//         for (auto& ComponentEvent : NewComponent->Event) {
-//             const String& eventName = ComponentEvent.first;
-
-//             JsonVariantConst v = EventsInConfig[eventName.c_str()];
-//             if (v.isNull() || !v.is<const char*>()) continue;
-
-//             String actionFull = String(v.as<const char*>());
-//             actionFull.trim();
-
-//             int open = actionFull.indexOf('(');
-//             int close = actionFull.lastIndexOf(')');
-
-//             String cmd = (open > 0) ? actionFull.substring(0, open) : actionFull;
-//             String param = (open >= 0 && close > open) ? actionFull.substring(open + 1, close) : "";
-//             cmd.trim();
-//             param.trim();
-
-//             param.replace("%NAME%", NewComponent->Name());
-
-//             callback_t previous = NewComponent->GetEventCallback(eventName);
-//             callback_t appended = nullptr;
-
-//             if (cmd.equalsIgnoreCase("log")) {
-//                 String msg = param;
-//                 auto logPtr = devLog;
-
-//                 appended = [msg, logPtr] {
-//                     if (logPtr) logPtr->Write(msg, LOGLEVEL_INFO);
-//                 };
-//             }
-//             else if (cmd.equalsIgnoreCase("enable")) {
-//                 String targetName = param;
-//                 auto* target = Components[targetName];
-
-//                 if (target) {
-//                     auto* generic = target->as<Generic>();
-//                     appended = [generic] {
-//                         generic->Enabled(true);
-//                     };
-//                 }
-//             }
-//             else if (cmd.equalsIgnoreCase("disable")) {
-//                 String targetName = param;
-//                 auto* target = Components[targetName];
-
-//                 if (target) {
-//                     auto* generic = target->as<Generic>();
-//                     appended = [generic] {
-//                         generic->Enabled(false);
-//                     };
-//                 }
-//             }
-//             else if (cmd.equalsIgnoreCase("invert")) {
-//                 String targetName = param;
-//                 auto* target = Components[targetName];
-
-//                 if (target && target->Class() == CLASS_RELAY) {
-//                     auto* relay = target->as<Relay>();
-//                     appended = [relay] {
-//                         relay->Invert();
-//                     };
-//                 }
-//             }
-//             else if (cmd.equalsIgnoreCase("seton")) {
-//                 String targetName = param;
-//                 auto* target = Components[targetName];
-
-//                 if (target && target->Class() == CLASS_RELAY) {
-//                     auto* relay = target->as<Relay>();
-//                     appended = [relay] {
-//                         relay->State(true);
-//                     };
-//                 }
-//             }
-//             else if (cmd.equalsIgnoreCase("setoff")) {
-//                 String targetName = param;
-//                 auto* target = Components[targetName];
-
-//                 if (target && target->Class() == CLASS_RELAY) {
-//                     auto* relay = target->as<Relay>();
-//                     appended = [relay] {
-//                         relay->State(false);
-//                     };
-//                 }
-//             }
-
-//             if (!appended) continue;
-
-//             NewComponent->SetEventCallback(eventName, [previous, appended] {
-//                 if (previous) previous();
-//                 appended();
-//             });
-//         }
-//     };
-
-//     auto installComponent = [&](JsonObjectConst comp, uint8_t& comp_id, bool installVirtual) {
-//         const String comp_name = String(comp["Name"] | "");
-//         const String comp_class = String(comp["Class"] | "");
-//         const uint8_t comp_address = (uint8_t)(comp["Address"] | 0);
-//         const bool comp_enabled = (bool)(comp["Enabled"] | false);
-//         const String comp_bus = String(comp["Bus"] | "");
-
-//         if (comp_name.isEmpty()) {
-//             if (devLog) devLog->Write("Component: Empty name for component #" + String(comp_id) + " - component not installed", LOGLEVEL_WARNING);
-//             return;
-//         }
-
-//         if (comp_class.isEmpty()) {
-//             if (devLog) devLog->Write("Component: Empty class for component #" + String(comp_id) + " - component not installed", LOGLEVEL_WARNING);
-//             return;
-//         }
-
-//         if (comp_bus.isEmpty()) {
-//             if (devLog) devLog->Write("Component: Empty bus for component #" + String(comp_id) + " - component not installed", LOGLEVEL_WARNING);
-//             return;
-//         }
-
-//         auto itBus = AvailableComponentBuses.find(comp_bus);
-//         if (itBus == AvailableComponentBuses.end()) {
-//             if (devLog) devLog->Write("Component: Unknoun bus name '" + comp_bus + "' for component #" + String(comp_id) + " - component not installed", LOGLEVEL_WARNING);
-//             return;
-//         }
-
-//         auto itClass = AvailableComponentClasses.find(comp_class);
-//         if (itClass == AvailableComponentClasses.end()) {
-//             if (devLog) devLog->Write("Component: Unknoun class name '" + comp_class + "' for component #" + String(comp_id) + " - component not installed", LOGLEVEL_WARNING);
-//             return;
-//         }
-
-//         const Classes c = itClass->second;
-
-//         bool isVirtualClass = false;
-//         switch (c) {
-//             case CLASS_BLINDS: isVirtualClass = true; break;
-//             default: isVirtualClass = false; break;
-//         }
-
-//         if (installVirtual != isVirtualClass) return;
-
-//         Generic* NewComponent = nullptr;
-
-//         switch (c) {
-//             case CLASS_GENERIC: {
-//                 // Reserved
-//             } break;
-
-//             case CLASS_BLINDS: {
-//                 int16_t relayUpIndex = Components.IndexOf(String(comp["Relay Up"] | ""));
-//                 int16_t relayDnIndex = Components.IndexOf(String(comp["Relay Down"] | ""));
-
-//                 if (relayUpIndex > -1 && relayDnIndex > -1) {
-//                     Generic* upGeneric = Components.At(relayUpIndex);
-//                     Generic* dnGeneric = Components.At(relayDnIndex);
-
-//                     if (upGeneric && dnGeneric &&
-//                         upGeneric->Class() == CLASS_RELAY &&
-//                         dnGeneric->Class() == CLASS_RELAY) {
-
-//                         Relay* relayUp = upGeneric->as<Relay>();
-//                         Relay* relayDn = dnGeneric->as<Relay>();
-
-//                         NewComponent = new Blinds(comp_name, comp_id, relayUp, relayDn);
-
-//                         Blinds* tmp_blinds = NewComponent->as<Blinds>();
-
-//                         if (tmp_blinds) {
-//                             tmp_blinds->StepMs(comp["Step Ms"] | Defaults.Components.Blinds.StepMs);
-//                             tmp_blinds->OpenAccel(comp["Open Acceleration"] | Defaults.Components.Blinds.OpenAccel);
-//                             tmp_blinds->CloseAccel(comp["Close Acceleration"] | Defaults.Components.Blinds.CloseAccel);
-//                             tmp_blinds->CalibrationMultiplier(comp["Calibration Multiplier"].as<uint8_t>() | Defaults.Components.Blinds.CalibrationMultiplier);
-//                             tmp_blinds->Position((comp["Position"].as<uint8_t>() | 0), true);
-
-//                             tmp_blinds->Event["Changed"]([this, tmp_blinds] {
-//                             if (devMQTT) {
-//                                 devMQTT->Publish(Network.Hostname() + "/Get/Blinds:" + tmp_blinds->Name() + ":Name", tmp_blinds->Name());
-//                                 devMQTT->Publish(Network.Hostname() + "/Get/Blinds:" + tmp_blinds->Name() + ":CurrentPosition", String(tmp_blinds->CurrentPosition()));
-//                                 devMQTT->Publish(Network.Hostname() + "/Get/Blinds:" + tmp_blinds->Name() + ":TargetPosition", String(tmp_blinds->TargetPosition()));
-//                                 devMQTT->Publish(Network.Hostname() + "/Get/Blinds:" + tmp_blinds->Name() + ":PositionState", String(tmp_blinds->PositionState()));
-//                             }
-
-//                             pSaveComponentsStateFlag = true;
-//                         });
-//                         }
-//                     } else {
-//                         if (devLog) devLog->Write("Component: Blinds '" + comp_name + "' not created: relay up/down are invalid", LOGLEVEL_WARNING);
-//                     }
-//                 } else {
-//                     if (devLog) devLog->Write("Component: Blinds '" + comp_name + "' not created: relay up/down not found", LOGLEVEL_WARNING);
-//                 }
-//             } break;
-
-//             case CLASS_BUTTON: {
-//                 NewComponent = new Button(
-//                     comp_name,
-//                     comp_id,
-//                     itBus->second,
-//                     comp_address,
-//                     (comp["Report"].as<String>().equalsIgnoreCase("EdgesOnly")
-//                         ? ButtonReportModes::BUTTONREPORTMODE_EDGESONLY
-//                         : ButtonReportModes::BUTTONREPORTMODE_CLICKSONLY)
-//                 );
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<Button>();
-
-//                     if (n->ReportMode() == ButtonReportModes::BUTTONREPORTMODE_CLICKSONLY) {
-//                         n->Event["Clicked"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "Clicked");
-//                         });
-//                         n->Event["DoubleClicked"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "DoubleClicked");
-//                         });
-//                         n->Event["TripleClicked"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "TripleClicked");
-//                         });
-//                         n->Event["LongClicked"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "LongClicked");
-//                         });
-//                     } else if (n->ReportMode() == ButtonReportModes::BUTTONREPORTMODE_EDGESONLY) {
-//                         n->Event["Pressed"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "Pressed");
-//                         });
-//                         n->Event["Released"]([this, n] {
-//                             if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Button:" + n->Name(), "Released");
-//                         });
-//                     }
-//                 }
-//             } break;
-
-//             case CLASS_CURRENTMETER: {
-//                 NewComponent = new Currentmeter(comp_name, comp_id, itBus->second, comp_address);
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<Currentmeter>();
-//                     n->Event["Changed"]([this, n] {
-//                         if (devMQTT) {
-//                             devMQTT->Publish(Network.Hostname() + "/Get/Currentmeter:" + n->Name() + ":DC", String(n->CurrentDC()));
-//                             devMQTT->Publish(Network.Hostname() + "/Get/Currentmeter:" + n->Name() + ":AC", String(n->CurrentAC()));
-//                         }
-//                     });
-//                 }
-//             } break;
-
-//             case CLASS_RELAY: {
-//                 NewComponent = new Relay(comp_name, comp_id, itBus->second, comp_address, DeviceIQ_Components::RelayTypes::RELAYTYPE_NORMALLYCLOSED);
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<Relay>();
-//                     n->State((bool)(comp["State"] | false));
-
-//                     n->Event["Changed"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Relay:" + n->Name() + ":State", n->State() ? "on" : "off");
-//                         pSaveComponentsStateFlag = true;
-//                     });
-//                 }
-//             } break;
-
-//             case CLASS_PIR: {
-//                 NewComponent = new PIR(comp_name, comp_id, itBus->second, comp_address);
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<PIR>();
-//                     n->DebounceTime((uint32_t)(comp["Debounce"] | 200));
-
-//                     n->Event["MotionDetected"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/PIR:" + n->Name(), "M");
-//                     });
-//                     n->Event["MotionCleared"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/PIR:" + n->Name(), "C");
-//                     });
-//                 }
-//             } break;
-
-//             case CLASS_DOORBELL: {
-//                 NewComponent = new Doorbell(comp_name, comp_id, itBus->second, comp_address);
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<Doorbell>();
-//                     n->Timeout((uint32_t)(comp["Timeout"] | 1000));
-
-//                     n->Event["Ring"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Doorbell:" + n->Name(), "1");
-//                     });
-//                     n->Event["DoubleRing"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Doorbell:" + n->Name(), "2");
-//                     });
-//                     n->Event["LongRing"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Doorbell:" + n->Name(), "L");
-//                     });
-//                 }
-//             } break;
-
-//             case CLASS_CONTACTSENSOR: {
-//                 NewComponent = new ContactSensor(comp_name, comp_id, itBus->second, comp_address, ((bool)(comp["InvertClose"] | false)));
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<ContactSensor>();
-//                     n->Event["Opened"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/ContactSensor:" + n->Name(), "Opened");
-//                     });
-//                     n->Event["Closed"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/ContactSensor:" + n->Name(), "Closed");
-//                     });
-//                 }
-//             } break;
-
-//             case CLASS_THERMOMETER: {
-//                 auto it = AvailableThermometerTypes.find(String(comp["Type"] | "DS18B20"));
-//                 if (it != AvailableThermometerTypes.end()) {
-//                     NewComponent = new Thermometer(comp_name, comp_id, itBus->second, comp_address, it->second);
-//                 }
-
-//                 if (NewComponent) {
-//                     auto* n = NewComponent->as<Thermometer>();
-//                     n->Event["TemperatureChanged"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Thermometer:" + n->Name() + ":Temperature", String(n->Temperature()));
-//                     });
-//                     n->Event["HumidityChanged"]([this, n] {
-//                         if (devMQTT) devMQTT->Publish(Network.Hostname() + "/Get/Thermometer:" + n->Name() + ":Humidity", String(n->Humidity()));
-//                     });
-//                     n->Event["Changed"]([this, n] {
-//                         if (devMQTT) {
-//                             devMQTT->Publish(Network.Hostname() + "/Get/Thermometer:" + n->Name() + ":Temperature", String(n->Temperature()));
-//                             devMQTT->Publish(Network.Hostname() + "/Get/Thermometer:" + n->Name() + ":Humidity", String(n->Humidity()));
-//                         }
-//                     });
-//                 }
-//             } break;
-//         }
-
-//         if (!NewComponent) return;
-
-//         NewComponent->Enabled(comp_enabled);
-
-//         configureComponentEvents(NewComponent, comp);
-
-//         int16_t dup = Components.IndexOf(comp_name);
-//         if (dup >= 0) Components.Remove(dup);
-
-//         Components.Add(NewComponent);
-
-//         if (devLog) {
-//             devLog->Write(
-//                 "Component: #" + String(comp_id) + " " + comp_class + "\\" + comp_name +
-//                 String(NewComponent->IsVirtual() ? " (virtual)" : "") +
-//                 " installed",
-//                 LOGLEVEL_WARNING
-//             );
-//         }
-
-//         comp_id++;
-//     };
-
-//     uint8_t comp_id = 0;
-
-//     for (JsonObjectConst comp : components) {
-//         installComponent(comp, comp_id, false);
-//     }
-
-//     for (JsonObjectConst comp : components) {
-//         installComponent(comp, comp_id, true);
-//     }
-
-//     return true;
-// }
 
 void settings::RestoreToFactoryDefaults() {
     FileSystem.Remove(Defaults.ConfigFileName);
@@ -1312,13 +915,16 @@ bool settings::Save(const String& configfilename) const noexcept {
             JsonObject tn = doc["Telnet"].to<JsonObject>();
             tn["Enabled"] = TelnetServer.Enabled();
             tn["Port"] = TelnetServer.Port();
+            tn["Idle Timeout"] = TelnetServer.IdleTimeoutMs();
+            tn["Max Sessions"] = TelnetServer.MaxSessions();
         }
 
     }
 
-    // Preserve the configuration catalog and merge only runtime state by ID.
-    // This prevents state persistence from undoing add/remove/rename changes
-    // that are waiting for a reboot.
+    // Preserve the configuration catalog as-is. Live component runtime state
+    // (Relay.State, Blinds.Position) is persisted separately to state.json by
+    // SaveComponentsState(), not merged back into this file, so this never
+    // undoes add/remove/rename changes that are waiting for a reboot.
     {
         constexpr uint8_t ComponentSchemaVersion = 1;
         doc["ComponentSchemaVersion"] = ComponentSchemaVersion;
@@ -1327,21 +933,6 @@ bool settings::Save(const String& configfilename) const noexcept {
 
         if ((existingDoc["ComponentSchemaVersion"] | 0) == ComponentSchemaVersion && !existingComponents.isNull()) {
             components.set(existingComponents);
-
-            for (size_t index = 0; index < ComponentController.Count(); ++index) {
-                const component* runtimeComponent = ComponentController.At(index);
-                if (runtimeComponent == nullptr || !runtimeComponent->IsPublic() || !runtimeComponent->HasPersistentState()) continue;
-
-                JsonObject configured = components[String(runtimeComponent->ID())].as<JsonObject>();
-                if (!configured.isNull()) {
-                    JsonObject properties = configured["Properties"].to<JsonObject>();
-                    if (runtimeComponent->Class() == component::Classes::Relay) {
-                        properties["State"] = static_cast<const relay&>(*runtimeComponent).State();
-                    } else if (runtimeComponent->Class() == component::Classes::Blinds) {
-                        properties["Position"] = static_cast<const blinds&>(*runtimeComponent).Position();
-                    }
-                }
-            }
         } else {
             for (size_t index = 0; index < ComponentController.Count(); ++index) {
                 const component* source = ComponentController.At(index);
@@ -1493,6 +1084,7 @@ bool settings::Save(const String& configfilename) const noexcept {
     String serialized;
     const size_t written = serializeJsonPretty(doc, serialized);
     if (written == 0) return false;
+    CompactCredentialArrays(serialized);
 
-    return FileSystem.Write(path.c_str(), serialized) == filesystem::Result::Ok;
+    return FileSystem.WriteAtomic(path.c_str(), serialized) == filesystem::Result::Ok;
 }

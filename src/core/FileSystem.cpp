@@ -27,14 +27,42 @@ bool filesystem::Start(bool formatOnFail) {
         if (pMutex == nullptr) return false;
     }
 
-    Lock lock(pMutex, pdMS_TO_TICKS(1000));
+    {
+        Lock lock(pMutex, pdMS_TO_TICKS(1000));
 
-    if (lock.IsLocked() == false) return false;
-    if (LittleFS.begin(formatOnFail) == false) return false;
+        if (lock.IsLocked() == false) return false;
+        if (LittleFS.begin(formatOnFail) == false) return false;
 
-    pMounted = true;
+        pMounted = true;
+    }
+
+    PurgeOrphanedTempFiles();
 
     return true;
+}
+
+void filesystem::PurgeOrphanedTempFiles() {
+    Lock lock(pMutex, pdMS_TO_TICKS(1000));
+    if (lock.IsLocked() == false) return;
+
+    File root = LittleFS.open("/", FILE_READ);
+    if (!root || !root.isDirectory()) {
+        if (root) root.close();
+        return;
+    }
+
+    File entry = root.openNextFile();
+    while (entry) {
+        const bool isTempFile = !entry.isDirectory() && String(entry.name()).endsWith(".tmp");
+        const String path = entry.path();
+        entry.close();
+
+        if (isTempFile) LittleFS.remove(path.c_str());
+
+        entry = root.openNextFile();
+    }
+
+    root.close();
 }
 
 bool filesystem::GetStatistics(Statistics& output, TickType_t timeout) {
@@ -155,6 +183,40 @@ filesystem::Result filesystem::Write(const char* path, const String& data, TickT
     return Write(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
 }
 
+filesystem::Result filesystem::WriteAtomic(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
+    if (pMounted == false) return Result::NotInitialized;
+    if (path == nullptr || data == nullptr) return Result::InvalidArgument;
+
+    const String tempPath = String(path) + ".tmp";
+
+    Lock lock(pMutex, timeout);
+
+    if (lock.IsLocked() == false) return Result::LockTimeout;
+
+    File file = LittleFS.open(tempPath.c_str(), FILE_WRITE);
+    if (file == false) return Result::OpenFailed;
+    const size_t written = file.write(data, length);
+    file.close();
+
+    if (written != length) {
+        LittleFS.remove(tempPath.c_str());
+        return Result::WriteFailed;
+    }
+
+    // Replaces path if it already exists; either the old or the new content
+    // survives a crash, never a partially-written file.
+    if (LittleFS.rename(tempPath.c_str(), path) == false) {
+        LittleFS.remove(tempPath.c_str());
+        return Result::RenameFailed;
+    }
+
+    return Result::Ok;
+}
+
+filesystem::Result filesystem::WriteAtomic(const char* path, const String& data, TickType_t timeout) {
+    return WriteAtomic(path, reinterpret_cast<const uint8_t*>(data.c_str()), data.length(), timeout);
+}
+
 filesystem::Result filesystem::Append(const char* path, const uint8_t* data, size_t length, TickType_t timeout) {
     if (pMounted == false) return Result::NotInitialized;
     if (path == nullptr || data == nullptr) { return Result::InvalidArgument; }
@@ -228,7 +290,7 @@ filesystem::Result filesystem::Remove(const char* path, TickType_t timeout) {
 }
 
 filesystem::Result filesystem::Rename(const char* source, const char* destination, TickType_t timeout) {
-    if (pMounted == false) return Result::NotInitialized;\
+    if (pMounted == false) return Result::NotInitialized;
     if (source == nullptr || destination == nullptr) return Result::InvalidArgument;
 
     Lock lock(pMutex, timeout);
