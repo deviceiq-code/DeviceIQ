@@ -13,6 +13,7 @@
 #include "components/ComponentManager.h"
 #include "components/Relay.h"
 #include "web/HTTPServer.h"
+#include "web/WebhookServer.h"
 
 extern rtc Clock;
 extern logger Logger;
@@ -25,3 +26,4 @@ extern automation Automation;
 extern mqttclient MQTTClient;
 extern relay OnboardLedRelay;
 extern httpserver HTTPServer;
+extern webhookserver WebhookServer;

@@ -10,3 +10,4 @@ ComponentManager ComponentController;
 automation Automation;
 mqttclient MQTTClient;
 httpserver HTTPServer;
+webhookserver WebhookServer;

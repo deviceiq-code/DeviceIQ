@@ -208,7 +208,6 @@ class settings {
                 SemaphoreHandle_t pMutex;
                 uint16_t pPort{};
                 bool pEnabled{};
-                String pWebHooksToken;
                 uint32_t pIdleTimeoutMs{};
                 uint8_t pMaxSessions{};
             public:
@@ -219,9 +218,6 @@ class settings {
                 [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
                 void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
 
-                [[nodiscard]] String WebHooksToken() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pWebHooksToken : String(); }
-                void WebHooksToken(String value) noexcept;
-
                 // 0 means the idle timeout is disabled; kept as given.
                 [[nodiscard]] uint32_t IdleTimeoutMs() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIdleTimeoutMs : 0; }
                 void IdleTimeoutMs(uint32_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pIdleTimeoutMs = value; }
@@ -229,6 +225,25 @@ class settings {
                 [[nodiscard]] uint8_t MaxSessions() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pMaxSessions : 0; }
                 void MaxSessions(uint8_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pMaxSessions = (value == 0) ? Defaults.WebServer.MaxSessions : value; }
         } WebServer;
+        class webhooks {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pEnabled{};
+                String pToken;
+                uint16_t pPort{};
+            public:
+                explicit webhooks(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
+                void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+
+                // Letters/numbers only, 15-30 characters; set to empty on
+                // any invalid value (too short/long or non-alphanumeric).
+                [[nodiscard]] String Token() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pToken : String(); }
+                void Token(String value) noexcept;
+
+                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
+                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.Webhooks.Port : value; }
+        } Webhooks;
         class telnetserver {
             private:
                 SemaphoreHandle_t pMutex;

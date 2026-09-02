@@ -47,6 +47,7 @@ void app::Start() {
     if (!InitializeStatePersistence()) return;
     if (!InitializeTelnetServer()) return;
     if (!InitializeHTTPServer()) return;
+    if (!InitializeWebhookServer()) return;
 
     LogConfigurationStatus(configurationLoaded);
 }
@@ -329,6 +330,24 @@ bool app::InitializeHTTPServer() {
     }
 
     Logger.Log("Web Server: Enabled on port " + String(HTTPServer.Port()), logger::LogLevels::Information);
+    return true;
+}
+
+bool app::InitializeWebhookServer() {
+    WebhookServer.Enabled(Settings.Webhooks.Enabled());
+    WebhookServer.Port(Settings.Webhooks.Port());
+
+    if (!WebhookServer.Enabled()) {
+        Logger.Log("Webhooks: Disabled", logger::LogLevels::Information);
+        return true;
+    }
+
+    if (!WebhookServer.Start()) {
+        Logger.Log("Error initializing Webhooks Server object", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log("Webhooks: Enabled on port " + String(WebhookServer.Port()), logger::LogLevels::Information);
     return true;
 }
 

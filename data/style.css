@@ -100,6 +100,33 @@ svg { display: block; }
     margin-top: 4px;
 }
 
+.restart-card { text-align: center; }
+
+.spinner {
+    width: 36px;
+    height: 36px;
+    margin: 4px auto 20px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.restart-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.restart-note {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin: 0;
+}
+
 label {
     display: block;
     font-size: 12px;
@@ -577,6 +604,21 @@ main.setup-main {
     padding: 10px 0;
 }
 
+.setting-row.selectable {
+    cursor: pointer;
+    padding: 10px 12px;
+    margin: 0 -12px;
+    border-radius: var(--radius);
+}
+
+.setting-row.selectable:hover { background: var(--accent-soft); }
+
+.setting-row.selectable.selected {
+    background: var(--accent-soft);
+}
+
+.setting-row.selectable.selected .setting-label { color: var(--accent); }
+
 .setting-row-text { flex: 1; min-width: 0; }
 
 .setting-row-text .setting-label {
@@ -589,6 +631,14 @@ main.setup-main {
     font-size: 12px;
     color: var(--text-dim);
     margin-top: 2px;
+}
+
+.webhook-url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    word-break: break-all;
 }
 
 .setting-row-control {
@@ -624,11 +674,33 @@ main.setup-main {
     cursor: pointer;
 }
 
-.group-title ~ .log-viewer {
-    margin-left: 1cm;
+/* A tab-panel that fills the exact height available in #panels instead of
+   letting #panels scroll around it - used where a single element inside
+   (e.g. .log-viewer) should own its own scrolling instead. */
+.tab-panel.tab-panel-fill {
+    height: 100%;
+}
+
+.tab-panel.tab-panel-fill.active {
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-panel.tab-panel-fill .setup-card {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.tab-panel.tab-panel-fill .panel-header,
+.tab-panel.tab-panel-fill .settings-list {
+    flex-shrink: 0;
 }
 
 .log-viewer {
+    flex: 1;
+    min-height: 0;
     margin-top: 16px;
     padding: 16px;
     background: var(--surface-alt);
@@ -638,10 +710,8 @@ main.setup-main {
     font-size: 12px;
     line-height: 1.5;
     color: var(--text);
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 55vh;
-    overflow-y: auto;
+    white-space: pre;
+    overflow: auto;
 }
 
 .setting-value {
@@ -753,22 +823,23 @@ main.setup-main {
 
 .toast-container {
     position: fixed;
-    top: 20px;
+    top: calc(88px + 1cm);
     right: 20px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     z-index: 1000;
-    max-width: 320px;
+    max-width: 380px;
 }
 
 .toast {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 11px 14px;
-    font-size: 13px;
-    color: var(--text);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
     box-shadow: var(--shadow-pop);
     opacity: 0;
     transform: translateX(16px);
@@ -776,6 +847,41 @@ main.setup-main {
 }
 
 .toast.visible { opacity: 1; transform: translateX(0); }
+
+.toast-content { flex: 1; min-width: 0; }
+
+.toast-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 2px;
+}
+
+.toast-message {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.4;
+}
+
+.toast-close {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--text-faint);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.toast-close:hover { background: var(--bg); color: var(--text); }
 
 .modal-overlay {
     position: fixed;
@@ -803,6 +909,8 @@ main.setup-main {
 }
 
 .modal-message { font-size: 14px; margin-bottom: 20px; color: var(--text); }
+
+.modal-input { width: 100%; margin: -8px 0 20px; }
 
 .modal-actions {
     display: flex;

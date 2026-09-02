@@ -99,9 +99,17 @@ class httpserver {
         void RegisterRoutes(WebServer& server);
 
         void HandleIndex(WebServer& server);
+        void HandleRestarting(WebServer& server);
         void HandleDashboard(WebServer& server);
         void HandleSetup(WebServer& server);
         void HandleUpdate(WebServer& server);
+        void HandleUsers(WebServer& server);
+        void HandleUsersGet(WebServer& server);
+        void HandleUsersAddPost(WebServer& server);
+        void HandleUsersRemovePost(WebServer& server);
+        void HandleUsersRenamePost(WebServer& server);
+        void HandleUsersSetAdminPost(WebServer& server);
+        void HandleUsersSetPasswordPost(WebServer& server);
         void HandleAbout(WebServer& server);
         void HandleAboutGet(WebServer& server);
         void HandleLog(WebServer& server);
@@ -124,6 +132,7 @@ class httpserver {
         void HandleConfigResetPost(WebServer& server);
         void HandleOTAUpload(WebServer& server);
         void HandleOTAUpdatePost(WebServer& server);
+        void HandleClockSetPost(WebServer& server);
         void HandleScript(WebServer& server);
         void HandleNotFound(WebServer& server);
 

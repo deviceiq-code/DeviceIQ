@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ · Restarting</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="centered">
+    <div class="card restart-card">
+        <div class="brand">
+            <div class="mark">IQ</div>
+            <div class="name">DeviceIQ</div>
+        </div>
+
+        <div class="spinner"></div>
+        <div class="restart-title">Restarting...</div>
+        <p class="restart-note">This may take up to a minute. You'll be redirected to sign in automatically once the device is back online.</p>
+    </div>
+</div>
+
+<script>
+(function () {
+    const INITIAL_DELAY_MS = 4000;
+    const RETRY_DELAY_MS = 2000;
+
+    // No timeout: keep trying until the device actually answers again.
+    function checkAlive() {
+        fetch("/api/session", { cache: "no-store" })
+            .then(function () { window.location.replace("/"); })
+            .catch(function () { setTimeout(checkAlive, RETRY_DELAY_MS); });
+    }
+
+    // Gives the device a moment to actually go down first, so an
+    // in-flight response from before the restart doesn't look like it's
+    // already back up.
+    setTimeout(checkAlive, INITIAL_DELAY_MS);
+})();
+</script>
+</body>
+</html>

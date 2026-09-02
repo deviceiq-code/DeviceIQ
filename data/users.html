@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ · Users</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">IQ</div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/setup.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Setup</span>
+            </a>
+            <a href="/users.html" class="sidebar-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users</span>
+            </a>
+            <a href="/update.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Update</span>
+            </a>
+            <a href="/log.html" class="sidebar-nav-item" id="log-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>Log</span>
+            </a>
+            <a href="/about.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>About</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="product" id="sidebar-product"></span>
+            <span class="version" id="sidebar-version"></span>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-header">
+            <div class="app-header-title">
+                <h1>Users</h1>
+                <p>Administrator and user accounts</p>
+            </div>
+            <div class="app-header-actions">
+                <span class="user-chip" id="whoami"></span>
+                <button class="icon-button restart-button" id="restart-button" title="Restart device">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="icon-button" id="logout-button" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <div class="setup-card">
+                <div class="panel-header">
+                    <h2>Users</h2>
+                    <p>Up to 3 accounts. At least one administrator must always remain.</p>
+                </div>
+
+                <div class="settings-list" id="users-list">Loading...</div>
+
+                <div class="group-title">Actions</div>
+                <div class="settings-list">
+                    <div class="setting-row">
+                        <div class="setting-row-text">
+                            <div class="setting-label" id="selected-user-label">No user selected</div>
+                            <div class="setting-desc" id="selected-user-desc">Select a user above to manage it.</div>
+                        </div>
+                        <div class="setting-row-control">
+                            <button type="button" class="control-button" id="toolbar-admin" disabled>Make Admin</button>
+                            <button type="button" class="control-button" id="toolbar-rename" disabled>Rename</button>
+                            <button type="button" class="control-button" id="toolbar-password" disabled>Set Password</button>
+                            <button type="button" class="control-button danger" id="toolbar-remove" disabled>Remove</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="group-title">Add User</div>
+                <div class="settings-list">
+                    <div class="setting-row">
+                        <div class="setting-row-text">
+                            <div class="setting-label">New Account</div>
+                            <div class="setting-desc">Username: 3-32 characters (lowercase letters, digits, '.', '_', '-'). Password: 8-64 characters.</div>
+                        </div>
+                        <div class="setting-row-control" id="add-user-control">
+                            <input type="text" id="add-username" placeholder="Username" style="width: 140px;">
+                            <input type="password" id="add-password" placeholder="Password" style="width: 140px;">
+                            <label class="flag-option"><input type="checkbox" id="add-admin"> Admin</label>
+                            <button type="button" class="control-button" id="add-user-button">Add</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/notifications.js"></script>
+<script>
+(function () {
+    let isSelf = "";
+    let usersData = [];
+    let selectedUsername = null;
+
+    function apiPost(path, body) {
+        return fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        }).then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+            .catch(function () { return { ok: false, data: { error: "Unable to reach the device." } }; });
+    }
+
+    function afterMutation(result, successMessage) {
+        if (!result.ok) {
+            Notifications.show(result.data.error || "Request failed.", { title: "Users" });
+            return;
+        }
+        Notifications.show(result.data.warning || successMessage, { title: "Users" });
+        loadUsers();
+    }
+
+    function selectUser(username) {
+        selectedUsername = username;
+        renderSelection();
+    }
+
+    function renderSelection() {
+        document.querySelectorAll(".user-row").forEach(function (row) {
+            row.classList.toggle("selected", row.dataset.username === selectedUsername);
+        });
+
+        const user = usersData.find(function (item) { return item.username === selectedUsername; });
+        const label = document.getElementById("selected-user-label");
+        const desc = document.getElementById("selected-user-desc");
+        const adminButton = document.getElementById("toolbar-admin");
+        const buttons = [adminButton, document.getElementById("toolbar-rename"), document.getElementById("toolbar-password"), document.getElementById("toolbar-remove")];
+
+        if (!user) {
+            label.textContent = "No user selected";
+            desc.textContent = "Select a user above to manage it.";
+            adminButton.textContent = "Make Admin";
+            buttons.forEach(function (button) { button.disabled = true; });
+            return;
+        }
+
+        label.textContent = user.username + (user.username === isSelf ? " (you)" : "");
+        desc.textContent = user.admin ? "Administrator" : "User";
+        adminButton.textContent = user.admin ? "Remove Admin" : "Make Admin";
+        buttons.forEach(function (button) { button.disabled = false; });
+    }
+
+    function userRow(item) {
+        const row = document.createElement("div");
+        row.className = "setting-row selectable user-row";
+        row.dataset.username = item.username;
+        row.addEventListener("click", function () { selectUser(item.username); });
+
+        const text = document.createElement("div");
+        text.className = "setting-row-text";
+        const label = document.createElement("div");
+        label.className = "setting-label";
+        label.textContent = item.username + (item.username === isSelf ? " (you)" : "");
+        const desc = document.createElement("div");
+        desc.className = "setting-desc";
+        desc.textContent = item.admin ? "Administrator" : "User";
+        text.appendChild(label);
+        text.appendChild(desc);
+        row.appendChild(text);
+
+        return row;
+    }
+
+    function loadUsers() {
+        const list = document.getElementById("users-list");
+        fetch("/api/users").then(function (response) { return response.json(); })
+            .then(function (data) {
+                usersData = data.users || [];
+                list.innerHTML = "";
+                usersData.forEach(function (item) { list.appendChild(userRow(item)); });
+
+                if (selectedUsername && !usersData.some(function (item) { return item.username === selectedUsername; })) {
+                    selectedUsername = null;
+                }
+                renderSelection();
+
+                const addButton = document.getElementById("add-user-button");
+                addButton.disabled = usersData.length >= 3;
+                addButton.textContent = usersData.length >= 3 ? "Maximum reached (3/3)" : "Add";
+            })
+            .catch(function () {
+                list.textContent = "Unable to load users.";
+            });
+    }
+
+    document.getElementById("toolbar-admin").addEventListener("click", function () {
+        const user = usersData.find(function (item) { return item.username === selectedUsername; });
+        if (!user) return;
+        Notifications.confirm(
+            (user.admin ? "Remove administrator rights from '" : "Grant administrator rights to '") + user.username + "'?",
+            { confirmLabel: "Confirm" }
+        ).then(function (confirmed) {
+            if (!confirmed) return;
+            apiPost("/api/users/set-admin", { username: user.username, admin: !user.admin })
+                .then(function (result) { afterMutation(result, "Updated."); });
+        });
+    });
+
+    document.getElementById("toolbar-rename").addEventListener("click", function () {
+        if (!selectedUsername) return;
+        const currentUsername = selectedUsername;
+        Notifications.prompt("New username for '" + currentUsername + "':", { confirmLabel: "Rename", defaultValue: currentUsername })
+            .then(function (newUsername) {
+                if (!newUsername || newUsername === currentUsername) return;
+                apiPost("/api/users/rename", { username: currentUsername, newUsername: newUsername })
+                    .then(function (result) {
+                        if (result.ok) selectedUsername = newUsername;
+                        afterMutation(result, "Renamed.");
+                    });
+            });
+    });
+
+    document.getElementById("toolbar-password").addEventListener("click", function () {
+        if (!selectedUsername) return;
+        Notifications.prompt("New password for '" + selectedUsername + "':", { confirmLabel: "Set Password", inputType: "password" })
+            .then(function (newPassword) {
+                if (!newPassword) return;
+                apiPost("/api/users/set-password", { username: selectedUsername, password: newPassword })
+                    .then(function (result) { afterMutation(result, "Password updated."); });
+            });
+    });
+
+    document.getElementById("toolbar-remove").addEventListener("click", function () {
+        if (!selectedUsername) return;
+        const currentUsername = selectedUsername;
+        Notifications.confirm("Remove user '" + currentUsername + "'? This cannot be undone.", { confirmLabel: "Remove" })
+            .then(function (confirmed) {
+                if (!confirmed) return;
+                apiPost("/api/users/remove", { username: currentUsername })
+                    .then(function (result) {
+                        if (result.ok) selectedUsername = null;
+                        afterMutation(result, "Removed.");
+                    });
+            });
+    });
+
+    document.getElementById("add-user-button").addEventListener("click", function () {
+        const usernameInput = document.getElementById("add-username");
+        const passwordInput = document.getElementById("add-password");
+        const adminInput = document.getElementById("add-admin");
+
+        if (!usernameInput.value || !passwordInput.value) {
+            Notifications.show("Username and password are required.", { title: "Users" });
+            return;
+        }
+
+        apiPost("/api/users/add", { username: usernameInput.value, password: passwordInput.value, admin: adminInput.checked })
+            .then(function (result) {
+                if (result.ok) {
+                    usernameInput.value = "";
+                    passwordInput.value = "";
+                    adminInput.checked = false;
+                }
+                afterMutation(result, "User added.");
+            });
+    });
+
+    document.getElementById("restart-button").addEventListener("click", function () {
+        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
+            if (!confirmed) return;
+            fetch("/api/reboot", { method: "POST" }).catch(function () {});
+            Notifications.restarting();
+        });
+    });
+
+    document.getElementById("logout-button").addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(function () { window.location.replace("/"); });
+    });
+
+    fetch("/api/session").then(function (response) { return response.json(); }).then(function (session) {
+        if (!session.authenticated) {
+            window.location.replace("/");
+            return Promise.reject();
+        }
+        if (!session.admin) {
+            window.location.replace("/dashboard.html");
+            return Promise.reject();
+        }
+
+        isSelf = session.username;
+        document.getElementById("whoami").textContent = session.username + " · admin";
+        document.getElementById("sidebar-product").textContent = session.productFamily + " " + session.productName;
+        document.getElementById("sidebar-version").textContent = "v" + session.softwareVersion;
+        if (!session.logFileEnabled) document.getElementById("log-link").remove();
+
+        Notifications.start();
+        loadUsers();
+    }).catch(function () {});
+})();
+</script>
+</body>
+</html>

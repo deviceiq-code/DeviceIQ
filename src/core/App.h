@@ -18,6 +18,7 @@ class app {
         bool InitializeStatePersistence();
         bool InitializeTelnetServer();
         bool InitializeHTTPServer();
+        bool InitializeWebhookServer();
 
         void LogConfigurationStatus(bool configurationLoaded);
 

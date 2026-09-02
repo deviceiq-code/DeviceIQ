@@ -66,10 +66,17 @@ struct defaults {
     struct webserver {
         const uint16_t Port = 80;
         const bool Enabled = true;
-        const char* WebHooksToken = "default_token";
         const uint32_t IdleTimeoutMs = 1800000; // 30 minutes. 0 disables the idle timeout.
         const uint8_t MaxSessions = 4;
     } WebServer;
+    struct webhooks {
+        // Disabled and tokenless by default - like MQTT, an optional
+        // integration the admin opts into with a real token, rather than
+        // an admin surface (Telnet/Web) that should work out of the box.
+        const bool Enabled = false;
+        const char* Token = "";
+        const uint16_t Port = 81;
+    } Webhooks;
     struct telnetserver {
         const uint16_t Port = 23;
         const bool Enabled = true;

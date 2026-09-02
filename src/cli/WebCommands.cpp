@@ -129,6 +129,10 @@ namespace {
                 output = "Value must be 1-65535.\r\n";
                 return false;
             }
+            if (value == Settings.Webhooks.Port()) {
+                output = "Port must be different from the Webhooks port.\r\n";
+                return false;
+            }
             Settings.WebServer.Port(value);
             if (!SaveChange(snapshot, "Port", String(Settings.WebServer.Port()), output)) return false;
             output += "Restart required to apply the change.\r\n";

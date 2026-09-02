@@ -5,10 +5,11 @@
 #include <esp_arduino_version.h>
 #include <esp_heap_caps.h>
 #include <esp_random.h>
-#include <esp_rom_crc.h>
 #include <esp_system.h>
 #include <esp32-hal-cpu.h>
+#include <cstdio>
 #include <cstdlib>
+#include <ctime>
 
 #include "core/DeviceControl.h"
 #include "core/Globals.h"
@@ -26,6 +27,21 @@ namespace {
             case UserReturn::AuthenticationRateLimited: return "too many failed attempts, try again later";
             case UserReturn::SynchronizationError: return "authentication temporarily unavailable";
             default: return "authentication failed";
+        }
+    }
+
+    // Mirrors UserCommands.cpp's UserReturnMessage.
+    const char* UserManagementMessage(UserReturn result) {
+        switch (result) {
+            case UserReturn::NoError: return "ok";
+            case UserReturn::UserExists: return "a user with that name already exists";
+            case UserReturn::UserNotFound: return "user not found";
+            case UserReturn::MaxUsersReached: return "maximum number of users reached";
+            case UserReturn::NoAdminRemaining: return "at least one admin user must remain";
+            case UserReturn::InvalidUsername: return "invalid username (3-32 characters: lowercase letters, digits, '.', '_', '-')";
+            case UserReturn::PasswordError: return "invalid password (8-64 characters) or unable to hash it";
+            case UserReturn::SynchronizationError: return "user store temporarily unavailable";
+            default: return "unexpected error";
         }
     }
 
@@ -506,6 +522,7 @@ namespace {
         }
         if (HasField(fields, "Port")) {
             if (!JsonRanged<uint16_t>(fields, "Port", 1, 65535, uint16Value)) { error = "Port must be 1-65535."; RestoreWeb(snapshot); return false; }
+            if (uint16Value == Settings.Webhooks.Port()) { error = "Port must be different from the Webhooks port."; RestoreWeb(snapshot); return false; }
             Settings.WebServer.Port(uint16Value);
         }
         if (HasField(fields, "Idle Timeout")) {
@@ -529,6 +546,66 @@ namespace {
         out["Port"] = Settings.WebServer.Port();
         out["Idle Timeout"] = Settings.WebServer.IdleTimeoutMs();
         out["Max Sessions"] = Settings.WebServer.MaxSessions();
+    }
+
+    // ---- Webhooks -----------------------------------------------------------
+
+    struct WebhooksSnapshot {
+        bool enabled;
+        String token;
+        uint16_t port;
+    };
+
+    WebhooksSnapshot CaptureWebhooks() {
+        return {Settings.Webhooks.Enabled(), Settings.Webhooks.Token(), Settings.Webhooks.Port()};
+    }
+
+    void RestoreWebhooks(const WebhooksSnapshot& snapshot) {
+        Settings.Webhooks.Enabled(snapshot.enabled);
+        Settings.Webhooks.Token(snapshot.token);
+        Settings.Webhooks.Port(snapshot.port);
+    }
+
+    bool IsValidWebhookToken(const String& value) {
+        if (value.length() < 15 || value.length() > 30) return false;
+        for (size_t i = 0; i < value.length(); ++i) {
+            const char c = value.charAt(i);
+            if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) return false;
+        }
+        return true;
+    }
+
+    bool ApplyWebhooksFields(JsonObjectConst fields, String& error) {
+        const WebhooksSnapshot snapshot = CaptureWebhooks();
+        bool boolValue = false;
+        String stringValue;
+        uint16_t uint16Value = 0;
+
+        if (HasField(fields, "Enabled")) {
+            if (!JsonBool(fields, "Enabled", boolValue)) { error = "Enabled must be a boolean."; RestoreWebhooks(snapshot); return false; }
+            Settings.Webhooks.Enabled(boolValue);
+        }
+        if (HasField(fields, "Token")) {
+            if (!JsonString(fields, "Token", stringValue) || !IsValidWebhookToken(stringValue)) {
+                error = "Token must be 15-30 letters and numbers.";
+                RestoreWebhooks(snapshot);
+                return false;
+            }
+            Settings.Webhooks.Token(stringValue);
+        }
+        if (HasField(fields, "Port")) {
+            if (!JsonRanged<uint16_t>(fields, "Port", 1, 65535, uint16Value)) { error = "Port must be 1-65535."; RestoreWebhooks(snapshot); return false; }
+            if (uint16Value == Settings.WebServer.Port()) { error = "Port must be different from the Web Server port."; RestoreWebhooks(snapshot); return false; }
+            Settings.Webhooks.Port(uint16Value);
+        }
+
+        return true;
+    }
+
+    void GetWebhooksJson(JsonObject out) {
+        out["Enabled"] = Settings.Webhooks.Enabled();
+        out["Token"] = Settings.Webhooks.Token();
+        out["Port"] = Settings.Webhooks.Port();
     }
 
     // ---- About ----------------------------------------------------------
@@ -676,6 +753,48 @@ namespace {
         return true;
     }
 
+    // ---- Users ------------------------------------------------------------
+    // User accounts take effect immediately (Settings.Users is the live
+    // authentication store, not a separate runtime copy applied at boot).
+    // Rolling back an already-applied mutation on a Save() failure isn't
+    // generally possible here (a removed password's hash can't be
+    // reconstructed), so a save failure is reported as a warning alongside
+    // success rather than as a failure - mirrors UserCommands.cpp exactly.
+    void RespondUserMutation(WebServer& server, const String& adminUsername, const char* action, const String& detail) {
+        const bool saved = Settings.Save();
+        Logger.Log(
+            "Web Server: user " + String(action) + " " + String(saved ? "accepted" : "accepted but not saved") + " by " +
+                adminUsername + "@" + server.client().remoteIP().toString() + (detail.isEmpty() ? "" : ": " + detail),
+            saved ? logger::LogLevels::Information : logger::LogLevels::Error
+        );
+
+        if (!saved) {
+            server.send(200, "application/json", "{\"success\":true,\"warning\":\"could not save to disk; this change will be lost on restart\"}");
+            return;
+        }
+        server.send(200, "application/json", "{\"success\":true}");
+    }
+
+    // ---- Clock ------------------------------------------------------------
+    // Howard Hinnant's days_from_civil algorithm (public domain): converts a
+    // proleptic Gregorian calendar date directly to a day count since the
+    // 1970-01-01 epoch, with no dependency on timegm()/mktime() or the C
+    // library's notion of the local timezone (not reliably configured on
+    // this device, and timegm() isn't available in this toolchain at all).
+    int64_t DaysFromCivil(int year, unsigned month, unsigned day) {
+        year -= month <= 2;
+        const int64_t era = (year >= 0 ? year : year - 399) / 400;
+        const unsigned yoe = static_cast<unsigned>(year - era * 400);
+        const unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+        const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        return era * 146097 + static_cast<int64_t>(doe) - 719468;
+    }
+
+    time_t UTCEpochFromFields(int year, int month, int day, int hour, int minute, int second) {
+        const int64_t days = DaysFromCivil(year, static_cast<unsigned>(month), static_cast<unsigned>(day));
+        return static_cast<time_t>(days * 86400 + hour * 3600 + minute * 60 + second);
+    }
+
     // ---- OTA ------------------------------------------------------------
     // Combined firmware+filesystem package produced by scripts/package_ota.py.
     // Layout: this 32-byte header, then <firmwareLength> bytes of
@@ -702,10 +821,25 @@ namespace {
     constexpr uint8_t OTAPackageHeaderVersion = 1;
 
     // Standard zlib/IEEE 802.3 CRC32 (matches Python's zlib.crc32 and the
-    // browser-side JS implementation in update.html) built on top of the
-    // ROM's raw little-endian CRC32, per the esp_rom_crc.h usage notes.
+    // browser-side JS implementation in update.html): a plain table-based
+    // implementation, self-contained rather than built on the ROM's
+    // esp_rom_crc32_le - that route produced checksums that didn't match
+    // the client/Python side on real hardware.
     uint32_t StandardCRC32(const uint8_t* data, size_t length) {
-        return ~esp_rom_crc32_le(~0u, data, static_cast<uint32_t>(length));
+        static uint32_t table[256];
+        static bool tableReady = false;
+        if (!tableReady) {
+            for (uint32_t n = 0; n < 256; ++n) {
+                uint32_t c = n;
+                for (uint8_t k = 0; k < 8; ++k) c = (c & 1) ? (0xEDB88320UL ^ (c >> 1)) : (c >> 1);
+                table[n] = c;
+            }
+            tableReady = true;
+        }
+
+        uint32_t crc = 0xFFFFFFFFUL;
+        for (size_t i = 0; i < length; ++i) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+        return crc ^ 0xFFFFFFFFUL;
     }
 
     int VersionCompare(uint8_t major, uint8_t minor, uint8_t revision) {
@@ -853,9 +987,17 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.collectHeaders(HeaderKeys, 1);
 
     server.on("/", HTTP_GET, [this, &server]() { HandleIndex(server); });
+    server.on("/restarting.html", HTTP_GET, [this, &server]() { HandleRestarting(server); });
     server.on("/dashboard.html", HTTP_GET, [this, &server]() { HandleDashboard(server); });
     server.on("/setup.html", HTTP_GET, [this, &server]() { HandleSetup(server); });
     server.on("/update.html", HTTP_GET, [this, &server]() { HandleUpdate(server); });
+    server.on("/users.html", HTTP_GET, [this, &server]() { HandleUsers(server); });
+    server.on("/api/users", HTTP_GET, [this, &server]() { HandleUsersGet(server); });
+    server.on("/api/users/add", HTTP_POST, [this, &server]() { HandleUsersAddPost(server); });
+    server.on("/api/users/remove", HTTP_POST, [this, &server]() { HandleUsersRemovePost(server); });
+    server.on("/api/users/rename", HTTP_POST, [this, &server]() { HandleUsersRenamePost(server); });
+    server.on("/api/users/set-admin", HTTP_POST, [this, &server]() { HandleUsersSetAdminPost(server); });
+    server.on("/api/users/set-password", HTTP_POST, [this, &server]() { HandleUsersSetPasswordPost(server); });
     server.on(
         "/api/ota/update", HTTP_POST,
         [this, &server]() { HandleOTAUpdatePost(server); },
@@ -885,11 +1027,19 @@ void httpserver::RegisterRoutes(WebServer& server) {
     );
     server.on("/api/config/import/apply", HTTP_POST, [this, &server]() { HandleConfigImportApplyPost(server); });
     server.on("/api/config/reset", HTTP_POST, [this, &server]() { HandleConfigResetPost(server); });
+    server.on("/api/clock/set", HTTP_POST, [this, &server]() { HandleClockSetPost(server); });
     server.onNotFound([this, &server]() { HandleNotFound(server); });
 }
 
 void httpserver::HandleIndex(WebServer& server) {
     ServeFile(server, "/index.html", "text/html");
+}
+
+void httpserver::HandleRestarting(WebServer& server) {
+    // No auth required: shown right after triggering a restart, when there
+    // may be no session left to check, and its only job is to poll until
+    // the server answers again at all.
+    ServeFile(server, "/restarting.html", "text/html");
 }
 
 void httpserver::HandleDashboard(WebServer& server) {
@@ -902,6 +1052,10 @@ void httpserver::HandleSetup(WebServer& server) {
 
 void httpserver::HandleUpdate(WebServer& server) {
     ServeProtectedFile(server, "/update.html", "text/html", true);
+}
+
+void httpserver::HandleUsers(WebServer& server) {
+    ServeProtectedFile(server, "/users.html", "text/html", true);
 }
 
 void httpserver::HandleAbout(WebServer& server) {
@@ -1236,6 +1390,7 @@ void httpserver::HandleSettingsGet(WebServer& server) {
     GetMQTTJson(document["MQTT"].to<JsonObject>());
     GetLogJson(document["Log"].to<JsonObject>());
     GetWebJson(document["Web"].to<JsonObject>());
+    GetWebhooksJson(document["Webhooks"].to<JsonObject>());
 
     String payload;
     serializeJson(document, payload);
@@ -1288,6 +1443,9 @@ void httpserver::HandleSettingsPost(WebServer& server) {
     } else if (section == "Web") {
         applied = ApplyWebFields(fields, error);
         restartRequired = HasField(fields, "Enabled") || HasField(fields, "Port");
+    } else if (section == "Webhooks") {
+        applied = ApplyWebhooksFields(fields, error);
+        restartRequired = HasField(fields, "Enabled") || HasField(fields, "Port");
     } else {
         server.send(400, "application/json", "{\"error\":\"unknown section\"}");
         return;
@@ -1337,6 +1495,7 @@ void httpserver::HandleSettingsPost(WebServer& server) {
     else if (section == "MQTT") GetMQTTJson(values);
     else if (section == "Log") GetLogJson(values);
     else if (section == "Web") GetWebJson(values);
+    else if (section == "Webhooks") GetWebhooksJson(values);
 
     String payload;
     serializeJson(response, payload);
@@ -1514,6 +1673,231 @@ void httpserver::HandleConfigResetPost(WebServer& server) {
     server.client().flush();
 
     DeviceRestart();
+}
+
+void httpserver::HandleClockSetPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    // NTP would just overwrite a manual change on its next sync, and
+    // disagreeing sources of truth for the clock are confusing - the web
+    // UI only shows this control while NTP is off, and this mirrors that
+    // server-side.
+    if (Settings.General.NTPUpdate()) {
+        server.send(409, "application/json", "{\"error\":\"disable NTP before setting the clock manually\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain")) || !request["datetime"].is<const char*>()) {
+        server.send(400, "application/json", "{\"error\":\"missing or invalid datetime\"}");
+        return;
+    }
+
+    const String datetimeValue = request["datetime"].as<String>();
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    const int parsedFields = sscanf(datetimeValue.c_str(), "%d-%d-%dT%d:%d:%d", &year, &month, &day, &hour, &minute, &second);
+
+    if (parsedFields < 5 || year < 2000 || year > 2099 || month < 1 || month > 12 || day < 1 || day > 31 ||
+        hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+        server.send(400, "application/json", "{\"error\":\"datetime must look like YYYY-MM-DDTHH:MM:SS\"}");
+        return;
+    }
+
+    // The admin enters local wall-clock time, but Clock stores UTC and only
+    // adds the configured time zone offset when formatting for display
+    // (rtc::GetTimeInfo) - so that offset has to be subtracted here to get
+    // back to the UTC epoch SetEpoch() expects.
+    const time_t enteredAsUTC = UTCEpochFromFields(year, month, day, hour, minute, second);
+    const time_t utcEpoch = enteredAsUTC - static_cast<time_t>(Clock.TimeZone()) * 3600;
+
+    Clock.SetEpoch(utcEpoch);
+
+    Logger.Log(
+        "Web Server: clock set manually by " + session->username + "@" + server.client().remoteIP().toString() + " to " + Clock.GetDateTime(),
+        logger::LogLevels::Information
+    );
+
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleUsersGet(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument document;
+    JsonArray users = document["users"].to<JsonArray>();
+    // Passwords are one-way hashed (PBKDF2) - there is no plaintext value to
+    // ever return here, unlike the reversible config secrets (WiFi/MQTT/
+    // Webhooks) shown elsewhere in Setup.
+    Settings.Users.ForEachStored([&users](const String& username, bool admin, const uint8_t*, const uint8_t*) {
+        JsonObject entry = users.add<JsonObject>();
+        entry["username"] = username;
+        entry["admin"] = admin;
+    });
+
+    String payload;
+    serializeJson(document, payload);
+    server.send(200, "application/json", payload);
+}
+
+void httpserver::HandleUsersAddPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String username = request["username"] | "";
+    const String password = request["password"] | "";
+    const bool admin = request["admin"] | false;
+
+    const UserReturn result = Settings.Users.Add(username, password, admin);
+    if (result != UserReturn::NoError) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(UserManagementMessage(result)) + "\"}");
+        return;
+    }
+
+    RespondUserMutation(server, session->username, "add", username);
+}
+
+void httpserver::HandleUsersRemovePost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String username = request["username"] | "";
+
+    const UserReturn result = Settings.Users.Remove(username);
+    if (result != UserReturn::NoError) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(UserManagementMessage(result)) + "\"}");
+        return;
+    }
+
+    RespondUserMutation(server, session->username, "remove", username);
+}
+
+void httpserver::HandleUsersRenamePost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String username = request["username"] | "";
+    const String newUsername = request["newUsername"] | "";
+
+    const UserReturn result = Settings.Users.Rename(username, newUsername);
+    if (result != UserReturn::NoError) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(UserManagementMessage(result)) + "\"}");
+        return;
+    }
+
+    RespondUserMutation(server, session->username, "rename", username + " -> " + newUsername);
+}
+
+void httpserver::HandleUsersSetAdminPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain")) || !request["admin"].is<bool>()) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String username = request["username"] | "";
+    const bool admin = request["admin"];
+
+    const UserReturn result = Settings.Users.SetAdmin(username, admin);
+    if (result != UserReturn::NoError) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(UserManagementMessage(result)) + "\"}");
+        return;
+    }
+
+    RespondUserMutation(server, session->username, "set-admin", username);
+}
+
+void httpserver::HandleUsersSetPasswordPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String username = request["username"] | "";
+    const String password = request["password"] | "";
+
+    const UserReturn result = Settings.Users.SetPassword(username, password);
+    if (result != UserReturn::NoError) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(UserManagementMessage(result)) + "\"}");
+        return;
+    }
+
+    RespondUserMutation(server, session->username, "set-password", username);
 }
 
 void httpserver::HandleOTAUpload(WebServer& server) {

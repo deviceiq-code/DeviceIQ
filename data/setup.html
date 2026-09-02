@@ -19,6 +19,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                 <span>Setup</span>
             </a>
+            <a href="/users.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users</span>
+            </a>
             <a href="/update.html" class="sidebar-nav-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <span>Update</span>
@@ -95,7 +99,7 @@
                     title: "WiFi",
                     fields: [
                         { key: "SSID", label: "SSID", desc: "WiFi network name to connect to.", type: "text" },
-                        { key: "Passphrase", label: "Passphrase", desc: "WiFi password: 8-63 characters, or 64 hex characters for a raw PSK.", type: "password" },
+                        { key: "Passphrase", label: "Passphrase", desc: "WiFi password: 8-63 characters, or 64 hex characters for a raw PSK.", type: "text" },
                         { key: "Connection Timeout", label: "Connection Timeout", desc: "Seconds to wait for a WiFi connection before retrying.", type: "number", min: 1, max: 65535 },
                         { key: "Reconnect Enabled", label: "Reconnect Enabled", desc: "Automatically retry the connection when WiFi drops.", type: "bool" },
                         { key: "Reconnect Initial Interval", label: "Reconnect Initial Interval", desc: "Seconds before the first reconnect attempt.", type: "number", min: 1, max: 65535 },
@@ -107,7 +111,7 @@
                     fields: [
                         { key: "Fallback AP Enabled", label: "Fallback AP Enabled", desc: "Start a local access point when WiFi is unavailable.", type: "bool" },
                         { key: "Fallback AP SSID", label: "Fallback AP SSID", desc: "Access point name. Empty uses the device hostname.", type: "text" },
-                        { key: "Fallback AP Password", label: "Fallback AP Password", desc: "Access point password. Empty allows open access.", type: "password" },
+                        { key: "Fallback AP Password", label: "Fallback AP Password", desc: "Access point password. Empty allows open access.", type: "text" },
                         { key: "Fallback AP Retention", label: "Fallback AP Retention", desc: "Seconds to keep the fallback AP running after WiFi reconnects.", type: "number", min: 0, max: 65535 }
                     ]
                 }
@@ -125,14 +129,79 @@
             ]
         },
         {
-            id: "NTP", title: "NTP & Clock",
+            id: "NTP", title: "Clock and NTP",
             desc: "Time synchronization and time zone.",
             note: "Enabled requires a restart. Server/Time Zone apply immediately.",
             fields: [
                 { key: "Enabled", label: "Enabled", desc: "Keep the clock synchronized over NTP.", type: "bool" },
                 { key: "Server", label: "Server", desc: "NTP server hostname.", type: "text" },
                 { key: "Time Zone", label: "Time Zone", desc: "UTC offset applied to the synchronized time.", type: "number", min: -12, max: 14 }
-            ]
+            ],
+            afterRender: function (card, currentValues) {
+                const list = document.createElement("div");
+                list.className = "settings-list";
+
+                const row = document.createElement("div");
+                row.className = "setting-row";
+
+                const text = document.createElement("div");
+                text.className = "setting-row-text";
+                const label = document.createElement("div");
+                label.className = "setting-label";
+                label.textContent = "Manual Date/Time";
+                const desc = document.createElement("div");
+                desc.className = "setting-desc";
+                desc.textContent = "Set the clock by hand. Only available while NTP is off.";
+                text.appendChild(label);
+                text.appendChild(desc);
+                row.appendChild(text);
+
+                const control = document.createElement("div");
+                control.className = "setting-row-control";
+
+                const input = document.createElement("input");
+                input.type = "datetime-local";
+                input.step = "1";
+
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "control-button";
+                button.textContent = "Set";
+
+                const ntpToggle = card.querySelector('[data-field-key="Enabled"]');
+
+                function refreshAvailability() {
+                    const ntpOn = ntpToggle ? ntpToggle.checked : !!currentValues["Enabled"];
+                    input.disabled = ntpOn;
+                    button.disabled = ntpOn;
+                }
+
+                button.addEventListener("click", function () {
+                    if (!input.value) return;
+                    button.disabled = true;
+
+                    fetch("/api/clock/set", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ datetime: input.value })
+                    }).then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+                        .then(function (result) {
+                            if (!result.ok) { Notifications.show(result.data.error || "Unable to set the clock.", { title: "Clock" }); return; }
+                            Notifications.show("Clock updated.", { title: "Clock" });
+                        })
+                        .catch(function () { Notifications.show("Unable to reach the device.", { title: "Clock" }); })
+                        .finally(refreshAvailability);
+                });
+
+                if (ntpToggle) ntpToggle.addEventListener("change", refreshAvailability);
+                refreshAvailability();
+
+                control.appendChild(input);
+                control.appendChild(button);
+                row.appendChild(control);
+                list.appendChild(row);
+                card.appendChild(list);
+            }
         },
         {
             id: "MQTT", title: "MQTT",
@@ -143,10 +212,108 @@
                 { key: "Broker", label: "Broker", desc: "MQTT broker hostname or address.", type: "text" },
                 { key: "Port", label: "Port", desc: "MQTT broker port.", type: "number", min: 1, max: 65535 },
                 { key: "User", label: "User", desc: "MQTT username. Leave empty for anonymous access.", type: "text" },
-                { key: "Password", label: "Password", desc: "MQTT password.", type: "password" },
+                { key: "Password", label: "Password", desc: "MQTT password.", type: "text" },
                 { key: "Discovery Enabled", label: "Discovery Enabled", desc: "Publish Home Assistant MQTT discovery messages.", type: "bool" },
                 { key: "Discovery Prefix", label: "Discovery Prefix", desc: "Topic prefix Home Assistant listens on for discovery.", type: "text" }
             ]
+        },
+        {
+            id: "Webhooks", title: "Webhooks",
+            desc: "Trigger component commands remotely via a shared token, without signing in.",
+            note: "Changes require a restart.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Accept remote component commands authenticated by token.", type: "bool" },
+                { key: "Token", label: "Token", desc: "Shared secret required on every request: 15-30 letters and numbers.", type: "text" },
+                { key: "Port", label: "Port", desc: "TCP port the webhooks server listens on.", type: "number", min: 1, max: 65535 }
+            ],
+            afterRender: function (card, currentValues, ownList) {
+                card.appendChild(groupTitleEl("Component Webhooks"));
+
+                const note = document.createElement("p");
+                note.className = "group-desc";
+                note.textContent = "Catalog of URLs for each installed component, using the token and port above. GET or POST both work.";
+                card.appendChild(note);
+
+                const list = document.createElement("div");
+                list.className = "settings-list";
+                list.textContent = "Loading...";
+                card.appendChild(list);
+
+                function webhookActions(item) {
+                    if (item.class === "Relay") {
+                        return [
+                            { label: item.name + " - Turn on", property: "state", value: "on" },
+                            { label: item.name + " - Turn off", property: "state", value: "off" }
+                        ];
+                    }
+                    if (item.class === "Blinds") {
+                        return [
+                            { label: item.name + " - Open", property: "state", value: "open" },
+                            { label: item.name + " - Close", property: "state", value: "close" },
+                            { label: item.name + " - Stop", property: "state", value: "stop" },
+                            { label: item.name + " - Set position (0-100)", property: "position", value: "50" }
+                        ];
+                    }
+                    return [];
+                }
+
+                function urlRow(label, url) {
+                    const row = document.createElement("div");
+                    row.className = "setting-row";
+
+                    const text = document.createElement("div");
+                    text.className = "setting-row-text";
+                    const labelEl = document.createElement("div");
+                    labelEl.className = "setting-label";
+                    labelEl.textContent = label;
+                    const urlEl = document.createElement("div");
+                    urlEl.className = "webhook-url";
+                    urlEl.textContent = url;
+                    text.appendChild(labelEl);
+                    text.appendChild(urlEl);
+                    row.appendChild(text);
+
+                    return row;
+                }
+
+                fetch("/api/components")
+                    .then(function (response) { return response.json(); })
+                    .then(function (data) {
+                        list.textContent = "";
+
+                        const tokenInput = ownList.querySelector('[data-field-key="Token"]');
+                        const portInput = ownList.querySelector('[data-field-key="Port"]');
+                        const token = tokenInput ? tokenInput.value : "";
+                        const port = portInput ? portInput.value : "";
+
+                        if (!token) {
+                            list.textContent = "Set and save a token above to see webhook URLs.";
+                            return;
+                        }
+
+                        const setBase = "http://" + window.location.hostname + ":" + port + "/component/set?token=" + encodeURIComponent(token);
+                        const getBase = "http://" + window.location.hostname + ":" + port + "/component/get?token=" + encodeURIComponent(token);
+                        const components = data.components || [];
+
+                        if (components.length === 0) {
+                            list.textContent = "No components are installed.";
+                            return;
+                        }
+
+                        list.appendChild(urlRow("All components - Get state", getBase));
+
+                        components.forEach(function (item) {
+                            list.appendChild(urlRow(item.name + " - Get state", getBase + "&id=" + item.id));
+                            webhookActions(item).forEach(function (action) {
+                                const url = setBase + "&id=" + item.id + "&property=" + action.property + "&value=" + action.value;
+                                list.appendChild(urlRow(action.label, url));
+                            });
+                        });
+                    })
+                    .catch(function () {
+                        list.textContent = "Unable to load installed components.";
+                    });
+            }
         },
         {
             id: "Log", title: "Log",
@@ -172,15 +339,27 @@
         }
     ];
 
-    // Telnet and Web are still independent sections for save/read purposes
-    // (each maps to its own /api/settings section id), but share one tab.
-    const COMBINED_TABS = { WebUIAndCLI: ["Telnet", "Web"] };
+    // Some sections are still independent for save/read purposes (each maps
+    // to its own /api/settings section id), but share one tab visually.
+    const COMBINED_TABS = [
+        { id: "WebUIAndCLI", title: "Web UI and CLI", desc: "Remote administration over the Telnet CLI and this web interface.", sections: ["Telnet", "Web"] },
+        { id: "Integrations", title: "Integrations", desc: "MQTT broker and webhook integrations.", sections: ["MQTT", "Webhooks"] }
+    ];
+
+    const combinedSectionIds = {};
+    COMBINED_TABS.forEach(function (combo) {
+        combo.sections.forEach(function (sectionId) { combinedSectionIds[sectionId] = combo; });
+    });
 
     const TABS = [];
+    const addedComboTabs = {};
     SECTIONS.forEach(function (section) {
-        if (section.id === "Web") return; // rendered together with Telnet, below
-        if (section.id === "Telnet") {
-            TABS.push({ id: "WebUIAndCLI", label: "Web UI and CLI" });
+        const combo = combinedSectionIds[section.id];
+        if (combo) {
+            if (!addedComboTabs[combo.id]) {
+                TABS.push({ id: combo.id, label: combo.title });
+                addedComboTabs[combo.id] = true;
+            }
             return;
         }
         TABS.push({ id: section.id, label: section.title });
@@ -232,6 +411,7 @@
             wrap.className = "toggle";
             const input = document.createElement("input");
             input.type = "checkbox";
+            input.dataset.fieldKey = field.key;
             input.checked = !!currentValue;
             input.addEventListener("change", function () {
                 markDirty();
@@ -267,6 +447,7 @@
             };
         } else {
             const input = document.createElement("input");
+            input.dataset.fieldKey = field.key;
             input.type = field.type === "password" ? "password" : (field.type === "number" ? "number" : "text");
             if (field.type === "number") {
                 if (field.min !== undefined) input.min = field.min;
@@ -366,15 +547,16 @@
         sectionReaders[section.id] = readers;
 
         if (dhcpRefs.length > 0) applyDhcpState(!!currentValues["DHCP Client"]);
+        if (section.afterRender) section.afterRender(card, currentValues);
 
         panel.appendChild(card);
         return panel;
     }
 
-    function renderWebUIAndCLIPanel(settings) {
+    function renderCombinedPanel(combo, settings) {
         const panel = document.createElement("div");
         panel.className = "tab-panel";
-        panel.id = "panel-WebUIAndCLI";
+        panel.id = "panel-" + combo.id;
 
         const card = document.createElement("div");
         card.className = "setup-card";
@@ -382,14 +564,14 @@
         const header = document.createElement("div");
         header.className = "panel-header";
         const title = document.createElement("h2");
-        title.textContent = "Web UI and CLI";
+        title.textContent = combo.title;
         const desc = document.createElement("p");
-        desc.textContent = "Remote administration over the Telnet CLI and this web interface.";
+        desc.textContent = combo.desc;
         header.appendChild(title);
         header.appendChild(desc);
         card.appendChild(header);
 
-        COMBINED_TABS.WebUIAndCLI.forEach(function (sectionId) {
+        combo.sections.forEach(function (sectionId) {
             const section = SECTIONS.find(function (item) { return item.id === sectionId; });
             const currentValues = settings[sectionId] || {};
 
@@ -412,6 +594,7 @@
             });
             sectionReaders[sectionId] = readers;
             card.appendChild(list);
+            if (section.afterRender) section.afterRender(card, currentValues, list);
         });
 
         panel.appendChild(card);
@@ -512,7 +695,7 @@
                     uploadButton.textContent = "Upload";
 
                     if (!result.ok) {
-                        Notifications.show(result.data.error || "The uploaded file is not a valid configuration.");
+                        Notifications.show(result.data.error || "The uploaded file is not a valid configuration.", { title: "Configuration" });
                         return;
                     }
 
@@ -526,15 +709,15 @@
                             .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
                             .then(function (result) {
                                 if (!result.ok) {
-                                    Notifications.show(result.data.error || "Import failed.");
+                                    Notifications.show(result.data.error || "Import failed.", { title: "Configuration" });
                                     return;
                                 }
-                                Notifications.show("DeviceIQ is restarting...");
+                                Notifications.restarting();
                             })
                             .catch(function () {
                                 // The device may already be restarting by the
                                 // time the connection drops.
-                                Notifications.show("DeviceIQ is restarting...");
+                                Notifications.restarting();
                             });
                     });
                 })
@@ -542,7 +725,7 @@
                     fileInput.value = "";
                     uploadButton.disabled = false;
                     uploadButton.textContent = "Upload";
-                    Notifications.show("Unable to reach the device.");
+                    Notifications.show("Unable to reach the device.", { title: "Configuration" });
                 });
         });
 
@@ -578,13 +761,13 @@
                     .then(function (result) {
                         if (!result.ok) {
                             resetButton.disabled = false;
-                            Notifications.show(result.data.error || "Reset failed.");
+                            Notifications.show(result.data.error || "Reset failed.", { title: "Configuration" });
                             return;
                         }
-                        Notifications.show("DeviceIQ is restarting...");
+                        Notifications.restarting();
                     })
                     .catch(function () {
-                        Notifications.show("DeviceIQ is restarting...");
+                        Notifications.restarting();
                     });
             });
         });
@@ -624,10 +807,12 @@
         });
 
         SECTIONS.forEach(function (section) {
-            if (section.id === "Telnet" || section.id === "Web") return; // rendered together, below
+            if (combinedSectionIds[section.id]) return; // rendered as part of a combined tab, below
             panelsContainer.appendChild(renderPanel(section, settings[section.id] || {}));
         });
-        panelsContainer.appendChild(renderWebUIAndCLIPanel(settings));
+        COMBINED_TABS.forEach(function (combo) {
+            panelsContainer.appendChild(renderCombinedPanel(combo, settings));
+        });
         panelsContainer.appendChild(renderConfigurationPanel());
 
         selectTab(activeTab);
@@ -675,7 +860,7 @@
                 status.className = "setup-status error";
                 status.textContent = failed.length + " of " + results.length + " section(s) failed to save.";
                 failed.forEach(function (result) {
-                    Notifications.show(result.section + ": " + (result.data.error || "save failed"));
+                    Notifications.show(result.data.error || "save failed", { title: "Settings · " + result.section });
                 });
             } else {
                 markClean();
@@ -690,7 +875,7 @@
                 ).then(function (confirmed) {
                     if (!confirmed) return;
                     fetch("/api/reboot", { method: "POST" }).catch(function () {});
-                    Notifications.show("DeviceIQ is restarting...");
+                    Notifications.restarting();
                 });
             }
         });
@@ -700,7 +885,7 @@
         Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
             if (!confirmed) return;
             fetch("/api/reboot", { method: "POST" }).catch(function () {});
-            Notifications.show("DeviceIQ is restarting...");
+            Notifications.restarting();
         });
     });
 

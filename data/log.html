@@ -19,6 +19,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                 <span>Setup</span>
             </a>
+            <a href="/users.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users</span>
+            </a>
             <a href="/update.html" class="sidebar-nav-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 <span>Update</span>
@@ -63,7 +67,7 @@
                 </div>
             </div>
             <div id="panels">
-                <div class="tab-panel active" id="panel-LogViewer">
+                <div class="tab-panel tab-panel-fill active" id="panel-LogViewer">
                     <div class="setup-card">
                         <div class="panel-header">
                             <h2>Log Viewer</h2>
@@ -108,7 +112,6 @@
                                         <option value="1000">Last 1000 lines</option>
                                         <option value="all">All lines</option>
                                     </select>
-                                    <button type="button" class="control-button" id="refresh-button">Refresh</button>
                                 </div>
                             </div>
                             <div class="setting-row">
@@ -154,7 +157,17 @@
     });
 
     const AUTO_REFRESH_INTERVAL_MS = 5000;
+    const AUTO_REFRESH_COOKIE = "deviceiq_log_autorefresh";
     let autoRefreshTimer = null;
+
+    function getCookie(name) {
+        const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function setCookie(name, value) {
+        document.cookie = name + "=" + encodeURIComponent(value) + "; path=/; max-age=31536000; SameSite=Lax";
+    }
 
     function startAutoRefresh() {
         if (autoRefreshTimer) return;
@@ -183,10 +196,13 @@
         });
     }
 
-    document.getElementById("refresh-button").addEventListener("click", refreshLog);
     document.getElementById("lines-select").addEventListener("change", refreshLog);
-    document.getElementById("auto-refresh-toggle").addEventListener("change", function (event) {
+
+    const autoRefreshToggle = document.getElementById("auto-refresh-toggle");
+    autoRefreshToggle.checked = getCookie(AUTO_REFRESH_COOKIE) === "1";
+    autoRefreshToggle.addEventListener("change", function (event) {
         if (event.target.checked) startAutoRefresh(); else stopAutoRefresh();
+        setCookie(AUTO_REFRESH_COOKIE, event.target.checked ? "1" : "0");
     });
 
     document.getElementById("clear-button").addEventListener("click", function () {
@@ -200,14 +216,14 @@
                 .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
                 .then(function (result) {
                     if (!result.ok) {
-                        Notifications.show(result.data.error || "Unable to clear the log.");
+                        Notifications.show(result.data.error || "Unable to clear the log.", { title: "Log" });
                         return;
                     }
-                    Notifications.show("Log cleared.");
+                    Notifications.show("Log cleared.", { title: "Log" });
                     refreshLog();
                 })
                 .catch(function () {
-                    Notifications.show("Unable to reach the device.");
+                    Notifications.show("Unable to reach the device.", { title: "Log" });
                 });
         });
     });
@@ -216,7 +232,7 @@
         Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
             if (!confirmed) return;
             fetch("/api/reboot", { method: "POST" }).catch(function () {});
-            Notifications.show("DeviceIQ is restarting...");
+            Notifications.restarting();
         });
     });
 
@@ -241,6 +257,7 @@
 
         Notifications.start();
         refreshLog();
+        if (autoRefreshToggle.checked) startAutoRefresh();
     }).catch(function () {});
 })();
 </script>

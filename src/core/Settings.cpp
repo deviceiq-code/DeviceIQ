@@ -54,6 +54,7 @@ settings::settings() noexcept
       General(pMutex),
       Orchestrator(pMutex),
       WebServer(pMutex),
+      Webhooks(pMutex),
       TelnetServer(pMutex),
       MQTT(pMutex) {
     configASSERT(pMutex != nullptr);
@@ -412,29 +413,29 @@ void settings::orchestrator::ServerID(String value) noexcept {
     pServerID = std::move(value);
 }
 
-void settings::webserver::WebHooksToken(String value) noexcept {
+void settings::webhooks::Token(String value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
     value.trim();
 
-    constexpr size_t MIN_LEN = 1;
-    constexpr size_t MAX_LEN = 64;
+    constexpr size_t MIN_LEN = 15;
+    constexpr size_t MAX_LEN = 30;
 
     if (value.length() < MIN_LEN || value.length() > MAX_LEN) {
-        pWebHooksToken = String();
+        pToken = String();
         return;
     }
 
     for (size_t i = 0; i < value.length(); ++i) {
         char c = value.charAt(i);
-        bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '-') || (c == '_');
+        bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
         if (!ok) {
-            pWebHooksToken = String();
+            pToken = String();
             return;
         }
     }
 
-    pWebHooksToken = std::move(value);
+    pToken = std::move(value);
 }
 
 void settings::mqtt::Broker(String value) noexcept {
@@ -599,9 +600,13 @@ void settings::LoadDefaults() {
     // WebServer
     WebServer.Port(Defaults.WebServer.Port);
     WebServer.Enabled(Defaults.WebServer.Enabled);
-    WebServer.WebHooksToken(Defaults.WebServer.WebHooksToken);
     WebServer.IdleTimeoutMs(Defaults.WebServer.IdleTimeoutMs);
     WebServer.MaxSessions(Defaults.WebServer.MaxSessions);
+
+    // Webhooks
+    Webhooks.Enabled(Defaults.Webhooks.Enabled);
+    Webhooks.Token(Defaults.Webhooks.Token);
+    Webhooks.Port(Defaults.Webhooks.Port);
 
     // TelnetServer
     TelnetServer.Port(Defaults.TelnetServer.Port);
@@ -739,11 +744,18 @@ bool settings::Load(const String& configfilename) noexcept {
             JsonObjectConst wh = root["Web Server"].as<JsonObjectConst>();
             WebServer.Port((uint16_t)(wh["Port"] | Defaults.WebServer.Port));
             WebServer.Enabled((bool)(wh["Enabled"] | Defaults.WebServer.Enabled));
-            WebServer.WebHooksToken(String(wh["Token"] | Defaults.WebServer.WebHooksToken));
             WebServer.IdleTimeoutMs((uint32_t)(wh["Idle Timeout"] | Defaults.WebServer.IdleTimeoutMs));
             WebServer.MaxSessions((uint8_t)(wh["Max Sessions"] | Defaults.WebServer.MaxSessions));
+        }
 
-            if (WebServer.WebHooksToken().isEmpty()) WebServer.Enabled(false); // Token must be >= 1 char
+        // Webhooks
+        if (root["Webhooks"].is<JsonObjectConst>()) {
+            JsonObjectConst wh = root["Webhooks"].as<JsonObjectConst>();
+            Webhooks.Token(String(wh["Token"] | Defaults.Webhooks.Token));
+            Webhooks.Port((uint16_t)(wh["Port"] | Defaults.Webhooks.Port));
+            Webhooks.Enabled((bool)(wh["Enabled"] | Defaults.Webhooks.Enabled));
+
+            if (Webhooks.Token().isEmpty()) Webhooks.Enabled(false); // Token must be 15-30 alphanumeric characters
         }
 
         // MQTT
@@ -899,9 +911,16 @@ bool settings::Save(const String& configfilename) const noexcept {
             JsonObject wh = doc["Web Server"].to<JsonObject>();
             wh["Port"] = WebServer.Port();
             wh["Enabled"] = WebServer.Enabled();
-            wh["Token"] = WebServer.WebHooksToken();
             wh["Idle Timeout"] = WebServer.IdleTimeoutMs();
             wh["Max Sessions"] = WebServer.MaxSessions();
+        }
+
+        // Webhooks
+        {
+            JsonObject wh = doc["Webhooks"].to<JsonObject>();
+            wh["Enabled"] = Webhooks.Enabled();
+            wh["Token"] = Webhooks.Token();
+            wh["Port"] = Webhooks.Port();
         }
 
         // MQTT

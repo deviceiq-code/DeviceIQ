@@ -51,9 +51,13 @@
     "Web Server": {
         "Port": 80,
         "Enabled": true,
-        "Token": "default_token",
         "Idle Timeout": 1800000,
         "Max Sessions": 4
+    },
+    "Webhooks": {
+        "Enabled": true,
+        "Token": "0adb8rd7e9fz9hg8rt9c6f55dbg239",
+        "Port": 81
     },
     "MQTT": {
         "Enabled": true,
