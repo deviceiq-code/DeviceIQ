@@ -21,6 +21,12 @@ class filesystem {
         filesystem() = default;
 
         bool Start(bool formatOnFail = true);
+        // Unmounts LittleFS. Every other method here checks IsMounted()
+        // first and fails safely rather than touching hardware, so this is
+        // safe to call with other tasks still running - used right before an
+        // OTA update overwrites the filesystem partition's raw flash
+        // underneath the mount, immediately ahead of a restart.
+        void Stop();
         bool IsMounted() const { return pMounted; }
         bool Exists(const char* path, TickType_t timeout = pdMS_TO_TICKS(500));
         bool GetStatistics(Statistics& output, TickType_t timeout = pdMS_TO_TICKS(500));

@@ -41,6 +41,14 @@ bool filesystem::Start(bool formatOnFail) {
     return true;
 }
 
+void filesystem::Stop() {
+    Lock lock(pMutex, pdMS_TO_TICKS(1000));
+    if (!lock.IsLocked() || !pMounted) return;
+
+    LittleFS.end();
+    pMounted = false;
+}
+
 void filesystem::PurgeOrphanedTempFiles() {
     Lock lock(pMutex, pdMS_TO_TICKS(1000));
     if (lock.IsLocked() == false) return;

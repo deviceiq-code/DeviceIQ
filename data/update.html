@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ · Update</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">IQ</div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/setup.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Setup</span>
+            </a>
+            <a href="/update.html" class="sidebar-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Update</span>
+            </a>
+            <a href="/log.html" class="sidebar-nav-item" id="log-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>Log</span>
+            </a>
+            <a href="/about.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>About</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="product" id="sidebar-product"></span>
+            <span class="version" id="sidebar-version"></span>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-header">
+            <div class="app-header-title">
+                <h1>Update</h1>
+                <p>Firmware and filesystem update</p>
+            </div>
+            <div class="app-header-actions">
+                <span class="user-chip" id="whoami"></span>
+                <button class="icon-button restart-button" id="restart-button" title="Restart device">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="icon-button" id="logout-button" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <div class="setup-card">
+                <div class="panel-header">
+                    <h2>Update</h2>
+                    <p>Install a combined DeviceIQ OTA package (firmware and filesystem together).</p>
+                </div>
+
+                <div class="settings-list">
+                    <div class="setting-row">
+                        <div class="setting-row-text">
+                            <div class="setting-label">Current Version</div>
+                            <div class="setting-desc">Software version currently running on this device.</div>
+                        </div>
+                        <div class="setting-row-control">
+                            <span class="setting-value" id="current-version">-</span>
+                        </div>
+                    </div>
+                    <div class="setting-row">
+                        <div class="setting-row-text">
+                            <div class="setting-label">Upload Package</div>
+                            <div class="setting-desc">Select a .bin package built with scripts/package_ota.py. It is checked locally (version and checksums) before uploading.</div>
+                        </div>
+                        <div class="setting-row-control">
+                            <input type="file" id="file-input" accept=".bin" style="display: none;">
+                            <button type="button" class="control-button" id="upload-button">Upload</button>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="setup-status" id="update-status"></p>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/notifications.js"></script>
+<script>
+(function () {
+    const HEADER_SIZE = 32;
+    const MAGIC = "DIQOTA01";
+    const HEADER_VERSION = 1;
+
+    const CRC32_TABLE = (function () {
+        const table = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+            table[n] = c >>> 0;
+        }
+        return table;
+    })();
+
+    function crc32(bytes) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < bytes.length; i++) crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    function parseHeader(buffer) {
+        const view = new DataView(buffer);
+        const magicBytes = new Uint8Array(buffer, 0, 8);
+        let magic = "";
+        for (let i = 0; i < magicBytes.length; i++) magic += String.fromCharCode(magicBytes[i]);
+
+        return {
+            magic: magic,
+            headerVersion: view.getUint8(8),
+            major: view.getUint8(9),
+            minor: view.getUint8(10),
+            revision: view.getUint8(11),
+            firmwareLength: view.getUint32(12, true),
+            firmwareCRC32: view.getUint32(16, true),
+            filesystemLength: view.getUint32(20, true),
+            filesystemCRC32: view.getUint32(24, true)
+        };
+    }
+
+    function compareVersion(major, minor, revision, current) {
+        if (major !== current.major) return major > current.major ? 1 : -1;
+        if (minor !== current.minor) return minor > current.minor ? 1 : -1;
+        if (revision !== current.revision) return revision > current.revision ? 1 : -1;
+        return 0;
+    }
+
+    let currentVersion = { major: 0, minor: 0, revision: 0 };
+    let currentVersionText = "0.0.0";
+
+    const statusEl = document.getElementById("update-status");
+    const fileInput = document.getElementById("file-input");
+    const uploadButton = document.getElementById("upload-button");
+
+    function setStatus(text, kind) {
+        statusEl.textContent = text || "";
+        statusEl.className = "setup-status" + (kind ? " " + kind : "");
+    }
+
+    function uploadPackage(file, isDowngrade) {
+        const formData = new FormData();
+        formData.append("file", file, file.name);
+        if (isDowngrade) formData.append("confirmDowngrade", "1");
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/ota/update");
+
+        xhr.upload.addEventListener("progress", function (event) {
+            if (!event.lengthComputable) return;
+            setStatus("Uploading... " + Math.round((event.loaded / event.total) * 100) + "%");
+        });
+
+        xhr.onload = function () {
+            let result = {};
+            try { result = JSON.parse(xhr.responseText); } catch (error) { /* ignore */ }
+
+            if (xhr.status >= 200 && xhr.status < 300 && result.success) {
+                setStatus("");
+                Notifications.show("DeviceIQ is restarting...");
+            } else {
+                setStatus("");
+                Notifications.show(result.error || "Update failed.");
+                uploadButton.disabled = false;
+            }
+        };
+
+        xhr.onerror = function () {
+            // The device may already be restarting by the time the
+            // connection drops - treat this as the expected outcome.
+            setStatus("");
+            Notifications.show("DeviceIQ is restarting...");
+        };
+
+        xhr.send(formData);
+    }
+
+    async function handleFileSelected(file) {
+        uploadButton.disabled = true;
+        setStatus("Validating package...");
+
+        try {
+            const headerBuffer = await file.slice(0, HEADER_SIZE).arrayBuffer();
+            const header = parseHeader(headerBuffer);
+
+            if (header.magic !== MAGIC || header.headerVersion !== HEADER_VERSION) {
+                throw new Error("Not a valid DeviceIQ OTA package.");
+            }
+
+            const expectedTotal = HEADER_SIZE + header.firmwareLength + header.filesystemLength;
+            if (expectedTotal !== file.size) {
+                throw new Error("Package is truncated or corrupt (size mismatch).");
+            }
+
+            const firmwareBytes = new Uint8Array(await file.slice(HEADER_SIZE, HEADER_SIZE + header.firmwareLength).arrayBuffer());
+            if (crc32(firmwareBytes) !== header.firmwareCRC32) {
+                throw new Error("Package is corrupt (firmware checksum mismatch).");
+            }
+
+            const filesystemBytes = new Uint8Array(await file.slice(HEADER_SIZE + header.firmwareLength, expectedTotal).arrayBuffer());
+            if (crc32(filesystemBytes) !== header.filesystemCRC32) {
+                throw new Error("Package is corrupt (filesystem checksum mismatch).");
+            }
+
+            const packageVersion = header.major + "." + header.minor + "." + header.revision;
+            const comparison = compareVersion(header.major, header.minor, header.revision, currentVersion);
+            const isDowngrade = comparison < 0;
+
+            let message;
+            let confirmLabel;
+            if (isDowngrade) {
+                message = "This is a downgrade from v" + currentVersionText + " to v" + packageVersion +
+                    ". The device will be reset to factory defaults as part of this process. Continue?";
+                confirmLabel = "Downgrade & Reset";
+            } else if (comparison === 0) {
+                message = "Reinstall v" + packageVersion + " (same version currently running) and restart the device now?";
+                confirmLabel = "Reinstall & Restart";
+            } else {
+                message = "Update from v" + currentVersionText + " to v" + packageVersion + " and restart the device now?";
+                confirmLabel = "Update & Restart";
+            }
+
+            setStatus("");
+            const confirmed = await Notifications.confirm(message, { confirmLabel: confirmLabel });
+            if (!confirmed) {
+                uploadButton.disabled = false;
+                return;
+            }
+
+            setStatus("Uploading... 0%");
+            uploadPackage(file, isDowngrade);
+        } catch (error) {
+            setStatus("");
+            Notifications.show(error.message || "Unable to validate the package.");
+            uploadButton.disabled = false;
+        }
+    }
+
+    uploadButton.addEventListener("click", function () { fileInput.click(); });
+
+    fileInput.addEventListener("change", function () {
+        const file = fileInput.files[0];
+        fileInput.value = "";
+        if (file) handleFileSelected(file);
+        else uploadButton.disabled = false;
+    });
+
+    document.getElementById("restart-button").addEventListener("click", function () {
+        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
+            if (!confirmed) return;
+            fetch("/api/reboot", { method: "POST" }).catch(function () {});
+            Notifications.show("DeviceIQ is restarting...");
+        });
+    });
+
+    document.getElementById("logout-button").addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(function () { window.location.replace("/"); });
+    });
+
+    fetch("/api/session").then(function (response) { return response.json(); }).then(function (session) {
+        if (!session.authenticated) {
+            window.location.replace("/");
+            return Promise.reject();
+        }
+        if (!session.admin) {
+            window.location.replace("/dashboard.html");
+            return Promise.reject();
+        }
+
+        document.getElementById("whoami").textContent = session.username + " · admin";
+        document.getElementById("sidebar-product").textContent = session.productFamily + " " + session.productName;
+        document.getElementById("sidebar-version").textContent = "v" + session.softwareVersion;
+        if (!session.logFileEnabled) document.getElementById("log-link").remove();
+
+        currentVersionText = session.softwareVersion;
+        const parts = session.softwareVersion.split(".");
+        currentVersion = { major: Number(parts[0]) || 0, minor: Number(parts[1]) || 0, revision: Number(parts[2]) || 0 };
+        document.getElementById("current-version").textContent = "v" + currentVersionText;
+
+        Notifications.start();
+    }).catch(function () {});
+})();
+</script>
+</body>
+</html>

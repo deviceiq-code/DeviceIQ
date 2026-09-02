@@ -1,8 +1,11 @@
 #include "HTTPServer.h"
 
 #include <ArduinoJson.h>
+#include <Update.h>
 #include <esp_arduino_version.h>
+#include <esp_heap_caps.h>
 #include <esp_random.h>
+#include <esp_rom_crc.h>
 #include <esp_system.h>
 #include <esp32-hal-cpu.h>
 #include <cstdlib>
@@ -653,6 +656,64 @@ namespace {
             fileSystemInfo["logSizeBytes"] = FileSystem.Size(Defaults.LogFileName);
         }
     }
+
+    // ---- Configuration reset ---------------------------------------------
+    // Shared by HandleConfigResetPost and an acknowledged downgrade in
+    // HandleOTAUpdatePost. A minimal, schema-valid configuration with no
+    // Settings/Users sections and no Components: the normal boot path
+    // (settings::Load(), settings::InstallComponents()) falls back to
+    // Defaults for every field and reseeds the default admin/user accounts,
+    // exactly as it does for a brand new device. The schema version must
+    // match the ComponentSchemaVersion constant in ComponentConfig.cpp.
+    bool ResetConfigurationToDefaults() {
+        const String minimalConfig = "{\"ComponentSchemaVersion\":1,\"Components\":{}}";
+        if (FileSystem.WriteAtomic(Defaults.ConfigFileName, minimalConfig) != filesystem::Result::Ok) return false;
+
+        const filesystem::Result stateRemoval = FileSystem.Remove(Defaults.StateFileName);
+        if (stateRemoval != filesystem::Result::Ok && stateRemoval != filesystem::Result::NotFound) {
+            Logger.Log("Web Server: could not clear persisted component state during configuration reset", logger::LogLevels::Warning);
+        }
+        return true;
+    }
+
+    // ---- OTA ------------------------------------------------------------
+    // Combined firmware+filesystem package produced by scripts/package_ota.py.
+    // Layout: this 32-byte header, then <firmwareLength> bytes of
+    // firmware.bin, then <filesystemLength> bytes of littlefs.bin. Integers
+    // are little-endian, matching both the ESP32-S3 and the desktop
+    // machines the package is built on.
+    #pragma pack(push, 1)
+    struct OTAPackageHeader {
+        char magic[8];
+        uint8_t headerVersion;
+        uint8_t softwareMajor;
+        uint8_t softwareMinor;
+        uint8_t softwareRevision;
+        uint32_t firmwareLength;
+        uint32_t firmwareCRC32;
+        uint32_t filesystemLength;
+        uint32_t filesystemCRC32;
+        uint32_t reserved;
+    };
+    #pragma pack(pop)
+    static_assert(sizeof(OTAPackageHeader) == 32, "OTAPackageHeader must be 32 bytes to match scripts/package_ota.py");
+
+    constexpr char OTAPackageMagic[8] = {'D', 'I', 'Q', 'O', 'T', 'A', '0', '1'};
+    constexpr uint8_t OTAPackageHeaderVersion = 1;
+
+    // Standard zlib/IEEE 802.3 CRC32 (matches Python's zlib.crc32 and the
+    // browser-side JS implementation in update.html) built on top of the
+    // ROM's raw little-endian CRC32, per the esp_rom_crc.h usage notes.
+    uint32_t StandardCRC32(const uint8_t* data, size_t length) {
+        return ~esp_rom_crc32_le(~0u, data, static_cast<uint32_t>(length));
+    }
+
+    int VersionCompare(uint8_t major, uint8_t minor, uint8_t revision) {
+        if (major != Version::Software::Major) return major > Version::Software::Major ? 1 : -1;
+        if (minor != Version::Software::Minor) return minor > Version::Software::Minor ? 1 : -1;
+        if (revision != Version::Software::Revision) return revision > Version::Software::Revision ? 1 : -1;
+        return 0;
+    }
 }
 
 httpserver::httpserver() noexcept : pMutex(xSemaphoreCreateMutexStatic(&pMutexStorage)) {
@@ -794,6 +855,12 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/", HTTP_GET, [this, &server]() { HandleIndex(server); });
     server.on("/dashboard.html", HTTP_GET, [this, &server]() { HandleDashboard(server); });
     server.on("/setup.html", HTTP_GET, [this, &server]() { HandleSetup(server); });
+    server.on("/update.html", HTTP_GET, [this, &server]() { HandleUpdate(server); });
+    server.on(
+        "/api/ota/update", HTTP_POST,
+        [this, &server]() { HandleOTAUpdatePost(server); },
+        [this, &server]() { HandleOTAUpload(server); }
+    );
     server.on("/about.html", HTTP_GET, [this, &server]() { HandleAbout(server); });
     server.on("/api/about", HTTP_GET, [this, &server]() { HandleAboutGet(server); });
     server.on("/log.html", HTTP_GET, [this, &server]() { HandleLog(server); });
@@ -831,6 +898,10 @@ void httpserver::HandleDashboard(WebServer& server) {
 
 void httpserver::HandleSetup(WebServer& server) {
     ServeProtectedFile(server, "/setup.html", "text/html", true);
+}
+
+void httpserver::HandleUpdate(WebServer& server) {
+    ServeProtectedFile(server, "/update.html", "text/html", true);
 }
 
 void httpserver::HandleAbout(WebServer& server) {
@@ -1429,23 +1500,9 @@ void httpserver::HandleConfigResetPost(WebServer& server) {
         return;
     }
 
-    // A minimal, schema-valid configuration with no Settings/Users sections
-    // and no Components: the normal boot path (settings::Load(),
-    // settings::InstallComponents()) falls back to Defaults for every
-    // field and reseeds the default admin/user accounts, exactly as it
-    // does for a brand new device. The schema version must match the
-    // ComponentSchemaVersion constant in ComponentConfig.cpp.
-    const String minimalConfig = "{\"ComponentSchemaVersion\":1,\"Components\":{}}";
-
-    const filesystem::Result result = FileSystem.WriteAtomic(Defaults.ConfigFileName, minimalConfig);
-    if (result != filesystem::Result::Ok) {
+    if (!ResetConfigurationToDefaults()) {
         server.send(500, "application/json", "{\"error\":\"unable to reset configuration\"}");
         return;
-    }
-
-    const filesystem::Result stateRemoval = FileSystem.Remove(Defaults.StateFileName);
-    if (stateRemoval != filesystem::Result::Ok && stateRemoval != filesystem::Result::NotFound) {
-        Logger.Log("Web Server: could not clear persisted component state during factory reset", logger::LogLevels::Warning);
     }
 
     Logger.Log(
@@ -1454,6 +1511,161 @@ void httpserver::HandleConfigResetPost(WebServer& server) {
     );
 
     server.send(200, "application/json", "{\"success\":true}");
+    server.client().flush();
+
+    DeviceRestart();
+}
+
+void httpserver::HandleOTAUpload(WebServer& server) {
+    HTTPUpload& upload = server.upload();
+
+    if (upload.status == UPLOAD_FILE_START) {
+        if (pOTABuffer != nullptr) {
+            heap_caps_free(pOTABuffer);
+            pOTABuffer = nullptr;
+        }
+        pOTAReceived = 0;
+
+        Session* session = AuthenticatedSession(server);
+        pOTAUploadValid = session != nullptr && session->admin;
+        if (pOTAUploadValid) {
+            pOTABuffer = static_cast<uint8_t*>(heap_caps_malloc(MAX_OTA_UPLOAD_BYTES, MALLOC_CAP_SPIRAM));
+            if (pOTABuffer == nullptr) {
+                pOTAUploadValid = false;
+                Logger.Log("Web Server: unable to allocate OTA upload buffer from PSRAM", logger::LogLevels::Error);
+            }
+        }
+    } else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (pOTAUploadValid && pOTAReceived + upload.currentSize <= MAX_OTA_UPLOAD_BYTES) {
+            memcpy(pOTABuffer + pOTAReceived, upload.buf, upload.currentSize);
+            pOTAReceived += upload.currentSize;
+        } else {
+            pOTAUploadValid = false;
+        }
+    }
+    // UPLOAD_FILE_END / UPLOAD_FILE_ABORTED: the accumulated buffer is
+    // validated and applied in HandleOTAUpdatePost, once the whole request
+    // body has been consumed.
+}
+
+void httpserver::HandleOTAUpdatePost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        if (pOTABuffer != nullptr) { heap_caps_free(pOTABuffer); pOTABuffer = nullptr; }
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        if (pOTABuffer != nullptr) { heap_caps_free(pOTABuffer); pOTABuffer = nullptr; }
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    // Validation failures below touch nothing on flash - just report the
+    // error and free the buffer, no restart needed.
+    auto fail = [&](int code, const String& message) {
+        if (pOTABuffer != nullptr) { heap_caps_free(pOTABuffer); pOTABuffer = nullptr; }
+        pOTAReceived = 0;
+        pOTAUploadValid = false;
+        server.send(code, "application/json", "{\"error\":\"" + JsonEscaped(message) + "\"}");
+    };
+
+    if (!pOTAUploadValid || pOTABuffer == nullptr || pOTAReceived < sizeof(OTAPackageHeader)) {
+        fail(400, "file missing, too large, or too small");
+        return;
+    }
+
+    OTAPackageHeader header;
+    memcpy(&header, pOTABuffer, sizeof(header));
+
+    if (memcmp(header.magic, OTAPackageMagic, sizeof(OTAPackageMagic)) != 0 || header.headerVersion != OTAPackageHeaderVersion) {
+        fail(400, "not a valid DeviceIQ OTA package");
+        return;
+    }
+
+    const size_t expectedTotal = sizeof(OTAPackageHeader) + static_cast<size_t>(header.firmwareLength) + static_cast<size_t>(header.filesystemLength);
+    if (expectedTotal != pOTAReceived) {
+        fail(400, "package is truncated or corrupt (size mismatch)");
+        return;
+    }
+
+    uint8_t* firmwareData = pOTABuffer + sizeof(OTAPackageHeader);
+    uint8_t* filesystemData = firmwareData + header.firmwareLength;
+
+    if (StandardCRC32(firmwareData, header.firmwareLength) != header.firmwareCRC32 ||
+        StandardCRC32(filesystemData, header.filesystemLength) != header.filesystemCRC32) {
+        fail(400, "package is corrupt (checksum mismatch)");
+        return;
+    }
+
+    const bool isDowngrade = VersionCompare(header.softwareMajor, header.softwareMinor, header.softwareRevision) < 0;
+    const String packageVersion = String(header.softwareMajor) + "." + String(header.softwareMinor) + "." + String(header.softwareRevision);
+
+    if (isDowngrade && server.arg("confirmDowngrade") != "1") {
+        fail(
+            409,
+            "downgrade from " + Version::Software::Info() + " to " + packageVersion + " requires confirmation"
+        );
+        return;
+    }
+
+    const String identity = session->username + "@" + server.client().remoteIP().toString();
+
+    // Past this point every failure is treated as committed: the
+    // filesystem partition may already be unmounted or partially erased,
+    // so DeviceRestart() is called regardless of outcome, letting the
+    // normal boot sequence (filesystem::Start() formats on a bad mount)
+    // recover cleanly instead of leaving the device running unmounted.
+    auto failDuringApply = [&](const String& message) {
+        Logger.Log("Web Server: OTA update failed for " + identity + ": " + message + "; restarting", logger::LogLevels::Error);
+        server.send(500, "application/json", "{\"error\":\"" + JsonEscaped(message) + "\"}");
+        server.client().flush();
+        if (pOTABuffer != nullptr) { heap_caps_free(pOTABuffer); pOTABuffer = nullptr; }
+        pOTAReceived = 0;
+        pOTAUploadValid = false;
+        DeviceRestart();
+    };
+
+    // The filesystem partition has no A/B redundancy, so it is written
+    // first: if it fails, the firmware update below (and the boot
+    // partition switch on its own Update.end()) never happens, keeping the
+    // firmware/filesystem pairing consistent even on failure.
+    FileSystem.Stop();
+
+    if (!Update.begin(header.filesystemLength, U_SPIFFS)) {
+        failDuringApply(String("filesystem update failed: ") + Update.errorString());
+        return;
+    }
+    if (Update.write(filesystemData, header.filesystemLength) != header.filesystemLength || !Update.end(true)) {
+        failDuringApply(String("filesystem update failed: ") + Update.errorString());
+        return;
+    }
+
+    if (!Update.begin(header.firmwareLength, U_FLASH)) {
+        failDuringApply(String("firmware update failed: ") + Update.errorString());
+        return;
+    }
+    if (Update.write(firmwareData, header.firmwareLength) != header.firmwareLength || !Update.end(true)) {
+        failDuringApply(String("firmware update failed: ") + Update.errorString());
+        return;
+    }
+
+    if (isDowngrade && !ResetConfigurationToDefaults()) {
+        Logger.Log("Web Server: OTA downgrade to " + packageVersion + " applied for " + identity + ", but configuration reset failed", logger::LogLevels::Error);
+    }
+
+    heap_caps_free(pOTABuffer);
+    pOTABuffer = nullptr;
+    pOTAReceived = 0;
+    pOTAUploadValid = false;
+
+    Logger.Log(
+        "Web Server: OTA " + String(isDowngrade ? "downgrade" : "update") + " from " + Version::Software::Info() + " to " + packageVersion +
+            " applied by " + identity + (isDowngrade ? "; configuration reset to defaults" : "") + "; restarting",
+        logger::LogLevels::Warning
+    );
+
+    server.send(200, "application/json", "{\"success\":true,\"downgrade\":" + String(isDowngrade ? "true" : "false") + "}");
     server.client().flush();
 
     DeviceRestart();

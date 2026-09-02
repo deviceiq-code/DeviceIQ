@@ -66,6 +66,11 @@ class httpserver {
         // Generous relative to the shipped config.json (a few KB); bounds
         // worst-case RAM use for the in-memory upload buffer.
         static constexpr size_t MAX_CONFIG_UPLOAD_BYTES = 65536;
+        // Combined firmware+filesystem OTA packages are a few MB; the
+        // upload buffer is allocated from PSRAM (not internal RAM) and
+        // freed once the update is applied or fails. Comfortably covers
+        // this project's current image sizes with headroom to grow.
+        static constexpr size_t MAX_OTA_UPLOAD_BYTES = 6UL * 1024UL * 1024UL;
 
         StaticSemaphore_t pMutexStorage{};
         SemaphoreHandle_t pMutex = nullptr;
@@ -82,6 +87,13 @@ class httpserver {
         // HandleConfigImportApplyPost, or invalidated by the next upload.
         bool pConfigImportReady = false;
 
+        // PSRAM-backed buffer for the combined OTA package upload. Allocated
+        // in HandleOTAUpload on UPLOAD_FILE_START, freed in
+        // HandleOTAUpdatePost once applied (or on any failure).
+        uint8_t* pOTABuffer = nullptr;
+        size_t pOTAReceived = 0;
+        bool pOTAUploadValid = false;
+
         static void TaskEntry(void* parameter);
         void Task();
         void RegisterRoutes(WebServer& server);
@@ -89,6 +101,7 @@ class httpserver {
         void HandleIndex(WebServer& server);
         void HandleDashboard(WebServer& server);
         void HandleSetup(WebServer& server);
+        void HandleUpdate(WebServer& server);
         void HandleAbout(WebServer& server);
         void HandleAboutGet(WebServer& server);
         void HandleLog(WebServer& server);
@@ -109,6 +122,8 @@ class httpserver {
         void HandleConfigImportPost(WebServer& server);
         void HandleConfigImportApplyPost(WebServer& server);
         void HandleConfigResetPost(WebServer& server);
+        void HandleOTAUpload(WebServer& server);
+        void HandleOTAUpdatePost(WebServer& server);
         void HandleScript(WebServer& server);
         void HandleNotFound(WebServer& server);
 

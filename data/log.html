@@ -19,6 +19,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                 <span>Setup</span>
             </a>
+            <a href="/update.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Update</span>
+            </a>
             <a href="/log.html" class="sidebar-nav-item active">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                 <span>Log</span>
@@ -51,66 +55,83 @@
             </div>
         </header>
 
-        <main>
-            <div class="setup-card">
-                <div class="panel-header">
-                    <h2>Log</h2>
-                    <p>View, export, or clear the device.log file.</p>
+        <main class="setup-main">
+            <div class="tabs-bar">
+                <div class="tabs" id="tabs">
+                    <button type="button" class="tab-button active" data-tab="LogViewer">Log Viewer</button>
+                    <button type="button" class="tab-button" data-tab="Management">Management</button>
                 </div>
+            </div>
+            <div id="panels">
+                <div class="tab-panel active" id="panel-LogViewer">
+                    <div class="setup-card">
+                        <div class="panel-header">
+                            <h2>Log Viewer</h2>
+                            <p>View the device.log file, with optional auto refresh.</p>
+                        </div>
 
-                <div class="group-title">Management</div>
-                <div class="settings-list">
-                    <div class="setting-row">
-                        <div class="setting-row-text">
-                            <div class="setting-label">View</div>
-                            <div class="setting-desc">Lines to display, most recent last.</div>
+                        <div class="settings-list">
+                            <div class="setting-row">
+                                <div class="setting-row-text">
+                                    <div class="setting-label">Auto Refresh</div>
+                                    <div class="setting-desc">Automatically reload the log every few seconds.</div>
+                                </div>
+                                <div class="setting-row-control">
+                                    <label class="toggle">
+                                        <input type="checkbox" id="auto-refresh-toggle">
+                                        <span class="track"></span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
-                        <div class="setting-row-control">
-                            <select id="lines-select">
-                                <option value="100">Last 100 lines</option>
-                                <option value="500" selected>Last 500 lines</option>
-                                <option value="1000">Last 1000 lines</option>
-                                <option value="all">All lines</option>
-                            </select>
-                            <button type="button" class="control-button" id="refresh-button">Refresh</button>
-                        </div>
-                    </div>
-                    <div class="setting-row">
-                        <div class="setting-row-text">
-                            <div class="setting-label">Export</div>
-                            <div class="setting-desc">Download the full device.log file.</div>
-                        </div>
-                        <div class="setting-row-control">
-                            <a href="/api/log/export" download="device.log" class="control-button">Download</a>
-                        </div>
-                    </div>
-                    <div class="setting-row">
-                        <div class="setting-row-text">
-                            <div class="setting-label">Clear</div>
-                            <div class="setting-desc">Erases the log file. This cannot be undone.</div>
-                        </div>
-                        <div class="setting-row-control">
-                            <button type="button" class="control-button danger" id="clear-button">Clear</button>
-                        </div>
+                        <pre class="log-viewer" id="log-viewer">Loading...</pre>
                     </div>
                 </div>
 
-                <div class="group-title">Log Viewer</div>
-                <div class="settings-list">
-                    <div class="setting-row">
-                        <div class="setting-row-text">
-                            <div class="setting-label">Auto Refresh</div>
-                            <div class="setting-desc">Automatically reload the log every few seconds.</div>
+                <div class="tab-panel" id="panel-Management">
+                    <div class="setup-card">
+                        <div class="panel-header">
+                            <h2>Management</h2>
+                            <p>Choose how much of the log to view, export it, or clear it.</p>
                         </div>
-                        <div class="setting-row-control">
-                            <label class="toggle">
-                                <input type="checkbox" id="auto-refresh-toggle">
-                                <span class="track"></span>
-                            </label>
+
+                        <div class="settings-list">
+                            <div class="setting-row">
+                                <div class="setting-row-text">
+                                    <div class="setting-label">View</div>
+                                    <div class="setting-desc">Lines to display, most recent last.</div>
+                                </div>
+                                <div class="setting-row-control">
+                                    <select id="lines-select">
+                                        <option value="100">Last 100 lines</option>
+                                        <option value="500" selected>Last 500 lines</option>
+                                        <option value="1000">Last 1000 lines</option>
+                                        <option value="all">All lines</option>
+                                    </select>
+                                    <button type="button" class="control-button" id="refresh-button">Refresh</button>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-row-text">
+                                    <div class="setting-label">Export</div>
+                                    <div class="setting-desc">Download the full device.log file.</div>
+                                </div>
+                                <div class="setting-row-control">
+                                    <a href="/api/log/export" download="device.log" class="control-button">Download</a>
+                                </div>
+                            </div>
+                            <div class="setting-row">
+                                <div class="setting-row-text">
+                                    <div class="setting-label">Clear</div>
+                                    <div class="setting-desc">Erases the log file. This cannot be undone.</div>
+                                </div>
+                                <div class="setting-row-control">
+                                    <button type="button" class="control-button danger" id="clear-button">Clear</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
-                <pre class="log-viewer" id="log-viewer">Loading...</pre>
             </div>
         </main>
     </div>
@@ -119,6 +140,19 @@
 <script src="/notifications.js"></script>
 <script>
 (function () {
+    function selectTab(tabId) {
+        document.querySelectorAll(".tab-button").forEach(function (button) {
+            button.classList.toggle("active", button.dataset.tab === tabId);
+        });
+        document.querySelectorAll(".tab-panel").forEach(function (panel) {
+            panel.classList.toggle("active", panel.id === "panel-" + tabId);
+        });
+    }
+
+    document.querySelectorAll(".tab-button").forEach(function (button) {
+        button.addEventListener("click", function () { selectTab(button.dataset.tab); });
+    });
+
     const AUTO_REFRESH_INTERVAL_MS = 5000;
     let autoRefreshTimer = null;
 
