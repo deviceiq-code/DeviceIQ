@@ -17,6 +17,7 @@ class app {
         bool InitializeMQTT();
         bool InitializeStatePersistence();
         bool InitializeTelnetServer();
+        bool InitializeHTTPServer();
 
         void LogConfigurationStatus(bool configurationLoaded);
 

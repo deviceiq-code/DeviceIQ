@@ -51,7 +51,9 @@
     "Web Server": {
         "Port": 80,
         "Enabled": true,
-        "Token": "default_token"
+        "Token": "default_token",
+        "Idle Timeout": 1800000,
+        "Max Sessions": 4
     },
     "MQTT": {
         "Enabled": true,

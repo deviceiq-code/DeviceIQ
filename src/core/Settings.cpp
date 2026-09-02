@@ -600,6 +600,8 @@ void settings::LoadDefaults() {
     WebServer.Port(Defaults.WebServer.Port);
     WebServer.Enabled(Defaults.WebServer.Enabled);
     WebServer.WebHooksToken(Defaults.WebServer.WebHooksToken);
+    WebServer.IdleTimeoutMs(Defaults.WebServer.IdleTimeoutMs);
+    WebServer.MaxSessions(Defaults.WebServer.MaxSessions);
 
     // TelnetServer
     TelnetServer.Port(Defaults.TelnetServer.Port);
@@ -738,6 +740,8 @@ bool settings::Load(const String& configfilename) noexcept {
             WebServer.Port((uint16_t)(wh["Port"] | Defaults.WebServer.Port));
             WebServer.Enabled((bool)(wh["Enabled"] | Defaults.WebServer.Enabled));
             WebServer.WebHooksToken(String(wh["Token"] | Defaults.WebServer.WebHooksToken));
+            WebServer.IdleTimeoutMs((uint32_t)(wh["Idle Timeout"] | Defaults.WebServer.IdleTimeoutMs));
+            WebServer.MaxSessions((uint8_t)(wh["Max Sessions"] | Defaults.WebServer.MaxSessions));
 
             if (WebServer.WebHooksToken().isEmpty()) WebServer.Enabled(false); // Token must be >= 1 char
         }
@@ -896,6 +900,8 @@ bool settings::Save(const String& configfilename) const noexcept {
             wh["Port"] = WebServer.Port();
             wh["Enabled"] = WebServer.Enabled();
             wh["Token"] = WebServer.WebHooksToken();
+            wh["Idle Timeout"] = WebServer.IdleTimeoutMs();
+            wh["Max Sessions"] = WebServer.MaxSessions();
         }
 
         // MQTT

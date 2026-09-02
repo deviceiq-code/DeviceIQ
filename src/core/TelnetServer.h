@@ -95,7 +95,7 @@ class telnetserver {
             TickType_t lastActivityAt = 0;
         };
 
-        static constexpr size_t MAX_COMMANDS = 20;
+        static constexpr size_t MAX_COMMANDS = 32;
         static constexpr size_t MAX_INPUT_LENGTH = 128;
         static constexpr size_t MAX_BYTES_PER_CYCLE = 256;
         static constexpr uint32_t TASK_STACK_SIZE = 8192;

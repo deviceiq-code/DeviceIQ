@@ -46,6 +46,7 @@ void app::Start() {
     if (!InitializeAutomation()) return;
     if (!InitializeStatePersistence()) return;
     if (!InitializeTelnetServer()) return;
+    if (!InitializeHTTPServer()) return;
 
     LogConfigurationStatus(configurationLoaded);
 }
@@ -308,6 +309,26 @@ bool app::InitializeTelnetServer() {
     }
 
     Logger.Log("Telnet Server: Enabled on port " + String(TelnetServer.Port()), logger::LogLevels::Information);
+    return true;
+}
+
+bool app::InitializeHTTPServer() {
+    HTTPServer.Enabled(Settings.WebServer.Enabled());
+    HTTPServer.Port(Settings.WebServer.Port());
+    HTTPServer.IdleTimeout(Settings.WebServer.IdleTimeoutMs());
+    HTTPServer.MaxSessions(Settings.WebServer.MaxSessions());
+
+    if (!HTTPServer.Enabled()) {
+        Logger.Log("Web Server: Disabled", logger::LogLevels::Information);
+        return true;
+    }
+
+    if (!HTTPServer.Start()) {
+        Logger.Log("Error initializing Web Server object", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log("Web Server: Enabled on port " + String(HTTPServer.Port()), logger::LogLevels::Information);
     return true;
 }
 

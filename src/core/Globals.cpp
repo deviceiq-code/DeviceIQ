@@ -9,3 +9,4 @@ telnetserver TelnetServer;
 ComponentManager ComponentController;
 automation Automation;
 mqttclient MQTTClient;
+httpserver HTTPServer;

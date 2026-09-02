@@ -67,6 +67,8 @@ struct defaults {
         const uint16_t Port = 80;
         const bool Enabled = true;
         const char* WebHooksToken = "default_token";
+        const uint32_t IdleTimeoutMs = 1800000; // 30 minutes. 0 disables the idle timeout.
+        const uint8_t MaxSessions = 4;
     } WebServer;
     struct telnetserver {
         const uint16_t Port = 23;

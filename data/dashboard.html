@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ · Dashboard</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="topbar">
+    <div class="left">
+        <div class="name">DeviceIQ</div>
+        <nav>
+            <a href="/dashboard.html" class="active">Dashboard</a>
+            <a href="/config.html" id="config-link">Setup</a>
+        </nav>
+    </div>
+    <div class="right">
+        <span id="whoami"></span>
+        <button class="secondary" id="logout-button">Sign out</button>
+    </div>
+</div>
+
+<main>
+    <div class="placeholder">
+        <div class="title">Components dashboard</div>
+        <p>This page will show live component state and controls. Coming soon.</p>
+    </div>
+</main>
+
+<script>
+(function () {
+    fetch("/api/session").then((response) => response.json()).then((data) => {
+        if (!data.authenticated) {
+            window.location.replace("/");
+            return;
+        }
+        document.getElementById("whoami").textContent = data.username + (data.admin ? " · admin" : "");
+        if (!data.admin) document.getElementById("config-link").remove();
+    }).catch(() => window.location.replace("/"));
+
+    document.getElementById("logout-button").addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(() => window.location.replace("/"));
+    });
+})();
+</script>
+</body>
+</html>

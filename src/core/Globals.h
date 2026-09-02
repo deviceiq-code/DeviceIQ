@@ -12,6 +12,7 @@
 #include "MQTTClient.h"
 #include "components/ComponentManager.h"
 #include "components/Relay.h"
+#include "web/HTTPServer.h"
 
 extern rtc Clock;
 extern logger Logger;
@@ -23,3 +24,4 @@ extern ComponentManager ComponentController;
 extern automation Automation;
 extern mqttclient MQTTClient;
 extern relay OnboardLedRelay;
+extern httpserver HTTPServer;

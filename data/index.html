@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="centered">
+    <form class="card" id="login-form" autocomplete="off">
+        <div class="brand">
+            <div class="name">DeviceIQ</div>
+            <div class="tagline">Sign in to manage this device</div>
+        </div>
+
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+
+        <button type="submit" id="submit-button">Sign in</button>
+
+        <div class="error" id="error"></div>
+    </form>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById("login-form");
+    const errorBox = document.getElementById("error");
+    const submitButton = document.getElementById("submit-button");
+
+    function showError(message) {
+        errorBox.textContent = message;
+        errorBox.classList.add("visible");
+    }
+
+    // Already signed in? Skip the form.
+    fetch("/api/session").then((response) => response.json()).then((data) => {
+        if (data.authenticated) window.location.replace("/dashboard.html");
+    }).catch(() => {});
+
+    form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        errorBox.classList.remove("visible");
+        submitButton.disabled = true;
+
+        const body = new URLSearchParams();
+        body.set("username", document.getElementById("username").value);
+        body.set("password", document.getElementById("password").value);
+
+        fetch("/api/login", { method: "POST", body: body })
+            .then((response) => response.json().then((data) => ({ ok: response.ok, data: data })))
+            .then((result) => {
+                if (!result.ok) {
+                    showError(result.data.error || "Sign in failed.");
+                    submitButton.disabled = false;
+                    return;
+                }
+                window.location.href = "/dashboard.html";
+            })
+            .catch(() => {
+                showError("Unable to reach the device.");
+                submitButton.disabled = false;
+            });
+    });
+})();
+</script>
+</body>
+</html>

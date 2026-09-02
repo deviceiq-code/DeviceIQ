@@ -2,10 +2,13 @@
 
 #include "ComponentCommands.h"
 #include "LogCommands.h"
+#include "MQTTCommands.h"
+#include "NTPCommands.h"
 #include "NetworkCommands.h"
 #include "SystemCommands.h"
 #include "TelnetCommands.h"
 #include "UserCommands.h"
+#include "WebCommands.h"
 
 bool cli::RegisterCommands() {
     // Every group attempts registration regardless of earlier failures, so a
@@ -16,6 +19,9 @@ bool cli::RegisterCommands() {
     const bool network = RegisterNetworkCommands();
     const bool telnet = RegisterTelnetCommands();
     const bool log = RegisterLogCommands();
+    const bool ntp = RegisterNTPCommands();
+    const bool mqtt = RegisterMQTTCommands();
+    const bool web = RegisterWebCommands();
 
-    return system && user && component && network && telnet && log;
+    return system && user && component && network && telnet && log && ntp && mqtt && web;
 }

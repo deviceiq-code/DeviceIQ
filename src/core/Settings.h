@@ -209,6 +209,8 @@ class settings {
                 uint16_t pPort{};
                 bool pEnabled{};
                 String pWebHooksToken;
+                uint32_t pIdleTimeoutMs{};
+                uint8_t pMaxSessions{};
             public:
                 explicit webserver(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
                 [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
@@ -219,6 +221,13 @@ class settings {
 
                 [[nodiscard]] String WebHooksToken() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pWebHooksToken : String(); }
                 void WebHooksToken(String value) noexcept;
+
+                // 0 means the idle timeout is disabled; kept as given.
+                [[nodiscard]] uint32_t IdleTimeoutMs() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIdleTimeoutMs : 0; }
+                void IdleTimeoutMs(uint32_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pIdleTimeoutMs = value; }
+
+                [[nodiscard]] uint8_t MaxSessions() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pMaxSessions : 0; }
+                void MaxSessions(uint8_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pMaxSessions = (value == 0) ? Defaults.WebServer.MaxSessions : value; }
         } WebServer;
         class telnetserver {
             private:

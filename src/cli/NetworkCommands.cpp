@@ -14,8 +14,10 @@
 namespace {
     using cli::AppendSetting;
     using cli::BoolValue;
+    using cli::JoinParameters;
     using cli::ParseBool;
     using cli::ParseUInt16;
+    using cli::PasswordState;
 
     struct NetworkSettingsSnapshot {
         bool dhcpClient;
@@ -36,27 +38,12 @@ namespace {
         uint16_t fallbackAPRetention;
     };
 
-    String PasswordState(const String& value) {
-        return value.isEmpty() ? "not set" : "configured";
-    }
-
     String ModeName(network::APMode mode) {
         switch (mode) {
             case network::APMode::WifiClient: return "WiFi client";
             case network::APMode::SoftAP: return "fallback AP";
             default: return "offline";
         }
-    }
-
-    String JoinParameters(String* parameters, size_t first) {
-        String result;
-        for (size_t index = first; index < telnetserver::MAX_COMMAND_PARAMETERS; ++index) {
-            if (parameters[index].isEmpty()) continue;
-            if (!result.isEmpty()) result += ' ';
-            result += parameters[index];
-        }
-        result.trim();
-        return result;
     }
 
     bool ParseIP(const String& value, IPAddress& parsed) {
@@ -150,7 +137,7 @@ namespace {
         Settings.Network.FallbackAPRetention(snapshot.fallbackAPRetention);
     }
 
-    void ShowAll(String& output) {
+    void ShowAll(String& output, bool isAdmin) {
         const network::APMode mode = Network.ConnectionMode();
         AppendSetting(output, "Mode", ModeName(mode));
         AppendSetting(output, "MAC", Network.MAC_Address());
@@ -170,14 +157,14 @@ namespace {
         AppendSetting(output, "DNS 1", Settings.Network.DNS(0).toString());
         AppendSetting(output, "DNS 2", Settings.Network.DNS(1).toString());
         AppendSetting(output, "SSID", Settings.Network.SSID());
-        AppendSetting(output, "Passphrase", PasswordState(Settings.Network.Passphrase()));
+        AppendSetting(output, "Passphrase", isAdmin ? Settings.Network.Passphrase() : PasswordState(Settings.Network.Passphrase()));
         AppendSetting(output, "Connection Timeout", String(Settings.Network.ConnectionTimeout()) + " s");
         AppendSetting(output, "Reconnect Enabled", BoolValue(Settings.Network.ReconnectEnabled()));
         AppendSetting(output, "Reconnect Initial Interval", String(Settings.Network.ReconnectInitialInterval()) + " s");
         AppendSetting(output, "Reconnect Maximum Interval", String(Settings.Network.ReconnectMaximumInterval()) + " s");
         AppendSetting(output, "Fallback AP Enabled", BoolValue(Settings.Network.FallbackAPEnabled()));
         AppendSetting(output, "Fallback AP SSID", Settings.Network.FallbackAPSSID().isEmpty() ? "hostname" : Settings.Network.FallbackAPSSID());
-        AppendSetting(output, "Fallback AP Password", PasswordState(Settings.Network.FallbackAPPassword()));
+        AppendSetting(output, "Fallback AP Password", isAdmin ? Settings.Network.FallbackAPPassword() : PasswordState(Settings.Network.FallbackAPPassword()));
         AppendSetting(output, "Fallback AP Retention", String(Settings.Network.FallbackAPRetention()) + " s");
     }
 
@@ -207,14 +194,14 @@ namespace {
         return !parameters[1].isEmpty();
     }
 
-    bool ExecuteNetworkCommand(String* parameters, String& output) noexcept {
+    bool ExecuteNetworkCommand(String* parameters, bool isAdmin, String& output) noexcept {
         output.clear();
         String command = parameters[0];
         command.toLowerCase();
 
         if (command.isEmpty() || command == "show") {
             if (!parameters[1].isEmpty()) return Usage(output);
-            ShowAll(output);
+            ShowAll(output, isAdmin);
             return true;
         }
 
@@ -255,14 +242,14 @@ namespace {
             else if (command == "dhcp") AppendSetting(output, "DHCP Client", BoolValue(Settings.Network.DHCPClient()));
             else if (command == "gateway") AppendSetting(output, "Gateway", Settings.Network.Gateway().toString());
             else if (command == "netmask") AppendSetting(output, "Netmask", Settings.Network.Netmask().toString());
-            else if (command == "passphrase") AppendSetting(output, "Passphrase", PasswordState(Settings.Network.Passphrase()));
+            else if (command == "passphrase") AppendSetting(output, "Passphrase", isAdmin ? Settings.Network.Passphrase() : PasswordState(Settings.Network.Passphrase()));
             else if (command == "connection-timeout") AppendSetting(output, "Connection Timeout", String(Settings.Network.ConnectionTimeout()) + " s");
             else if (command == "reconnect") AppendSetting(output, "Reconnect Enabled", BoolValue(Settings.Network.ReconnectEnabled()));
             else if (command == "reconnect-initial") AppendSetting(output, "Reconnect Initial Interval", String(Settings.Network.ReconnectInitialInterval()) + " s");
             else if (command == "reconnect-maximum") AppendSetting(output, "Reconnect Maximum Interval", String(Settings.Network.ReconnectMaximumInterval()) + " s");
             else if (command == "fallback") AppendSetting(output, "Fallback AP Enabled", BoolValue(Settings.Network.FallbackAPEnabled()));
             else if (command == "fallback-ssid") AppendSetting(output, "Fallback AP SSID", Settings.Network.FallbackAPSSID().isEmpty() ? "hostname" : Settings.Network.FallbackAPSSID());
-            else if (command == "fallback-password") AppendSetting(output, "Fallback AP Password", PasswordState(Settings.Network.FallbackAPPassword()));
+            else if (command == "fallback-password") AppendSetting(output, "Fallback AP Password", isAdmin ? Settings.Network.FallbackAPPassword() : PasswordState(Settings.Network.FallbackAPPassword()));
             else if (command == "fallback-retention") AppendSetting(output, "Fallback AP Retention", String(Settings.Network.FallbackAPRetention()) + " s");
             else return Usage(output);
             return true;
@@ -298,7 +285,9 @@ namespace {
             }
             if (command == "passphrase") Settings.Network.Passphrase(value);
             else Settings.Network.FallbackAPPassword(value);
-            return SaveChange(snapshot, command == "passphrase" ? "Passphrase" : "Fallback AP Password", PasswordState(value), output);
+            // Reached only after the admin check for mutations, so it's safe
+            // to echo the value that was just set.
+            return SaveChange(snapshot, command == "passphrase" ? "Passphrase" : "Fallback AP Password", value.isEmpty() ? "not set" : value, output);
         }
 
         if (command == "fallback-ssid") {
@@ -582,7 +571,7 @@ bool cli::RegisterNetworkCommands() {
 
             String output;
             output.reserve(1024);
-            const bool success = ExecuteNetworkCommand(parameters, output);
+            const bool success = ExecuteNetworkCommand(parameters, TelnetServer.IsSessionAdmin(client), output);
             if (mutation) {
                 telnetserver::SessionInfo session;
                 const String identity = TelnetServer.SessionInformation(client, session) ? session.user : String("unknown");

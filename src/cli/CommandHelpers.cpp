@@ -2,8 +2,14 @@
 
 #include <cstdlib>
 
+#include "core/TelnetServer.h"
+
 String cli::BoolValue(bool value) {
     return value ? "true" : "false";
+}
+
+String cli::PasswordState(const String& value) {
+    return value.isEmpty() ? "not set" : "configured";
 }
 
 void cli::AppendSetting(String& output, const String& name, const String& value) {
@@ -29,4 +35,15 @@ bool cli::ParseUInt16(const String& value, uint16_t& parsed, bool allowZero) {
     if (end == value.c_str() || *end != '\0' || number > UINT16_MAX || (!allowZero && number == 0)) return false;
     parsed = static_cast<uint16_t>(number);
     return true;
+}
+
+String cli::JoinParameters(String* parameters, size_t first) {
+    String result;
+    for (size_t index = first; index < telnetserver::MAX_COMMAND_PARAMETERS; ++index) {
+        if (parameters[index].isEmpty()) continue;
+        if (!result.isEmpty()) result += ' ';
+        result += parameters[index];
+    }
+    result.trim();
+    return result;
 }
