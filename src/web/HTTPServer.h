@@ -85,6 +85,8 @@ class httpserver {
         void HandleIndex(WebServer& server);
         void HandleDashboard(WebServer& server);
         void HandleSetup(WebServer& server);
+        void HandleAbout(WebServer& server);
+        void HandleAboutGet(WebServer& server);
         void HandleStyle(WebServer& server);
         void HandleLoginPost(WebServer& server);
         void HandleLogoutPost(WebServer& server);

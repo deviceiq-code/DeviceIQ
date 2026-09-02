@@ -527,7 +527,6 @@ main.setup-main {
 .panel-header {
     margin-bottom: 8px;
     padding-bottom: 16px;
-    border-bottom: 1px solid var(--border);
 }
 
 .panel-header h2 {
@@ -558,6 +557,10 @@ main.setup-main {
 .settings-list {
     display: flex;
     flex-direction: column;
+}
+
+.group-title + .settings-list {
+    padding-left: 1cm;
 }
 
 .setting-row {
@@ -601,6 +604,19 @@ main.setup-main {
     opacity: 0.6;
     cursor: default;
     background: var(--bg);
+}
+
+.setting-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    text-align: right;
+    word-break: break-word;
+}
+
+.setting-value.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
 }
 
 .flags {

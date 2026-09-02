@@ -1,7 +1,10 @@
 #include "HTTPServer.h"
 
 #include <ArduinoJson.h>
+#include <esp_arduino_version.h>
 #include <esp_random.h>
+#include <esp_system.h>
+#include <esp32-hal-cpu.h>
 #include <cstdlib>
 
 #include "core/DeviceControl.h"
@@ -524,6 +527,132 @@ namespace {
         out["Idle Timeout"] = Settings.WebServer.IdleTimeoutMs();
         out["Max Sessions"] = Settings.WebServer.MaxSessions();
     }
+
+    // ---- About ----------------------------------------------------------
+    // Mirrors the Telnet CLI's ver/hwinfo (any authenticated session) and
+    // mem/fs (admin only) commands, as JSON instead of formatted text.
+
+    const char* FlashModeName(FlashMode_t mode) {
+        switch (mode) {
+            case FM_QIO: return "QIO";
+            case FM_QOUT: return "QOUT";
+            case FM_DIO: return "DIO";
+            case FM_DOUT: return "DOUT";
+            case FM_FAST_READ: return "Fast Read";
+            case FM_SLOW_READ: return "Slow Read";
+            default: return "Unknown";
+        }
+    }
+
+    const char* ResetReasonName(esp_reset_reason_t reason) {
+        switch (reason) {
+            case ESP_RST_POWERON: return "Power on";
+            case ESP_RST_EXT: return "External pin";
+            case ESP_RST_SW: return "Software restart";
+            case ESP_RST_PANIC: return "Exception/panic";
+            case ESP_RST_INT_WDT: return "Interrupt watchdog";
+            case ESP_RST_TASK_WDT: return "Task watchdog";
+            case ESP_RST_WDT: return "Other watchdog";
+            case ESP_RST_DEEPSLEEP: return "Deep-sleep wakeup";
+            case ESP_RST_BROWNOUT: return "Brownout";
+            case ESP_RST_SDIO: return "SDIO";
+            default: return "Unknown";
+        }
+    }
+
+    String AboutMacAddress(esp_mac_type_t type) {
+        uint8_t mac[6]{};
+        if (esp_read_mac(mac, type) != ESP_OK) return "Unavailable";
+        char text[18];
+        snprintf(text, sizeof(text), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        return String(text);
+    }
+
+    void AppendMemoryJson(JsonObject out, uint32_t total, uint32_t available, uint32_t minimum, uint32_t largest) {
+        out["total"] = total;
+        out["available"] = available;
+        out["minFree"] = minimum;
+        out["largestBlock"] = largest;
+    }
+
+    void GetAboutJson(JsonObject out, bool isAdmin) {
+        JsonObject version = out["version"].to<JsonObject>();
+        version["product"] = Version::ProductName;
+        version["family"] = Version::ProductFamily;
+        version["serial"] = Version::SerialNumber();
+        version["hardware"] = Version::Hardware::Info();
+        version["software"] = Version::Software::Info();
+
+        JsonObject hardware = out["hardware"].to<JsonObject>();
+        hardware["model"] = ESP.getChipModel();
+        hardware["revision"] = ESP.getChipRevision();
+        hardware["cores"] = ESP.getChipCores();
+        hardware["cpuFrequencyMHz"] = ESP.getCpuFreqMHz();
+        hardware["crystalFrequencyMHz"] = getXtalFrequencyMhz();
+        hardware["apbFrequencyMHz"] = getApbFrequency() / 1000000UL;
+        hardware["temperatureC"] = temperatureRead();
+        hardware["wifiMac"] = AboutMacAddress(ESP_MAC_WIFI_STA);
+        hardware["bluetoothMac"] = AboutMacAddress(ESP_MAC_BT);
+
+        JsonObject flash = out["flash"].to<JsonObject>();
+        flash["sizeBytes"] = ESP.getFlashChipSize();
+        flash["speedMHz"] = ESP.getFlashChipSpeed() / 1000000UL;
+        flash["mode"] = FlashModeName(ESP.getFlashChipMode());
+
+        JsonObject firmware = out["firmware"].to<JsonObject>();
+        firmware["sketchSizeBytes"] = ESP.getSketchSize();
+        firmware["otaFreeBytes"] = ESP.getFreeSketchSpace();
+        firmware["sketchMD5"] = ESP.getSketchMD5();
+
+        JsonObject runtime = out["runtime"].to<JsonObject>();
+        runtime["espIdf"] = ESP.getSdkVersion();
+        runtime["arduinoEsp32"] = String(ESP_ARDUINO_VERSION_MAJOR) + "." + String(ESP_ARDUINO_VERSION_MINOR) + "." + String(ESP_ARDUINO_VERSION_PATCH);
+        runtime["resetReason"] = ResetReasonName(esp_reset_reason());
+        runtime["uptimeSeconds"] = static_cast<uint32_t>(esp_timer_get_time() / 1000000ULL);
+        runtime["freeRtosTasks"] = uxTaskGetNumberOfTasks();
+
+        out["admin"] = isAdmin;
+        if (!isAdmin) return;
+
+        const uint32_t heapTotal = ESP.getHeapSize();
+        const uint32_t heapAvailable = ESP.getFreeHeap();
+        const uint32_t psramTotal = ESP.getPsramSize();
+        const uint32_t psramAvailable = ESP.getFreePsram();
+        const uint32_t largestBlock = ESP.getMaxAllocHeap() >= ESP.getMaxAllocPsram() ? ESP.getMaxAllocHeap() : ESP.getMaxAllocPsram();
+        const uint32_t fragmentation = heapAvailable == 0 || ESP.getMaxAllocHeap() >= heapAvailable
+            ? 0
+            : 100U - static_cast<uint32_t>((static_cast<uint64_t>(ESP.getMaxAllocHeap()) * 100ULL) / heapAvailable);
+
+        JsonObject memory = out["memory"].to<JsonObject>();
+        AppendMemoryJson(memory["heap"].to<JsonObject>(), heapTotal, heapAvailable, ESP.getMinFreeHeap(), ESP.getMaxAllocHeap());
+        AppendMemoryJson(memory["psram"].to<JsonObject>(), psramTotal, psramAvailable, ESP.getMinFreePsram(), ESP.getMaxAllocPsram());
+        AppendMemoryJson(memory["total"].to<JsonObject>(), heapTotal + psramTotal, heapAvailable + psramAvailable, ESP.getMinFreeHeap() + ESP.getMinFreePsram(), largestBlock);
+        memory["fragmentationPercent"] = fragmentation;
+        memory["stackMinimumBytes"] = uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t);
+
+        JsonObject fileSystemInfo = out["filesystem"].to<JsonObject>();
+        filesystem::Statistics statistics;
+        if (!FileSystem.GetStatistics(statistics)) {
+            fileSystemInfo["mounted"] = false;
+        } else {
+            const size_t available = statistics.totalBytes >= statistics.usedBytes ? statistics.totalBytes - statistics.usedBytes : 0;
+            const uint32_t usage = statistics.totalBytes == 0
+                ? 0
+                : static_cast<uint32_t>((static_cast<uint64_t>(statistics.usedBytes) * 100ULL) / statistics.totalBytes);
+
+            fileSystemInfo["mounted"] = true;
+            fileSystemInfo["totalBytes"] = statistics.totalBytes;
+            fileSystemInfo["usedBytes"] = statistics.usedBytes;
+            fileSystemInfo["availableBytes"] = available;
+            fileSystemInfo["usagePercent"] = usage;
+            fileSystemInfo["files"] = statistics.files;
+            fileSystemInfo["directories"] = statistics.directories;
+            fileSystemInfo["fileDataBytes"] = statistics.fileBytes;
+            fileSystemInfo["largestFileBytes"] = statistics.largestFileBytes;
+            fileSystemInfo["configSizeBytes"] = FileSystem.Size(Defaults.ConfigFileName);
+            fileSystemInfo["logSizeBytes"] = FileSystem.Size(Defaults.LogFileName);
+        }
+    }
 }
 
 httpserver::httpserver() noexcept : pMutex(xSemaphoreCreateMutexStatic(&pMutexStorage)) {
@@ -665,6 +794,8 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/", HTTP_GET, [this, &server]() { HandleIndex(server); });
     server.on("/dashboard.html", HTTP_GET, [this, &server]() { HandleDashboard(server); });
     server.on("/setup.html", HTTP_GET, [this, &server]() { HandleSetup(server); });
+    server.on("/about.html", HTTP_GET, [this, &server]() { HandleAbout(server); });
+    server.on("/api/about", HTTP_GET, [this, &server]() { HandleAboutGet(server); });
     server.on("/style.css", HTTP_GET, [this, &server]() { HandleStyle(server); });
     server.on("/notifications.js", HTTP_GET, [this, &server]() { HandleScript(server); });
     server.on("/api/login", HTTP_POST, [this, &server]() { HandleLoginPost(server); });
@@ -694,6 +825,25 @@ void httpserver::HandleDashboard(WebServer& server) {
 
 void httpserver::HandleSetup(WebServer& server) {
     ServeProtectedFile(server, "/setup.html", "text/html", true);
+}
+
+void httpserver::HandleAbout(WebServer& server) {
+    ServeProtectedFile(server, "/about.html", "text/html", false);
+}
+
+void httpserver::HandleAboutGet(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+
+    JsonDocument document;
+    GetAboutJson(document.to<JsonObject>(), session->admin);
+
+    String payload;
+    serializeJson(document, payload);
+    server.send(200, "application/json", payload);
 }
 
 void httpserver::HandleStyle(WebServer& server) {
