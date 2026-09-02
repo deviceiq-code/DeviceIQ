@@ -41,7 +41,13 @@ void app::Start() {
 
     if (!InitializeNetwork()) return;
     if (!InitializeClock()) return;
-    if (!InitializeComponents()) return;
+    // A misconfigured component (e.g. an invalid GPIO picked through the
+    // web UI) must never take the rest of the device offline with it - that
+    // would leave no way to fix the configuration except a serial reflash.
+    // So this failing is logged, not fatal: components just end up
+    // uninstalled/inactive, and boot continues so Telnet/Web management
+    // still comes up to fix the bad configuration and reboot.
+    (void)InitializeComponents();
     (void)InitializeMQTT();
     if (!InitializeAutomation()) return;
     if (!InitializeStatePersistence()) return;

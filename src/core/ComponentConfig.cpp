@@ -1109,6 +1109,20 @@ namespace {
                 setup[property.equalsIgnoreCase("opencorrectionfactor") ? "OpenCorrectionFactor" : "CloseCorrectionFactor"] = value;
                 return true;
             }
+            // Mirrors the same four assignments in "comp add"'s inline
+            // loop below, so a Blinds group's member relays/buttons can
+            // also be repointed after creation, via "comp set" (and the
+            // web UI's component editor), not just at "comp add" time.
+            if (property.equalsIgnoreCase("relayup") || property.equalsIgnoreCase("relaydown") ||
+                property.equalsIgnoreCase("buttonup") || property.equalsIgnoreCase("buttondown")) {
+                long memberID = 0;
+                if (!ParseInteger(text, 1, INT16_MAX, memberID)) return false;
+                const char* key = property.equalsIgnoreCase("relayup") ? "RelayUp" :
+                    property.equalsIgnoreCase("relaydown") ? "RelayDown" :
+                    property.equalsIgnoreCase("buttonup") ? "ButtonUp" : "ButtonDown";
+                setup[key] = memberID;
+                return true;
+            }
         }
 
         return false;
@@ -1657,4 +1671,16 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
     output = "Unknown comp subcommand. Use: comp list|tree|status|set|trigger|rename|remove|add\r\n";
     return false;
+}
+
+bool settings::ReadComponentsCatalog(JsonDocument& document) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return false;
+
+    String content;
+    if (FileSystem.Read(Defaults.ConfigFileName, content) != filesystem::Result::Ok || content.isEmpty()) return false;
+    if (deserializeJson(document, content)) return false;
+    if ((document["ComponentSchemaVersion"] | 0) != ComponentSchemaVersion) return false;
+
+    return !document["Components"].as<JsonObjectConst>().isNull();
 }

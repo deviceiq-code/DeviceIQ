@@ -992,6 +992,7 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/setup.html", HTTP_GET, [this, &server]() { HandleSetup(server); });
     server.on("/update.html", HTTP_GET, [this, &server]() { HandleUpdate(server); });
     server.on("/users.html", HTTP_GET, [this, &server]() { HandleUsers(server); });
+    server.on("/component.html", HTTP_GET, [this, &server]() { HandleComponent(server); });
     server.on("/api/users", HTTP_GET, [this, &server]() { HandleUsersGet(server); });
     server.on("/api/users/add", HTTP_POST, [this, &server]() { HandleUsersAddPost(server); });
     server.on("/api/users/remove", HTTP_POST, [this, &server]() { HandleUsersRemovePost(server); });
@@ -1016,6 +1017,10 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/api/session", HTTP_GET, [this, &server]() { HandleSessionGet(server); });
     server.on("/api/components", HTTP_GET, [this, &server]() { HandleComponentsGet(server); });
     server.on("/api/components/set", HTTP_POST, [this, &server]() { HandleComponentsSetPost(server); });
+    server.on("/api/components/remove", HTTP_POST, [this, &server]() { HandleComponentsRemovePost(server); });
+    server.on("/api/components/catalog", HTTP_GET, [this, &server]() { HandleComponentsCatalogGet(server); });
+    server.on("/api/components/add", HTTP_POST, [this, &server]() { HandleComponentsAddPost(server); });
+    server.on("/api/components/update", HTTP_POST, [this, &server]() { HandleComponentsUpdatePost(server); });
     server.on("/api/settings", HTTP_GET, [this, &server]() { HandleSettingsGet(server); });
     server.on("/api/settings", HTTP_POST, [this, &server]() { HandleSettingsPost(server); });
     server.on("/api/reboot", HTTP_POST, [this, &server]() { HandleRebootPost(server); });
@@ -1056,6 +1061,10 @@ void httpserver::HandleUpdate(WebServer& server) {
 
 void httpserver::HandleUsers(WebServer& server) {
     ServeProtectedFile(server, "/users.html", "text/html", true);
+}
+
+void httpserver::HandleComponent(WebServer& server) {
+    ServeProtectedFile(server, "/component.html", "text/html", true);
 }
 
 void httpserver::HandleAbout(WebServer& server) {
@@ -1366,6 +1375,294 @@ void httpserver::HandleComponentsSetPost(WebServer& server) {
     }
 
     server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleComponentsRemovePost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    char* end = nullptr;
+    const String idArg = server.arg("id");
+    const long id = std::strtol(idArg.c_str(), &end, 10);
+    if (end == idArg.c_str() || id < 1 || id > INT16_MAX) {
+        server.send(400, "application/json", "{\"error\":\"missing or invalid id\"}");
+        return;
+    }
+
+    // Reuses the exact same logic as the Telnet CLI's "comp remove
+    // <id>" - removes the entry from config.json only; the running
+    // component isn't torn down live, so this requires a restart to
+    // actually take effect (matching the CLI's own output).
+    String parameters[telnetserver::MAX_COMMAND_PARAMETERS];
+    parameters[0] = "remove";
+    // Selectors are resolved by ResolveConfiguredComponent() the same way
+    // the Telnet CLI's "comp" command resolves them: a bare number is
+    // looked up as a component *name*, and only a "#"-prefixed number is
+    // treated as an ID (see SelectorID()) - so a numeric ID coming from
+    // the web API has to be given that prefix explicitly.
+    parameters[1] = "#" + idArg;
+
+    String output;
+    const bool success = Settings.ExecuteComponentCommand(parameters, output);
+    const IPAddress remoteIP = server.client().remoteIP();
+
+    Logger.Log(
+        "Web Server: component remove " + String(success ? "accepted" : "rejected") + " for " + session->username + "@" +
+            remoteIP.toString() + ": id " + idArg,
+        success ? logger::LogLevels::Information : logger::LogLevels::Warning
+    );
+
+    if (!success) {
+        output.trim();
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(output) + "\"}");
+        return;
+    }
+
+    server.send(200, "application/json", "{\"success\":true,\"restart\":true}");
+}
+
+void httpserver::HandleComponentsCatalogGet(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument catalog;
+    if (!Settings.ReadComponentsCatalog(catalog)) {
+        server.send(500, "application/json", "{\"error\":\"unable to read component configuration\"}");
+        return;
+    }
+
+    JsonObjectConst components = catalog["Components"].as<JsonObjectConst>();
+    const String idArg = server.arg("id");
+    JsonDocument response;
+
+    if (idArg.isEmpty()) {
+        // Every configured component, including private Blinds members
+        // (never exposed via /api/components) - used to populate
+        // selectors like "Relay Up" when adding or editing a Blinds group.
+        JsonArray items = response["components"].to<JsonArray>();
+        for (JsonPairConst entry : components) {
+            JsonObjectConst item = entry.value().as<JsonObjectConst>();
+            JsonObjectConst setup = item["Setup"].as<JsonObjectConst>();
+            JsonObject out = items.add<JsonObject>();
+            out["id"] = String(entry.key().c_str()).toInt();
+            out["name"] = setup["Name"] | "";
+            out["class"] = setup["Class"] | "";
+        }
+    } else {
+        char* end = nullptr;
+        const long id = std::strtol(idArg.c_str(), &end, 10);
+        if (end == idArg.c_str() || id < 1 || id > INT16_MAX) {
+            server.send(400, "application/json", "{\"error\":\"invalid id\"}");
+            return;
+        }
+
+        JsonObjectConst item = components[String(id)].as<JsonObjectConst>();
+        if (item.isNull()) {
+            server.send(404, "application/json", "{\"error\":\"component not found\"}");
+            return;
+        }
+
+        response["id"] = id;
+        response["setup"] = item["Setup"];
+        response["enabled"] = item["Properties"]["Enabled"] | true;
+    }
+
+    String payload;
+    serializeJson(response, payload);
+    server.send(200, "application/json", payload);
+}
+
+void httpserver::HandleComponentsAddPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String componentClass = request["class"] | "";
+    if (componentClass != "Relay" && componentClass != "Button" && componentClass != "Blinds" && componentClass != "Thermometer") {
+        server.send(400, "application/json", "{\"error\":\"unsupported component class\"}");
+        return;
+    }
+
+    // A newly created component must already be a fully valid catalog
+    // entry - ExecuteComponentCommand("add", ...) validates the whole
+    // catalog before it will save anything, and rejects a Relay/Button/
+    // Thermometer with no address yet, or a Blinds group with no member
+    // relays yet. So identity fields that validation depends on (name,
+    // and either the address or the member relays) have to be supplied
+    // in this same call; everything else (type, drive mode, timings,
+    // ...) can safely follow via a separate /api/components/update,
+    // since those don't affect validation.
+    String name = request["name"] | "";
+    name.trim();
+    if (name.isEmpty()) {
+        server.send(400, "application/json", "{\"error\":\"name is required\"}");
+        return;
+    }
+
+    String identityParameters[2];
+    if (componentClass == "Blinds") {
+        const long relayUp = request["relayUp"] | 0L;
+        const long relayDown = request["relayDown"] | 0L;
+        if (relayUp < 1 || relayUp > INT16_MAX || relayDown < 1 || relayDown > INT16_MAX) {
+            server.send(400, "application/json", "{\"error\":\"relayUp and relayDown are required\"}");
+            return;
+        }
+        identityParameters[0] = "relayup=" + String(relayUp);
+        identityParameters[1] = "relaydown=" + String(relayDown);
+    } else {
+        const long address = request["address"] | -1L;
+        if (address < 0 || address > UINT8_MAX) {
+            server.send(400, "application/json", "{\"error\":\"address is required\"}");
+            return;
+        }
+        identityParameters[0] = "address=" + String(address);
+    }
+
+    JsonDocument catalog;
+    if (!Settings.ReadComponentsCatalog(catalog)) {
+        server.send(500, "application/json", "{\"error\":\"unable to read component configuration\"}");
+        return;
+    }
+
+    // Picks the ID explicitly (the lowest unused one) rather than parsing
+    // it back out of ExecuteComponentCommand's human-readable output.
+    JsonObjectConst components = catalog["Components"].as<JsonObjectConst>();
+    int32_t newID = 0;
+    for (int32_t candidate = 1; candidate <= INT16_MAX; ++candidate) {
+        if (components[String(candidate)].isNull()) {
+            newID = candidate;
+            break;
+        }
+    }
+    if (newID == 0) {
+        server.send(422, "application/json", "{\"error\":\"maximum component count reached\"}");
+        return;
+    }
+
+    String parameters[telnetserver::MAX_COMMAND_PARAMETERS];
+    parameters[0] = "add";
+    parameters[1] = componentClass;
+    parameters[2] = "id=" + String(newID);
+    parameters[3] = "name=" + name;
+    parameters[4] = identityParameters[0];
+    if (!identityParameters[1].isEmpty()) parameters[5] = identityParameters[1];
+
+    String output;
+    const bool success = Settings.ExecuteComponentCommand(parameters, output);
+    output.trim();
+    const IPAddress remoteIP = server.client().remoteIP();
+
+    Logger.Log(
+        "Web Server: component add " + String(success ? "accepted" : "rejected") + " for " + session->username + "@" +
+            remoteIP.toString() + ": " + componentClass + (success ? " (#" + String(newID) + ")" : ": " + output),
+        success ? logger::LogLevels::Information : logger::LogLevels::Warning
+    );
+
+    if (!success) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(output) + "\"}");
+        return;
+    }
+
+    JsonDocument response;
+    response["success"] = true;
+    response["id"] = newID;
+    String payload;
+    serializeJson(response, payload);
+    server.send(200, "application/json", payload);
+}
+
+void httpserver::HandleComponentsUpdatePost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const long id = request["id"] | 0L;
+    const JsonObjectConst fields = request["fields"].as<JsonObjectConst>();
+    if (id < 1 || id > INT16_MAX || fields.isNull()) {
+        server.send(400, "application/json", "{\"error\":\"missing id or fields\"}");
+        return;
+    }
+
+    const String identity = session->username + "@" + server.client().remoteIP().toString();
+
+    // Applied one field at a time (comp set/rename each take a single
+    // property=value), stopping at the first rejection - fields already
+    // applied stay applied (same "report, don't roll back" approach as
+    // every other component mutation here, since none of it takes effect
+    // on the running device until an explicit restart anyway).
+    for (JsonPairConst field : fields) {
+        const String property = field.key().c_str();
+        const String value = field.value().as<String>();
+
+        String parameters[telnetserver::MAX_COMMAND_PARAMETERS];
+        // See the identical note in HandleComponentsRemovePost: a bare
+        // numeric selector is matched against component *names*, not IDs,
+        // by ResolveConfiguredComponent()/SelectorID() - it needs the "#"
+        // prefix to be treated as an ID.
+        parameters[1] = "#" + String(id);
+        if (property.equalsIgnoreCase("name")) {
+            parameters[0] = "rename";
+            parameters[2] = "name=" + value;
+        } else {
+            parameters[0] = "set";
+            parameters[2] = property + "=" + value;
+        }
+
+        String output;
+        const bool success = Settings.ExecuteComponentCommand(parameters, output);
+        output.trim();
+
+        if (!success) {
+            Logger.Log(
+                "Web Server: component update rejected for " + identity + ": #" + String(id) + " " + property + "=" + value + ": " + output,
+                logger::LogLevels::Warning
+            );
+            server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(property + ": " + output) + "\"}");
+            return;
+        }
+    }
+
+    Logger.Log("Web Server: component update accepted for " + identity + ": #" + String(id), logger::LogLevels::Information);
+
+    server.send(200, "application/json", "{\"success\":true,\"restart\":true}");
 }
 
 void httpserver::HandleSettingsGet(WebServer& server) {
@@ -2010,6 +2307,16 @@ void httpserver::HandleOTAUpdatePost(WebServer& server) {
         DeviceRestart();
     };
 
+    // The packaged filesystem image is built from this firmware's own
+    // data/ directory, so it carries the checked-in example config.json,
+    // not the device's live configuration. Captured here, while the live
+    // filesystem is still mounted, so it can be restored once the new
+    // image is flashed - otherwise every OTA update would silently reset
+    // WiFi/MQTT/webhook/user settings back to those placeholder values.
+    // Skipped on a downgrade, which already resets to defaults below.
+    String configBackup;
+    const bool hasConfigBackup = !isDowngrade && FileSystem.Read(Defaults.ConfigFileName, configBackup) == filesystem::Result::Ok;
+
     // The filesystem partition has no A/B redundancy, so it is written
     // first: if it fails, the firmware update below (and the boot
     // partition switch on its own Update.end()) never happens, keeping the
@@ -2025,6 +2332,20 @@ void httpserver::HandleOTAUpdatePost(WebServer& server) {
         return;
     }
 
+    // Remount the freshly-flashed filesystem just long enough to put the
+    // right config.json back before the firmware flash below and the
+    // restart that follows it.
+    if (!FileSystem.Start()) {
+        Logger.Log("Web Server: OTA update for " + identity + " could not remount the filesystem to restore configuration", logger::LogLevels::Error);
+    } else if (isDowngrade) {
+        if (!ResetConfigurationToDefaults()) {
+            Logger.Log("Web Server: OTA downgrade to " + packageVersion + " applied for " + identity + ", but configuration reset failed", logger::LogLevels::Error);
+        }
+    } else if (hasConfigBackup && FileSystem.WriteAtomic(Defaults.ConfigFileName, configBackup) != filesystem::Result::Ok) {
+        Logger.Log("Web Server: OTA update for " + identity + " could not restore the prior configuration; the device will boot with the package's default configuration", logger::LogLevels::Error);
+    }
+    FileSystem.Stop();
+
     if (!Update.begin(header.firmwareLength, U_FLASH)) {
         failDuringApply(String("firmware update failed: ") + Update.errorString());
         return;
@@ -2032,10 +2353,6 @@ void httpserver::HandleOTAUpdatePost(WebServer& server) {
     if (Update.write(firmwareData, header.firmwareLength) != header.firmwareLength || !Update.end(true)) {
         failDuringApply(String("firmware update failed: ") + Update.errorString());
         return;
-    }
-
-    if (isDowngrade && !ResetConfigurationToDefaults()) {
-        Logger.Log("Web Server: OTA downgrade to " + packageVersion + " applied for " + identity + ", but configuration reset failed", logger::LogLevels::Error);
     }
 
     heap_caps_free(pOTABuffer);

@@ -110,6 +110,7 @@ class httpserver {
         void HandleUsersRenamePost(WebServer& server);
         void HandleUsersSetAdminPost(WebServer& server);
         void HandleUsersSetPasswordPost(WebServer& server);
+        void HandleComponent(WebServer& server);
         void HandleAbout(WebServer& server);
         void HandleAboutGet(WebServer& server);
         void HandleLog(WebServer& server);
@@ -122,6 +123,10 @@ class httpserver {
         void HandleSessionGet(WebServer& server);
         void HandleComponentsGet(WebServer& server);
         void HandleComponentsSetPost(WebServer& server);
+        void HandleComponentsRemovePost(WebServer& server);
+        void HandleComponentsCatalogGet(WebServer& server);
+        void HandleComponentsAddPost(WebServer& server);
+        void HandleComponentsUpdatePost(WebServer& server);
         void HandleSettingsGet(WebServer& server);
         void HandleSettingsPost(WebServer& server);
         void HandleRebootPost(WebServer& server);

@@ -301,6 +301,12 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); back
     border-bottom: 1px solid var(--border);
 }
 
+.app-header-title.with-back {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
 .app-header-title h1 {
     margin: 0;
     font-size: 19px;
@@ -423,6 +429,9 @@ main.setup-main {
 }
 
 .comp-card {
+    height: 236px;
+    display: flex;
+    flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -431,15 +440,83 @@ main.setup-main {
 }
 
 .comp-header {
+    flex-shrink: 0;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
     margin-bottom: 14px;
 }
+
+.comp-icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-radius: var(--radius);
+}
+
+.comp-icon svg { width: 19px; height: 19px; stroke: currentColor; }
+
+.comp-title { flex: 1; min-width: 0; }
 
 .comp-name {
     font-weight: 600;
     font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.comp-class {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 1px;
+}
+
+.comp-actions {
+    flex-shrink: 0;
+    display: flex;
+    gap: 4px;
+}
+
+.comp-icon-button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-faint);
+    cursor: pointer;
+}
+
+.comp-icon-button svg { width: 15px; height: 15px; stroke: currentColor; }
+.comp-icon-button:hover { background: var(--surface-alt); color: var(--text); border-color: var(--border); }
+
+.comp-icon-button.danger { color: var(--error); }
+.comp-icon-button.danger:hover { background: var(--error-soft); color: var(--error); border-color: var(--error); }
+
+.comp-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.comp-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 100%;
 }
 
 .comp-row {
@@ -452,7 +529,6 @@ main.setup-main {
 .comp-controls {
     display: flex;
     gap: 6px;
-    margin-top: 14px;
 }
 
 .comp-controls button { flex: 1; }
@@ -463,7 +539,6 @@ main.setup-main {
 }
 
 .bar {
-    margin-top: 10px;
     height: 6px;
     border-radius: 999px;
     background: var(--surface-alt);
@@ -819,6 +894,10 @@ main.setup-main {
 .toggle input:checked + .track::before { transform: translateX(16px); }
 .toggle input:focus-visible + .track { box-shadow: 0 0 0 3px var(--accent-soft); }
 
+.toggle.toggle-lg { width: 52px; height: 30px; }
+.toggle.toggle-lg .track::before { top: 3px; left: 3px; width: 24px; height: 24px; }
+.toggle.toggle-lg input:checked + .track::before { transform: translateX(22px); }
+
 /* ---- Toast / modal --------------------------------------------------------- */
 
 .toast-container {
@@ -923,3 +1002,25 @@ main.setup-main {
     margin: 0;
     padding: 8px 18px;
 }
+
+.fab {
+    position: fixed;
+    right: 40px;
+    bottom: 36px;
+    width: 52px;
+    height: 52px;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    border: none;
+    border-radius: 50%;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: var(--shadow-pop);
+}
+
+.fab svg { width: 22px; height: 22px; stroke: currentColor; }
+.fab:hover { filter: brightness(1.08); }

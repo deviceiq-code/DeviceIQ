@@ -874,8 +874,7 @@
                     { confirmLabel: "Restart" }
                 ).then(function (confirmed) {
                     if (!confirmed) return;
-                    fetch("/api/reboot", { method: "POST" }).catch(function () {});
-                    Notifications.restarting();
+                    Notifications.reboot();
                 });
             }
         });
@@ -884,8 +883,7 @@
     document.getElementById("restart-button").addEventListener("click", function () {
         Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
             if (!confirmed) return;
-            fetch("/api/reboot", { method: "POST" }).catch(function () {});
-            Notifications.restarting();
+            Notifications.reboot();
         });
     });
 

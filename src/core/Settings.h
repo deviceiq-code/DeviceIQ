@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <utility>
@@ -317,6 +318,12 @@ class settings {
         bool InstallComponents(const String& configfilename = Defaults.ConfigFileName) noexcept;
         bool SaveComponentsState(const String& statefilename = Defaults.StateFileName) noexcept;
         bool ExecuteComponentCommand(String* parameters, String& output) noexcept;
+        // Reads config.json fresh and parses it into `document` for
+        // read-only inspection (e.g. populating a web form) - document
+        // ["Components"] is the same raw object ExecuteComponentCommand
+        // itself mutates. Returns false if the file is missing, invalid,
+        // or the schema version doesn't match.
+        bool ReadComponentsCatalog(JsonDocument& document) noexcept;
 };
 
 extern settings Settings;

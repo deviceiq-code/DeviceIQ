@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceIQ · Component</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">IQ</div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard.html" class="sidebar-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/setup.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Setup</span>
+            </a>
+            <a href="/users.html" class="sidebar-nav-item" id="users-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Users</span>
+            </a>
+            <a href="/update.html" class="sidebar-nav-item" id="update-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Update</span>
+            </a>
+            <a href="/log.html" class="sidebar-nav-item" id="log-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>Log</span>
+            </a>
+            <a href="/about.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                <span>About</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="product" id="sidebar-product"></span>
+            <span class="version" id="sidebar-version"></span>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-header">
+            <div class="app-header-title with-back">
+                <button class="icon-button" id="back-button" title="Back to dashboard">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                </button>
+                <div>
+                    <h1 id="page-title">Add Component</h1>
+                    <p id="page-subtitle">Configure a new component</p>
+                </div>
+            </div>
+            <div class="app-header-actions">
+                <span class="user-chip" id="whoami"></span>
+                <button class="icon-button restart-button" id="restart-button" title="Restart device">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="icon-button" id="logout-button" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <div class="setup-card">
+                <div class="panel-header">
+                    <h2 id="form-title">New Component</h2>
+                    <p id="form-subtitle">Choose a class and configure its settings. A restart is required to apply changes.</p>
+                </div>
+
+                <div class="settings-list" id="basic-list"></div>
+                <div id="class-fields"></div>
+
+                <div class="setting-row" style="padding-top: 20px;">
+                    <div class="setting-row-text"></div>
+                    <div class="setting-row-control">
+                        <button type="button" class="control-button" id="cancel-button">Cancel</button>
+                        <button type="button" class="control-button" id="save-button">Save</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/notifications.js"></script>
+<script>
+(function () {
+    const params = new URLSearchParams(window.location.search);
+    const editID = params.get("id");
+    const isEdit = !!editID;
+
+    let currentClass = "Relay";
+    let catalog = { components: [] };
+    let classReaders = {};
+
+    function apiPost(path, body) {
+        return fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        }).then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+            .catch(function () { return { ok: false, data: { error: "Unable to reach the device." } }; });
+    }
+
+    function row(label, desc, controlNode) {
+        const wrap = document.createElement("div");
+        wrap.className = "setting-row";
+        const text = document.createElement("div");
+        text.className = "setting-row-text";
+        const labelEl = document.createElement("div");
+        labelEl.className = "setting-label";
+        labelEl.textContent = label;
+        text.appendChild(labelEl);
+        if (desc) {
+            const descEl = document.createElement("div");
+            descEl.className = "setting-desc";
+            descEl.textContent = desc;
+            text.appendChild(descEl);
+        }
+        wrap.appendChild(text);
+        const control = document.createElement("div");
+        control.className = "setting-row-control";
+        control.appendChild(controlNode);
+        wrap.appendChild(control);
+        return wrap;
+    }
+
+    function textInput(value, width) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = value === undefined || value === null ? "" : value;
+        if (width) input.style.width = width;
+        return input;
+    }
+
+    function numberInput(value, min, max) {
+        const input = document.createElement("input");
+        input.type = "number";
+        if (min !== undefined) input.min = min;
+        if (max !== undefined) input.max = max;
+        input.value = value === undefined || value === null ? "" : value;
+        return input;
+    }
+
+    function selectInput(options, selected) {
+        const select = document.createElement("select");
+        options.forEach(function (option) {
+            const opt = document.createElement("option");
+            opt.value = option[0];
+            opt.textContent = option[1];
+            if (option[0] === selected) opt.selected = true;
+            select.appendChild(opt);
+        });
+        return select;
+    }
+
+    function toggleInput(checked) {
+        const wrap = document.createElement("label");
+        wrap.className = "toggle";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = !!checked;
+        const track = document.createElement("span");
+        track.className = "track";
+        wrap.appendChild(input);
+        wrap.appendChild(track);
+        wrap._input = input;
+        return wrap;
+    }
+
+    function memberOptions(className, includeBlank) {
+        const options = includeBlank ? [["", "(none)"]] : [];
+        catalog.components
+            .filter(function (item) { return item.class === className; })
+            .forEach(function (item) { options.push([String(item.id), item.name + " (#" + item.id + ")"]); });
+        return options;
+    }
+
+    function renderBasicFields(setup) {
+        const list = document.getElementById("basic-list");
+        list.innerHTML = "";
+
+        const nameInput = textInput(setup.Name, "240px");
+        list.appendChild(row("Name", "A short, unique label for this component.", nameInput));
+
+        let classControl;
+        if (isEdit) {
+            classControl = document.createElement("span");
+            classControl.textContent = currentClass;
+            classControl.className = "setting-desc";
+        } else {
+            classControl = selectInput([
+                ["Relay", "Relay"],
+                ["Button", "Button"],
+                ["Blinds", "Blinds"],
+                ["Thermometer", "Thermometer"]
+            ], currentClass);
+            classControl.addEventListener("change", function () {
+                currentClass = classControl.value;
+                renderClassFields({});
+            });
+        }
+        list.appendChild(row("Class", "The type of component. Cannot be changed after creation.", classControl));
+
+        const enabledToggle = toggleInput(setup.__enabled === undefined ? true : setup.__enabled);
+        list.appendChild(row("Enabled", "Disabled components are not installed at boot.", enabledToggle));
+
+        classReaders.name = function () { return nameInput.value.trim(); };
+        classReaders.enabled = function () { return enabledToggle._input.checked; };
+    }
+
+    function renderClassFields(setup) {
+        const container = document.getElementById("class-fields");
+        container.innerHTML = "";
+        const list = document.createElement("div");
+        list.className = "settings-list";
+        container.appendChild(list);
+
+        const readers = {};
+
+        if (currentClass === "Relay") {
+            const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
+            list.appendChild(row("GPIO Address", "The GPIO pin driving this relay (0-255).", addr));
+            const type = selectInput([["NormallyOpen", "Normally Open"], ["NormallyClosed", "Normally Closed"]], setup.Type || "NormallyOpen");
+            list.appendChild(row("Type", "Relay contact type.", type));
+            const driveMode = selectInput([["ActiveHigh", "Active High"], ["ActiveLow", "Active Low"]], setup.DriveMode || "ActiveHigh");
+            list.appendChild(row("Drive Mode", "Logic level that energizes the relay.", driveMode));
+
+            readers.address = function () { return addr.value; };
+            readers.type = function () { return type.value; };
+            readers.drivemode = function () { return driveMode.value; };
+        } else if (currentClass === "Button") {
+            const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
+            list.appendChild(row("GPIO Address", "The GPIO pin this button is wired to (0-255).", addr));
+            const activeLevel = selectInput([["High", "High"], ["Low", "Low"]], setup.ActiveLevel || "Low");
+            list.appendChild(row("Active Level", "Logic level read while the button is pressed.", activeLevel));
+            const inputMode = selectInput([["Floating", "Floating"], ["PullUp", "Pull Up"], ["PullDown", "Pull Down"]], setup.InputMode || "PullUp");
+            list.appendChild(row("Input Mode", "Internal pin biasing.", inputMode));
+            const debounce = numberInput(setup.DebounceTimeMs !== undefined ? setup.DebounceTimeMs : 50, 0);
+            list.appendChild(row("Debounce Time (ms)", "Minimum time a level must hold to register.", debounce));
+            const longClick = numberInput(setup.LongClickTimeMs !== undefined ? setup.LongClickTimeMs : 1000, 0);
+            list.appendChild(row("Long Click Time (ms)", "Hold duration that counts as a long click.", longClick));
+            const multiClick = numberInput(setup.MultiClickTimeMs !== undefined ? setup.MultiClickTimeMs : 400, 0);
+            list.appendChild(row("Multi-Click Window (ms)", "Maximum gap between clicks in a multi-click.", multiClick));
+
+            readers.address = function () { return addr.value; };
+            readers.activelevel = function () { return activeLevel.value; };
+            readers.inputmode = function () { return inputMode.value; };
+            readers.debouncetimems = function () { return debounce.value; };
+            readers.longclicktimems = function () { return longClick.value; };
+            readers.multiclicktimems = function () { return multiClick.value; };
+        } else if (currentClass === "Thermometer") {
+            const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
+            list.appendChild(row("GPIO Address", "The GPIO pin this sensor is wired to (0-255).", addr));
+            const type = selectInput([
+                ["DHT11", "DHT11"], ["DHT12", "DHT12"], ["DHT21", "DHT21"], ["DHT22", "DHT22"], ["DS18B20", "DS18B20"]
+            ], setup.Type || "DS18B20");
+            list.appendChild(row("Sensor Type", "The thermometer model connected.", type));
+            const polling = numberInput(setup.PollingIntervalMs !== undefined ? setup.PollingIntervalMs : 5000, 1000);
+            list.appendChild(row("Polling Interval (ms)", "How often the sensor is read (minimum 1000ms).", polling));
+
+            readers.address = function () { return addr.value; };
+            readers.type = function () { return type.value; };
+            readers.pollingintervalms = function () { return polling.value; };
+        } else if (currentClass === "Blinds") {
+            const relayUp = selectInput(memberOptions("Relay", false), setup.RelayUp ? String(setup.RelayUp) : "");
+            list.appendChild(row("Relay Up", "The relay that drives the blinds upward.", relayUp));
+            const relayDown = selectInput(memberOptions("Relay", false), setup.RelayDown ? String(setup.RelayDown) : "");
+            list.appendChild(row("Relay Down", "The relay that drives the blinds downward.", relayDown));
+            const buttonUp = selectInput(memberOptions("Button", true), setup.ButtonUp ? String(setup.ButtonUp) : "");
+            list.appendChild(row("Button Up", "Optional physical button that raises the blinds.", buttonUp));
+            const buttonDown = selectInput(memberOptions("Button", true), setup.ButtonDown ? String(setup.ButtonDown) : "");
+            list.appendChild(row("Button Down", "Optional physical button that lowers the blinds.", buttonDown));
+            const openStep = numberInput(setup.OpenStepTimeMs !== undefined ? setup.OpenStepTimeMs : 250, 1);
+            list.appendChild(row("Open Step Time (ms)", "Travel time per 1% while opening.", openStep));
+            const closeStep = numberInput(setup.CloseStepTimeMs !== undefined ? setup.CloseStepTimeMs : 250, 1);
+            list.appendChild(row("Close Step Time (ms)", "Travel time per 1% while closing.", closeStep));
+            const openFactor = numberInput(setup.OpenCorrectionFactor !== undefined ? setup.OpenCorrectionFactor : 0, 0, 0.95);
+            openFactor.step = "0.01";
+            list.appendChild(row("Open Correction Factor", "Compensation factor applied while opening (0-0.95).", openFactor));
+            const closeFactor = numberInput(setup.CloseCorrectionFactor !== undefined ? setup.CloseCorrectionFactor : 0, 0, 0.95);
+            closeFactor.step = "0.01";
+            list.appendChild(row("Close Correction Factor", "Compensation factor applied while closing (0-0.95).", closeFactor));
+            const endstop = numberInput(setup.EndstopMarginMs !== undefined ? setup.EndstopMarginMs : 0, 0);
+            list.appendChild(row("Endstop Margin (ms)", "Extra run time applied at full open/close to reach the endstop.", endstop));
+            const reversal = numberInput(setup.ReversalDelayMs !== undefined ? setup.ReversalDelayMs : 250, 0);
+            list.appendChild(row("Reversal Delay (ms)", "Pause before reversing direction.", reversal));
+
+            readers.relayup = function () { return relayUp.value; };
+            readers.relaydown = function () { return relayDown.value; };
+            readers.buttonup = function () { return buttonUp.value; };
+            readers.buttondown = function () { return buttonDown.value; };
+            readers.opensteptimems = function () { return openStep.value; };
+            readers.closesteptimems = function () { return closeStep.value; };
+            readers.opencorrectionfactor = function () { return openFactor.value; };
+            readers.closecorrectionfactor = function () { return closeFactor.value; };
+            readers.endstopmarginms = function () { return endstop.value; };
+            readers.reversaldelayms = function () { return reversal.value; };
+        }
+
+        classReaders = Object.assign({ name: classReaders.name, enabled: classReaders.enabled }, readers);
+    }
+
+    function collectFields() {
+        const fields = {};
+        const name = classReaders.name();
+        if (!name) {
+            Notifications.show("Name is required.", { title: "Component" });
+            return null;
+        }
+        fields.name = name;
+        fields.enabled = classReaders.enabled() ? "true" : "false";
+
+        if (currentClass === "Relay" || currentClass === "Button" || currentClass === "Thermometer") {
+            if (classReaders.address() === "") {
+                Notifications.show("GPIO Address is required.", { title: "Component" });
+                return null;
+            }
+        }
+        if (currentClass === "Blinds") {
+            if (!classReaders.relayup() || !classReaders.relaydown()) {
+                Notifications.show("Relay Up and Relay Down are required.", { title: "Component" });
+                return null;
+            }
+        }
+
+        Object.keys(classReaders).forEach(function (key) {
+            if (key === "name" || key === "enabled") return;
+            const value = classReaders[key]();
+            if (value === "" || value === null || value === undefined) return;
+            fields[key] = String(value);
+        });
+
+        return fields;
+    }
+
+    function afterSave(result, createdID) {
+        if (!result.ok) {
+            Notifications.show(result.data.error || "Unable to save the component.", { title: "Component" });
+            if (createdID) {
+                const body = new URLSearchParams();
+                body.set("id", createdID);
+                fetch("/api/components/remove", { method: "POST", body: body }).catch(function () {});
+            }
+            return;
+        }
+
+        Notifications.confirm("Component saved. Restart now to apply the change?", { confirmLabel: "Restart" })
+            .then(function (confirmed) {
+                if (confirmed) {
+                    Notifications.reboot();
+                } else {
+                    window.location.replace("/dashboard.html");
+                }
+            });
+    }
+
+    document.getElementById("save-button").addEventListener("click", function () {
+        const fields = collectFields();
+        if (!fields) return;
+
+        if (isEdit) {
+            apiPost("/api/components/update", { id: Number(editID), fields: fields }).then(function (result) { afterSave(result, null); });
+        } else {
+            // The component must already be a valid catalog entry the
+            // instant it's created, so identity fields validation depends
+            // on (name, and either the address or the member relays) go in
+            // this same call - everything else follows via /update.
+            const addBody = { class: currentClass, name: fields.name };
+            if (currentClass === "Blinds") {
+                addBody.relayUp = Number(fields.relayup);
+                addBody.relayDown = Number(fields.relaydown);
+            } else {
+                addBody.address = Number(fields.address);
+            }
+
+            apiPost("/api/components/add", addBody).then(function (addResult) {
+                if (!addResult.ok) {
+                    Notifications.show(addResult.data.error || "Unable to create the component.", { title: "Component" });
+                    return;
+                }
+                const newID = addResult.data.id;
+                apiPost("/api/components/update", { id: newID, fields: fields }).then(function (updateResult) { afterSave(updateResult, newID); });
+            });
+        }
+    });
+
+    document.getElementById("cancel-button").addEventListener("click", function () { window.location.replace("/dashboard.html"); });
+    document.getElementById("back-button").addEventListener("click", function () { window.location.replace("/dashboard.html"); });
+
+    function loadCatalogThen(callback) {
+        fetch("/api/components/catalog").then(function (response) { return response.json(); }).then(function (data) {
+            catalog = data;
+            callback();
+        }).catch(function () { callback(); });
+    }
+
+    function init() {
+        loadCatalogThen(function () {
+            if (isEdit) {
+                fetch("/api/components/catalog?id=" + encodeURIComponent(editID))
+                    .then(function (response) {
+                        if (!response.ok) return response.json().then(function (data) { return Promise.reject(data); });
+                        return response.json();
+                    })
+                    .then(function (data) {
+                        currentClass = data.setup.Class;
+                        document.getElementById("page-title").textContent = "Edit Component";
+                        document.getElementById("page-subtitle").textContent = data.setup.Name;
+                        document.getElementById("form-title").textContent = "Edit " + data.setup.Name;
+                        const setup = Object.assign({}, data.setup, { __enabled: data.enabled });
+                        renderBasicFields(setup);
+                        renderClassFields(setup);
+                    })
+                    .catch(function (error) {
+                        Notifications.show((error && error.error) || "Unable to load the component.", { title: "Component" });
+                        window.location.replace("/dashboard.html");
+                    });
+            } else {
+                document.getElementById("page-title").textContent = "Add Component";
+                document.getElementById("page-subtitle").textContent = "Create a new component";
+                document.getElementById("form-title").textContent = "New Component";
+                renderBasicFields({});
+                renderClassFields({});
+            }
+        });
+    }
+
+    document.getElementById("restart-button").addEventListener("click", function () {
+        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
+            if (!confirmed) return;
+            Notifications.reboot();
+        });
+    });
+
+    document.getElementById("logout-button").addEventListener("click", function () {
+        fetch("/api/logout", { method: "POST" }).finally(function () { window.location.replace("/"); });
+    });
+
+    fetch("/api/session").then(function (response) { return response.json(); }).then(function (session) {
+        if (!session.authenticated) {
+            window.location.replace("/");
+            return Promise.reject();
+        }
+        if (!session.admin) {
+            window.location.replace("/dashboard.html");
+            return Promise.reject();
+        }
+
+        document.getElementById("whoami").textContent = session.username + " · admin";
+        document.getElementById("sidebar-product").textContent = session.productFamily + " " + session.productName;
+        document.getElementById("sidebar-version").textContent = "v" + session.softwareVersion;
+        if (!session.logFileEnabled) document.getElementById("log-link").remove();
+
+        init();
+    }).catch(function () {});
+})();
+</script>
+</body>
+</html>

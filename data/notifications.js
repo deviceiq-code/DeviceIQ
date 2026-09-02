@@ -199,6 +199,17 @@
         restarting: function () {
             window.location.href = "/restarting.html";
         },
+        // POSTs /api/reboot and then shows the restarting page. A plain
+        // fetch() immediately followed by a navigation can get cancelled
+        // by the browser before it ever reaches the device - especially
+        // over the ESP32's slow, single-connection web server - which
+        // looked like "Restart doesn't actually restart" even though the
+        // button worked. keepalive keeps the request alive across the
+        // navigation that follows.
+        reboot: function () {
+            fetch("/api/reboot", { method: "POST", keepalive: true }).catch(function () {});
+            this.restarting();
+        },
         // Starts polling for component state changes and toasting them.
         // Call only on pages that do not already show live component state
         // (i.e. not dashboard.html).
