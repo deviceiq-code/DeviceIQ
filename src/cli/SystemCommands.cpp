@@ -1,19 +1,8 @@
 #include "SystemCommands.h"
 
+#include "core/DeviceControl.h"
 #include "core/Globals.h"
 #include "core/SystemInfo.h"
-
-namespace {
-    void DeviceRestart() {
-        if (!Settings.SaveComponentsState()) {
-            Logger.Log("Error saving component state before restart", logger::LogLevels::Error);
-        }
-
-        Logger.Log("Device restart requested", logger::LogLevels::Information);
-        vTaskDelay(pdMS_TO_TICKS(250));
-        ESP.restart();
-    }
-}
 
 bool cli::RegisterSystemCommands() {
     const bool rebootRegistered = TelnetServer.OnCommand("reboot", "Reboot the device\r\n\r\nreboot", [](WiFiClient& client, String*) {

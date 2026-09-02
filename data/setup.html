@@ -7,43 +7,588 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="topbar">
-    <div class="left">
-        <div class="name">DeviceIQ</div>
-        <nav>
-            <a href="/dashboard.html">Dashboard</a>
-            <a href="/config.html" class="active">Setup</a>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">IQ</div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard.html" class="sidebar-nav-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/setup.html" class="sidebar-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Setup</span>
+            </a>
         </nav>
-    </div>
-    <div class="right">
-        <span id="whoami"></span>
-        <button class="secondary" id="logout-button">Sign out</button>
+        <div class="sidebar-footer">
+            <span class="product" id="sidebar-product"></span>
+            <span class="version" id="sidebar-version"></span>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-header">
+            <div class="app-header-title">
+                <h1>Setup</h1>
+                <p>Network, MQTT, NTP, Telnet, log, and web server configuration</p>
+            </div>
+            <div class="app-header-actions">
+                <span class="user-chip" id="whoami"></span>
+                <button class="icon-button restart-button" id="restart-button" title="Restart device">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="icon-button" id="logout-button" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main class="setup-main">
+            <div class="tabs-bar">
+                <div class="tabs" id="tabs"></div>
+                <div class="tabs-actions">
+                    <span class="setup-status" id="save-status"></span>
+                    <button id="save-all-button" disabled>Save changes</button>
+                </div>
+            </div>
+            <div id="panels"></div>
+        </main>
     </div>
 </div>
 
-<main>
-    <div class="placeholder">
-        <div class="title">Device setup</div>
-        <p>Network, MQTT, NTP, Telnet, and log configuration will be managed here. Coming soon.</p>
-    </div>
-</main>
-
+<script src="/notifications.js"></script>
 <script>
 (function () {
-    fetch("/api/session").then((response) => response.json()).then((data) => {
-        if (!data.authenticated) {
+    // Mirrors the Telnet CLI, section by section: net, telnet, ntp, mqtt,
+    // log, web. Field keys match what GET/POST /api/settings expects.
+    const SECTIONS = [
+        {
+            id: "Network", title: "Network",
+            desc: "Wireless connection and fallback access point.",
+            note: "Changes require a restart.",
+            groups: [
+                {
+                    title: "General",
+                    fields: [
+                        { key: "DHCP Client", label: "DHCP Client", desc: "Obtain IP configuration automatically from the network.", type: "bool" },
+                        { key: "Hostname", label: "Hostname", desc: "Device name advertised on the network.", type: "text" },
+                        { key: "IP Address", label: "IP Address", desc: "Static IP address. Ignored when DHCP Client is on.", type: "text", dhcpBound: true, liveKey: "Current IP" },
+                        { key: "Gateway", label: "Gateway", desc: "Static gateway address. Ignored when DHCP Client is on.", type: "text", dhcpBound: true, liveKey: "Current Gateway" },
+                        { key: "Netmask", label: "Netmask", desc: "Static subnet mask. Ignored when DHCP Client is on.", type: "text", dhcpBound: true, liveKey: "Current Netmask" },
+                        { key: "DNS 1", label: "DNS 1", desc: "Primary DNS server.", type: "text" },
+                        { key: "DNS 2", label: "DNS 2", desc: "Secondary DNS server.", type: "text" }
+                    ]
+                },
+                {
+                    title: "WiFi",
+                    fields: [
+                        { key: "SSID", label: "SSID", desc: "WiFi network name to connect to.", type: "text" },
+                        { key: "Passphrase", label: "Passphrase", desc: "WiFi password: 8-63 characters, or 64 hex characters for a raw PSK.", type: "password" },
+                        { key: "Connection Timeout", label: "Connection Timeout", desc: "Seconds to wait for a WiFi connection before retrying.", type: "number", min: 1, max: 65535 },
+                        { key: "Reconnect Enabled", label: "Reconnect Enabled", desc: "Automatically retry the connection when WiFi drops.", type: "bool" },
+                        { key: "Reconnect Initial Interval", label: "Reconnect Initial Interval", desc: "Seconds before the first reconnect attempt.", type: "number", min: 1, max: 65535 },
+                        { key: "Reconnect Maximum Interval", label: "Reconnect Maximum Interval", desc: "Upper bound for the reconnect backoff delay.", type: "number", min: 1, max: 65535 }
+                    ]
+                },
+                {
+                    title: "Fallback AP",
+                    fields: [
+                        { key: "Fallback AP Enabled", label: "Fallback AP Enabled", desc: "Start a local access point when WiFi is unavailable.", type: "bool" },
+                        { key: "Fallback AP SSID", label: "Fallback AP SSID", desc: "Access point name. Empty uses the device hostname.", type: "text" },
+                        { key: "Fallback AP Password", label: "Fallback AP Password", desc: "Access point password. Empty allows open access.", type: "password" },
+                        { key: "Fallback AP Retention", label: "Fallback AP Retention", desc: "Seconds to keep the fallback AP running after WiFi reconnects.", type: "number", min: 0, max: 65535 }
+                    ]
+                }
+            ]
+        },
+        {
+            id: "Telnet", title: "Telnet",
+            desc: "Command-line administration over Telnet.",
+            note: "Enabled/Port require a restart. Idle Timeout/Max Sessions apply immediately.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Allow administrative access over Telnet.", type: "bool" },
+                { key: "Port", label: "Port", desc: "TCP port the Telnet server listens on.", type: "number", min: 1, max: 65535 },
+                { key: "Idle Timeout", label: "Idle Timeout", desc: "Disconnect a session after this many idle milliseconds. 0 disables the timeout.", type: "number", min: 0, max: 86400000 },
+                { key: "Max Sessions", label: "Max Sessions", desc: "Maximum concurrent Telnet sessions.", type: "number", min: 1, max: 8 }
+            ]
+        },
+        {
+            id: "NTP", title: "NTP & Clock",
+            desc: "Time synchronization and time zone.",
+            note: "Enabled requires a restart. Server/Time Zone apply immediately.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Keep the clock synchronized over NTP.", type: "bool" },
+                { key: "Server", label: "Server", desc: "NTP server hostname.", type: "text" },
+                { key: "Time Zone", label: "Time Zone", desc: "UTC offset applied to the synchronized time.", type: "number", min: -12, max: 14 }
+            ]
+        },
+        {
+            id: "MQTT", title: "MQTT",
+            desc: "Publish component state to an MQTT broker, with optional Home Assistant discovery.",
+            note: "Changes require a restart.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Publish component state to an MQTT broker.", type: "bool" },
+                { key: "Broker", label: "Broker", desc: "MQTT broker hostname or address.", type: "text" },
+                { key: "Port", label: "Port", desc: "MQTT broker port.", type: "number", min: 1, max: 65535 },
+                { key: "User", label: "User", desc: "MQTT username. Leave empty for anonymous access.", type: "text" },
+                { key: "Password", label: "Password", desc: "MQTT password.", type: "password" },
+                { key: "Discovery Enabled", label: "Discovery Enabled", desc: "Publish Home Assistant MQTT discovery messages.", type: "bool" },
+                { key: "Discovery Prefix", label: "Discovery Prefix", desc: "Topic prefix Home Assistant listens on for discovery.", type: "text" }
+            ]
+        },
+        {
+            id: "Log", title: "Log",
+            desc: "Where device logs are sent and how much detail they include.",
+            note: "Changes require a restart.",
+            fields: [
+                { key: "Endpoint", label: "Endpoint", desc: "Where log messages are delivered.", type: "flags", options: [["Serial", 1], ["Syslog", 2], ["File", 4]] },
+                { key: "Level", label: "Level", desc: "Which severities are logged.", type: "flags", options: [["Error", 1], ["Warning", 2], ["Information", 4], ["Debug", 8]] },
+                { key: "Syslog Server", label: "Syslog Server", desc: "Syslog server hostname, used when Syslog is enabled above.", type: "text" },
+                { key: "Syslog Port", label: "Syslog Port", desc: "Syslog server port.", type: "number", min: 1, max: 65535 }
+            ]
+        },
+        {
+            id: "Web", title: "Web Server",
+            desc: "This web interface.",
+            note: "Enabled/Port require a restart. Idle Timeout/Max Sessions apply immediately.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Allow access to this web interface.", type: "bool" },
+                { key: "Port", label: "Port", desc: "TCP port the web server listens on.", type: "number", min: 1, max: 65535 },
+                { key: "Idle Timeout", label: "Idle Timeout", desc: "Sign a session out after this many idle milliseconds. 0 disables the timeout.", type: "number", min: 0, max: 86400000 },
+                { key: "Max Sessions", label: "Max Sessions", desc: "Maximum concurrent web sessions.", type: "number", min: 1, max: 8 }
+            ]
+        }
+    ];
+
+    const TABS = SECTIONS.map(function (section) { return { id: section.id, label: section.title }; })
+        .concat([{ id: "Backup", label: "Backup" }]);
+
+    const sectionReaders = {};
+    let activeTab = TABS[0].id;
+    let dirty = false;
+
+    function markDirty() {
+        dirty = true;
+        document.getElementById("save-all-button").disabled = false;
+    }
+
+    function markClean() {
+        dirty = false;
+        document.getElementById("save-all-button").disabled = true;
+    }
+
+    function fieldRow(field, currentValue, extra) {
+        extra = extra || {};
+
+        const row = document.createElement("div");
+        row.className = "setting-row";
+
+        const text = document.createElement("div");
+        text.className = "setting-row-text";
+        const label = document.createElement("div");
+        label.className = "setting-label";
+        label.textContent = field.label;
+        text.appendChild(label);
+        if (field.desc) {
+            const desc = document.createElement("div");
+            desc.className = "setting-desc";
+            desc.textContent = field.desc;
+            text.appendChild(desc);
+        }
+        row.appendChild(text);
+
+        const control = document.createElement("div");
+        control.className = "setting-row-control";
+
+        let read;
+        let dhcpRef = null;
+
+        if (field.type === "bool") {
+            const wrap = document.createElement("label");
+            wrap.className = "toggle";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = !!currentValue;
+            input.addEventListener("change", function () {
+                markDirty();
+                if (extra.onChange) extra.onChange(input.checked);
+            });
+            const track = document.createElement("span");
+            track.className = "track";
+            wrap.appendChild(input);
+            wrap.appendChild(track);
+            control.appendChild(wrap);
+            read = function () { return input.checked; };
+        } else if (field.type === "flags") {
+            const wrap = document.createElement("div");
+            wrap.className = "flags";
+            const mask = currentValue || 0;
+            const boxes = field.options.map(function (option) {
+                const optLabel = document.createElement("label");
+                optLabel.className = "flag-option";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = (mask & option[1]) !== 0;
+                input.addEventListener("change", markDirty);
+                optLabel.appendChild(input);
+                optLabel.appendChild(document.createTextNode(" " + option[0]));
+                wrap.appendChild(optLabel);
+                return { input: input, bit: option[1] };
+            });
+            control.appendChild(wrap);
+            read = function () {
+                let result = 0;
+                boxes.forEach(function (box) { if (box.input.checked) result |= box.bit; });
+                return result;
+            };
+        } else {
+            const input = document.createElement("input");
+            input.type = field.type === "password" ? "password" : (field.type === "number" ? "number" : "text");
+            if (field.type === "number") {
+                if (field.min !== undefined) input.min = field.min;
+                if (field.max !== undefined) input.max = field.max;
+            }
+            const initialValue = currentValue === undefined || currentValue === null ? "" : currentValue;
+            input.value = initialValue;
+
+            let configuredValue = initialValue;
+            input.addEventListener("input", function () {
+                configuredValue = input.value;
+                markDirty();
+            });
+            control.appendChild(input);
+
+            read = function () {
+                const value = input.disabled ? configuredValue : input.value;
+                return field.type === "number" ? Number(value) : value;
+            };
+
+            if (extra.dhcpBound) {
+                dhcpRef = {
+                    input: input,
+                    liveValue: extra.liveValue === undefined || extra.liveValue === null ? "" : extra.liveValue,
+                    getConfigured: function () { return configuredValue; }
+                };
+            }
+        }
+
+        row.appendChild(control);
+        return { row: row, read: read, dhcpRef: dhcpRef };
+    }
+
+    function sectionFields(section) {
+        if (section.fields) return section.fields;
+        return section.groups.reduce(function (acc, group) { return acc.concat(group.fields); }, []);
+    }
+
+    function renderPanel(section, currentValues) {
+        const panel = document.createElement("div");
+        panel.className = "tab-panel";
+        panel.id = "panel-" + section.id;
+
+        const card = document.createElement("div");
+        card.className = "setup-card";
+
+        const header = document.createElement("div");
+        header.className = "panel-header";
+        const title = document.createElement("h2");
+        title.textContent = section.title;
+        const desc = document.createElement("p");
+        desc.textContent = section.desc + (section.note ? " " + section.note : "");
+        header.appendChild(title);
+        header.appendChild(desc);
+        card.appendChild(header);
+
+        const readers = {};
+        const dhcpRefs = [];
+
+        function applyDhcpState(dhcpOn) {
+            dhcpRefs.forEach(function (ref) {
+                ref.input.disabled = dhcpOn;
+                ref.input.value = dhcpOn ? ref.liveValue : ref.getConfigured();
+            });
+        }
+
+        const groups = section.groups || [{ title: null, fields: section.fields }];
+
+        groups.forEach(function (group) {
+            if (group.title) {
+                const groupTitle = document.createElement("div");
+                groupTitle.className = "group-title";
+                groupTitle.textContent = group.title;
+                card.appendChild(groupTitle);
+            }
+
+            const list = document.createElement("div");
+            list.className = "settings-list";
+
+            group.fields.forEach(function (field) {
+                const extra = {};
+                if (field.dhcpBound) {
+                    extra.dhcpBound = true;
+                    extra.liveValue = currentValues[field.liveKey];
+                }
+                if (field.key === "DHCP Client") extra.onChange = applyDhcpState;
+
+                const built = fieldRow(field, currentValues[field.key], extra);
+                readers[field.key] = built.read;
+                if (built.dhcpRef) dhcpRefs.push(built.dhcpRef);
+                list.appendChild(built.row);
+            });
+
+            card.appendChild(list);
+        });
+
+        sectionReaders[section.id] = readers;
+
+        if (dhcpRefs.length > 0) applyDhcpState(!!currentValues["DHCP Client"]);
+
+        panel.appendChild(card);
+        return panel;
+    }
+
+    function renderBackupPanel() {
+        const panel = document.createElement("div");
+        panel.className = "tab-panel";
+        panel.id = "panel-Backup";
+
+        const card = document.createElement("div");
+        card.className = "setup-card";
+
+        const header = document.createElement("div");
+        header.className = "panel-header";
+        const title = document.createElement("h2");
+        title.textContent = "Backup";
+        const desc = document.createElement("p");
+        desc.textContent = "Save or restore the device configuration.";
+        header.appendChild(title);
+        header.appendChild(desc);
+        card.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "settings-list";
+
+        const exportRow = document.createElement("div");
+        exportRow.className = "setting-row";
+        const exportText = document.createElement("div");
+        exportText.className = "setting-row-text";
+        exportText.innerHTML =
+            '<div class="setting-label">Export configuration</div>' +
+            '<div class="setting-desc">Download the current config.json, including credentials.</div>';
+        exportRow.appendChild(exportText);
+        const exportControl = document.createElement("div");
+        exportControl.className = "setting-row-control";
+        const exportLink = document.createElement("a");
+        exportLink.href = "/api/config/export";
+        exportLink.setAttribute("download", "config.json");
+        exportLink.className = "control-button";
+        exportLink.textContent = "Download";
+        exportControl.appendChild(exportLink);
+        exportRow.appendChild(exportControl);
+        list.appendChild(exportRow);
+
+        const importRow = document.createElement("div");
+        importRow.className = "setting-row";
+        const importText = document.createElement("div");
+        importText.className = "setting-row-text";
+        importText.innerHTML =
+            '<div class="setting-label">Import configuration</div>' +
+            '<div class="setting-desc">Replaces config.json and restarts the device.</div>';
+        importRow.appendChild(importText);
+
+        const importControl = document.createElement("div");
+        importControl.className = "setting-row-control";
+
+        const fileInput = document.createElement("input");
+        fileInput.type = "file";
+        fileInput.accept = ".json,application/json";
+
+        const filePicker = document.createElement("label");
+        filePicker.className = "file-picker";
+        const filePickerLabel = document.createElement("span");
+        filePickerLabel.textContent = "Choose file";
+        filePicker.appendChild(fileInput);
+        filePicker.appendChild(filePickerLabel);
+
+        const importButton = document.createElement("button");
+        importButton.className = "control-button";
+        importButton.textContent = "Import & restart";
+        importButton.disabled = true;
+
+        fileInput.addEventListener("change", function () {
+            const file = fileInput.files[0];
+            filePickerLabel.textContent = file ? file.name : "Choose file";
+            importButton.disabled = !file;
+        });
+
+        importButton.addEventListener("click", function () {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            Notifications.confirm(
+                "This replaces the current configuration and restarts the device. Continue?",
+                { confirmLabel: "Import & restart" }
+            ).then(function (confirmed) {
+                if (!confirmed) return;
+
+                const formData = new FormData();
+                formData.append("file", file, file.name);
+                importButton.disabled = true;
+
+                fetch("/api/config/import", { method: "POST", body: formData })
+                    .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+                    .then(function (result) {
+                        if (!result.ok) {
+                            importButton.disabled = false;
+                            Notifications.show(result.data.error || "Import failed.");
+                            return;
+                        }
+                        Notifications.show("DeviceIQ is restarting...");
+                    })
+                    .catch(function () {
+                        // The device may already be restarting by the time
+                        // the connection drops - treat this as the expected
+                        // outcome rather than a failure.
+                        Notifications.show("DeviceIQ is restarting...");
+                    });
+            });
+        });
+
+        importControl.appendChild(filePicker);
+        importControl.appendChild(importButton);
+        importRow.appendChild(importControl);
+        list.appendChild(importRow);
+
+        card.appendChild(list);
+        panel.appendChild(card);
+        return panel;
+    }
+
+    function selectTab(tabId) {
+        activeTab = tabId;
+        document.querySelectorAll(".tab-button").forEach(function (button) {
+            button.classList.toggle("active", button.dataset.tab === tabId);
+        });
+        document.querySelectorAll(".tab-panel").forEach(function (panel) {
+            panel.classList.toggle("active", panel.id === "panel-" + tabId);
+        });
+    }
+
+    function render(settings) {
+        const tabsContainer = document.getElementById("tabs");
+        const panelsContainer = document.getElementById("panels");
+        tabsContainer.innerHTML = "";
+        panelsContainer.innerHTML = "";
+
+        TABS.forEach(function (tab) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "tab-button";
+            button.dataset.tab = tab.id;
+            button.textContent = tab.label;
+            button.addEventListener("click", function () { selectTab(tab.id); });
+            tabsContainer.appendChild(button);
+        });
+
+        SECTIONS.forEach(function (section) {
+            panelsContainer.appendChild(renderPanel(section, settings[section.id] || {}));
+        });
+        panelsContainer.appendChild(renderBackupPanel());
+
+        selectTab(activeTab);
+    }
+
+    function saveSection(section) {
+        const fields = {};
+        sectionFields(section).forEach(function (field) { fields[field.key] = sectionReaders[section.id][field.key](); });
+
+        return fetch("/api/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ section: section.id, fields: fields })
+        }).then(function (response) {
+            return response.json().then(function (data) { return { section: section.id, ok: response.ok, data: data }; });
+        }).catch(function () {
+            return { section: section.id, ok: false, data: { error: "Unable to reach the device." } };
+        });
+    }
+
+    function saveAll() {
+        let chain = Promise.resolve([]);
+        SECTIONS.forEach(function (section) {
+            chain = chain.then(function (results) {
+                return saveSection(section).then(function (result) { return results.concat([result]); });
+            });
+        });
+        return chain;
+    }
+
+    const saveButton = document.getElementById("save-all-button");
+    const status = document.getElementById("save-status");
+
+    saveButton.addEventListener("click", function () {
+        saveButton.disabled = true;
+        status.className = "setup-status";
+        status.textContent = "Saving...";
+
+        saveAll().then(function (results) {
+            const failed = results.filter(function (result) { return !result.ok; });
+            const restartNeeded = results.some(function (result) { return result.ok && result.data.restart; });
+
+            if (failed.length > 0) {
+                saveButton.disabled = false;
+                status.className = "setup-status error";
+                status.textContent = failed.length + " of " + results.length + " section(s) failed to save.";
+                failed.forEach(function (result) {
+                    Notifications.show(result.section + ": " + (result.data.error || "save failed"));
+                });
+            } else {
+                markClean();
+                status.className = "setup-status ok";
+                status.textContent = "All changes saved.";
+            }
+
+            if (restartNeeded) {
+                Notifications.confirm(
+                    "Some changes require a restart to take effect. Restart now?",
+                    { confirmLabel: "Restart" }
+                ).then(function (confirmed) {
+                    if (!confirmed) return;
+                    fetch("/api/reboot", { method: "POST" }).catch(function () {});
+                    Notifications.show("DeviceIQ is restarting...");
+                });
+            }
+        });
+    });
+
+    document.getElementById("restart-button").addEventListener("click", function () {
+        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
+            if (!confirmed) return;
+            fetch("/api/reboot", { method: "POST" }).catch(function () {});
+            Notifications.show("DeviceIQ is restarting...");
+        });
+    });
+
+    fetch("/api/session").then(function (response) { return response.json(); }).then(function (session) {
+        if (!session.authenticated) {
             window.location.replace("/");
-            return;
+            return Promise.reject();
         }
-        if (!data.admin) {
+        if (!session.admin) {
             window.location.replace("/dashboard.html");
-            return;
+            return Promise.reject();
         }
-        document.getElementById("whoami").textContent = data.username + " · admin";
-    }).catch(() => window.location.replace("/"));
+        document.getElementById("whoami").textContent = session.username + " · admin";
+        document.getElementById("sidebar-product").textContent = session.productFamily + " " + session.productName;
+        document.getElementById("sidebar-version").textContent = "v" + session.softwareVersion;
+        Notifications.start();
+        return fetch("/api/settings");
+    }).then(function (response) { return response.json(); })
+        .then(function (settings) { render(settings); })
+        .catch(function () {});
 
     document.getElementById("logout-button").addEventListener("click", function () {
-        fetch("/api/logout", { method: "POST" }).finally(() => window.location.replace("/"));
+        fetch("/api/logout", { method: "POST" }).finally(function () { window.location.replace("/"); });
     });
 })();
 </script>

@@ -63,6 +63,9 @@ class httpserver {
         static constexpr UBaseType_t TASK_PRIORITY = 1;
         static constexpr TickType_t TASK_DELAY = pdMS_TO_TICKS(10);
         static constexpr uint32_t STOP_NOTIFICATION = 1UL << 0;
+        // Generous relative to the shipped config.json (a few KB); bounds
+        // worst-case RAM use for the in-memory upload buffer.
+        static constexpr size_t MAX_CONFIG_UPLOAD_BYTES = 65536;
 
         StaticSemaphore_t pMutexStorage{};
         SemaphoreHandle_t pMutex = nullptr;
@@ -72,6 +75,8 @@ class httpserver {
         uint32_t pIdleTimeoutMs = 1800000; // 30 minutes
         size_t pMaxSessions = 4;
         Session pSessions[MAX_SESSIONS];
+        String pConfigUploadBuffer;
+        bool pConfigUploadValid = false;
 
         static void TaskEntry(void* parameter);
         void Task();
@@ -79,11 +84,20 @@ class httpserver {
 
         void HandleIndex(WebServer& server);
         void HandleDashboard(WebServer& server);
-        void HandleConfig(WebServer& server);
+        void HandleSetup(WebServer& server);
         void HandleStyle(WebServer& server);
         void HandleLoginPost(WebServer& server);
         void HandleLogoutPost(WebServer& server);
         void HandleSessionGet(WebServer& server);
+        void HandleComponentsGet(WebServer& server);
+        void HandleComponentsSetPost(WebServer& server);
+        void HandleSettingsGet(WebServer& server);
+        void HandleSettingsPost(WebServer& server);
+        void HandleRebootPost(WebServer& server);
+        void HandleConfigExportGet(WebServer& server);
+        void HandleConfigImportUpload(WebServer& server);
+        void HandleConfigImportPost(WebServer& server);
+        void HandleScript(WebServer& server);
         void HandleNotFound(WebServer& server);
 
         void ServeFile(WebServer& server, const char* path, const char* contentType);

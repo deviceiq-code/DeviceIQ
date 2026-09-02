@@ -7,40 +7,224 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="topbar">
-    <div class="left">
-        <div class="name">DeviceIQ</div>
-        <nav>
-            <a href="/dashboard.html" class="active">Dashboard</a>
-            <a href="/config.html" id="config-link">Setup</a>
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="sidebar-logo">IQ</div>
+        <nav class="sidebar-nav">
+            <a href="/dashboard.html" class="sidebar-nav-item active">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="/setup.html" class="sidebar-nav-item" id="config-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+                <span>Setup</span>
+            </a>
         </nav>
-    </div>
-    <div class="right">
-        <span id="whoami"></span>
-        <button class="secondary" id="logout-button">Sign out</button>
+        <div class="sidebar-footer">
+            <span class="product" id="sidebar-product"></span>
+            <span class="version" id="sidebar-version"></span>
+        </div>
+    </aside>
+
+    <div class="app-main">
+        <header class="app-header">
+            <div class="app-header-title">
+                <h1>Dashboard</h1>
+                <p>Live component status and controls</p>
+            </div>
+            <div class="app-header-actions">
+                <span class="user-chip" id="whoami"></span>
+                <button class="icon-button restart-button" id="restart-button" title="Restart device">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <button class="icon-button" id="logout-button" title="Sign out">
+                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <main>
+            <div id="components"></div>
+        </main>
     </div>
 </div>
 
-<main>
-    <div class="placeholder">
-        <div class="title">Components dashboard</div>
-        <p>This page will show live component state and controls. Coming soon.</p>
-    </div>
-</main>
-
+<script src="/notifications.js"></script>
 <script>
 (function () {
-    fetch("/api/session").then((response) => response.json()).then((data) => {
+    const REFRESH_INTERVAL_MS = 3000;
+    let isAdmin = false;
+    let refreshTimer = null;
+
+    function controlButton(label, onClick) {
+        const button = document.createElement("button");
+        button.className = "secondary";
+        button.textContent = label;
+        button.addEventListener("click", onClick);
+        return button;
+    }
+
+    function pill(text, kind) {
+        const el = document.createElement("span");
+        el.className = "pill " + kind;
+        el.textContent = text;
+        return el;
+    }
+
+    function relayBody(item) {
+        const wrap = document.createElement("div");
+        wrap.className = "comp-row";
+        wrap.appendChild(pill(item.state ? "On" : "Off", item.state ? "on" : "off"));
+
+        if (isAdmin) {
+            wrap.appendChild(controlButton(item.state ? "Turn off" : "Turn on", function () {
+                setProperty(item.id, "state", item.state ? "off" : "on");
+            }));
+        }
+        return wrap;
+    }
+
+    function buttonBody(item) {
+        const wrap = document.createElement("div");
+        wrap.className = "comp-row";
+        wrap.appendChild(pill(item.state ? "Pressed" : "Released", item.state ? "on" : "off"));
+        return wrap;
+    }
+
+    function blindsBody(item) {
+        const wrap = document.createElement("div");
+
+        const row = document.createElement("div");
+        row.className = "comp-row";
+        const label = item.state.charAt(0).toUpperCase() + item.state.slice(1);
+        row.appendChild(pill(label + " · " + item.position + "%", item.state === "stopped" ? "off" : "warn"));
+        wrap.appendChild(row);
+
+        const bar = document.createElement("div");
+        bar.className = "bar";
+        const fill = document.createElement("div");
+        fill.className = "bar-fill";
+        fill.style.width = item.position + "%";
+        bar.appendChild(fill);
+        wrap.appendChild(bar);
+
+        if (isAdmin) {
+            const controls = document.createElement("div");
+            controls.className = "comp-controls";
+            controls.appendChild(controlButton("Open", function () { setProperty(item.id, "state", "open"); }));
+            controls.appendChild(controlButton("Stop", function () { setProperty(item.id, "state", "stop"); }));
+            controls.appendChild(controlButton("Close", function () { setProperty(item.id, "state", "close"); }));
+            wrap.appendChild(controls);
+        }
+        return wrap;
+    }
+
+    function thermometerBody(item) {
+        const wrap = document.createElement("div");
+        wrap.className = "comp-row";
+
+        if (!item.available) {
+            wrap.appendChild(pill("Unavailable", "warn"));
+        } else {
+            let text = item.temperature.toFixed(1) + "°C";
+            if (item.hasHumidity) text += " · " + item.humidity.toFixed(1) + "%";
+            const state = document.createElement("span");
+            state.className = "state";
+            state.textContent = text;
+            wrap.appendChild(state);
+        }
+        return wrap;
+    }
+
+    function renderCard(item) {
+        const card = document.createElement("div");
+        card.className = "comp-card" + (item.enabled ? "" : " comp-disabled");
+
+        const header = document.createElement("div");
+        header.className = "comp-header";
+        const name = document.createElement("span");
+        name.className = "comp-name";
+        name.textContent = item.name;
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = item.class;
+        header.appendChild(name);
+        header.appendChild(badge);
+        card.appendChild(header);
+
+        let body;
+        if (item.class === "Relay") body = relayBody(item);
+        else if (item.class === "Button") body = buttonBody(item);
+        else if (item.class === "Blinds") body = blindsBody(item);
+        else if (item.class === "Thermometer") body = thermometerBody(item);
+        else {
+            body = document.createElement("div");
+            body.className = "comp-row";
+            body.innerHTML = '<span class="state">No status available</span>';
+        }
+        card.appendChild(body);
+
+        return card;
+    }
+
+    function render(components) {
+        const container = document.getElementById("components");
+        container.innerHTML = "";
+
+        if (components.length === 0) {
+            container.innerHTML = '<div class="placeholder"><div class="title">No components</div><p>No components are currently running.</p></div>';
+            return;
+        }
+
+        const grid = document.createElement("div");
+        grid.className = "comp-grid";
+        components.forEach(function (item) { grid.appendChild(renderCard(item)); });
+        container.appendChild(grid);
+    }
+
+    function setProperty(id, property, value) {
+        const body = new URLSearchParams();
+        body.set("id", id);
+        body.set("property", property);
+        body.set("value", value);
+        fetch("/api/components/set", { method: "POST", body: body }).finally(refresh);
+    }
+
+    function refresh() {
+        fetch("/api/components").then(function (response) { return response.json(); }).then(function (data) {
+            render(data.components || []);
+        }).catch(function () {});
+    }
+
+    fetch("/api/session").then(function (response) { return response.json(); }).then(function (data) {
         if (!data.authenticated) {
             window.location.replace("/");
             return;
         }
         document.getElementById("whoami").textContent = data.username + (data.admin ? " · admin" : "");
-        if (!data.admin) document.getElementById("config-link").remove();
-    }).catch(() => window.location.replace("/"));
+        document.getElementById("sidebar-product").textContent = data.productFamily + " " + data.productName;
+        document.getElementById("sidebar-version").textContent = "v" + data.softwareVersion;
+        if (!data.admin) {
+            document.getElementById("config-link").remove();
+            document.getElementById("restart-button").remove();
+        }
+        isAdmin = data.admin;
+
+        refresh();
+        refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+    }).catch(function () { window.location.replace("/"); });
+
+    document.getElementById("restart-button").addEventListener("click", function () {
+        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
+            if (!confirmed) return;
+            fetch("/api/reboot", { method: "POST" }).catch(function () {});
+            Notifications.show("DeviceIQ is restarting...");
+        });
+    });
 
     document.getElementById("logout-button").addEventListener("click", function () {
-        fetch("/api/logout", { method: "POST" }).finally(() => window.location.replace("/"));
+        if (refreshTimer) clearInterval(refreshTimer);
+        fetch("/api/logout", { method: "POST" }).finally(function () { window.location.replace("/"); });
     });
 })();
 </script>
