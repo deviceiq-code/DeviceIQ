@@ -796,6 +796,10 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/setup.html", HTTP_GET, [this, &server]() { HandleSetup(server); });
     server.on("/about.html", HTTP_GET, [this, &server]() { HandleAbout(server); });
     server.on("/api/about", HTTP_GET, [this, &server]() { HandleAboutGet(server); });
+    server.on("/log.html", HTTP_GET, [this, &server]() { HandleLog(server); });
+    server.on("/api/log", HTTP_GET, [this, &server]() { HandleLogGet(server); });
+    server.on("/api/log/export", HTTP_GET, [this, &server]() { HandleLogExportGet(server); });
+    server.on("/api/log/clear", HTTP_POST, [this, &server]() { HandleLogClearPost(server); });
     server.on("/style.css", HTTP_GET, [this, &server]() { HandleStyle(server); });
     server.on("/notifications.js", HTTP_GET, [this, &server]() { HandleScript(server); });
     server.on("/api/login", HTTP_POST, [this, &server]() { HandleLoginPost(server); });
@@ -812,6 +816,8 @@ void httpserver::RegisterRoutes(WebServer& server) {
         [this, &server]() { HandleConfigImportPost(server); },
         [this, &server]() { HandleConfigImportUpload(server); }
     );
+    server.on("/api/config/import/apply", HTTP_POST, [this, &server]() { HandleConfigImportApplyPost(server); });
+    server.on("/api/config/reset", HTTP_POST, [this, &server]() { HandleConfigResetPost(server); });
     server.onNotFound([this, &server]() { HandleNotFound(server); });
 }
 
@@ -844,6 +850,132 @@ void httpserver::HandleAboutGet(WebServer& server) {
     String payload;
     serializeJson(document, payload);
     server.send(200, "application/json", payload);
+}
+
+void httpserver::HandleLog(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.sendHeader("Location", "/");
+        server.send(302, "text/plain", "Redirecting to /");
+        return;
+    }
+
+    // Mirrors the Telnet CLI's "log" command, which is admin-only in full
+    // (view included, not just mutations). There is also nothing to show
+    // when File isn't one of the configured log endpoints.
+    if (!session->admin || (Settings.Log.Endpoint() & logger::Endpoints::File) == 0) {
+        server.sendHeader("Location", "/dashboard.html");
+        server.send(302, "text/plain", "Redirecting to /dashboard.html");
+        return;
+    }
+
+    ServeFile(server, "/log.html", "text/html");
+}
+
+void httpserver::HandleLogGet(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    String content;
+    const filesystem::Result readResult = FileSystem.Read(Defaults.LogFileName, content);
+    if (readResult == filesystem::Result::NotFound || (readResult == filesystem::Result::Ok && content.isEmpty())) {
+        server.send(200, "text/plain", "");
+        return;
+    }
+    if (readResult != filesystem::Result::Ok) {
+        server.send(500, "application/json", "{\"error\":\"unable to read the log file\"}");
+        return;
+    }
+
+    // Mirrors the Telnet CLI's "log view [line_count|all]": walk backward
+    // from the end counting newlines, same as LogCommands.cpp.
+    const String linesParam = server.arg("lines");
+    const bool showAll = linesParam == "all";
+    uint32_t requestedLines = 500;
+    if (!linesParam.isEmpty() && !showAll) {
+        const long parsed = linesParam.toInt();
+        if (parsed > 0) requestedLines = static_cast<uint32_t>(parsed);
+    }
+
+    size_t start = 0;
+    if (!showAll) {
+        size_t cursor = content.length();
+        while (cursor > 0 && (content[cursor - 1] == '\n' || content[cursor - 1] == '\r')) --cursor;
+        start = cursor;
+        uint32_t linesFound = 0;
+        while (start > 0) {
+            --start;
+            if (content[start] != '\n') continue;
+            ++linesFound;
+            if (linesFound == requestedLines) {
+                ++start;
+                break;
+            }
+        }
+    }
+
+    server.send(200, "text/plain", content.substring(start));
+}
+
+void httpserver::HandleLogExportGet(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    String content;
+    const filesystem::Result readResult = FileSystem.Read(Defaults.LogFileName, content);
+    if (readResult != filesystem::Result::Ok && readResult != filesystem::Result::NotFound) {
+        server.send(500, "application/json", "{\"error\":\"unable to read the log file\"}");
+        return;
+    }
+
+    Logger.Log("Web Server: log exported by " + session->username + "@" + server.client().remoteIP().toString(), logger::LogLevels::Information);
+
+    server.sendHeader("Content-Disposition", "attachment; filename=\"device.log\"");
+    server.send(200, "text/plain", content);
+}
+
+void httpserver::HandleLogClearPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    const filesystem::Result result = FileSystem.Remove(Defaults.LogFileName);
+    const bool success = result == filesystem::Result::Ok || result == filesystem::Result::NotFound;
+
+    // Logged after clearing: if delivery to file is enabled, this becomes
+    // the first entry of the fresh log, so clearing it can never itself go
+    // unrecorded - mirrors the Telnet CLI's "log clear".
+    Logger.Log(
+        "Web Server: log clear " + String(success ? "accepted" : "rejected") + " for " + session->username + "@" + server.client().remoteIP().toString(),
+        success ? logger::LogLevels::Information : logger::LogLevels::Warning
+    );
+
+    if (!success) {
+        server.send(500, "application/json", "{\"error\":\"unable to clear the log file\"}");
+        return;
+    }
+
+    server.send(200, "application/json", "{\"success\":true}");
 }
 
 void httpserver::HandleStyle(WebServer& server) {
@@ -907,11 +1039,13 @@ void httpserver::HandleSessionGet(WebServer& server) {
         return;
     }
 
+    const bool logFileEnabled = (Settings.Log.Endpoint() & logger::Endpoints::File) != 0;
+
     server.send(
         200, "application/json",
         "{\"authenticated\":true,\"username\":\"" + JsonEscaped(session->username) + "\",\"admin\":" + (session->admin ? "true" : "false") +
             ",\"productFamily\":\"" + JsonEscaped(Version::ProductFamily) + "\",\"productName\":\"" + JsonEscaped(Version::ProductName) +
-            "\",\"softwareVersion\":\"" + JsonEscaped(Version::Software::Info()) + "\"}"
+            "\",\"softwareVersion\":\"" + JsonEscaped(Version::Software::Info()) + "\",\"logFileEnabled\":" + (logFileEnabled ? "true" : "false") + "}"
     );
 }
 
@@ -1188,6 +1322,7 @@ void httpserver::HandleConfigImportUpload(WebServer& server) {
     if (upload.status == UPLOAD_FILE_START) {
         pConfigUploadBuffer.clear();
         pConfigUploadBuffer.reserve(4096);
+        pConfigImportReady = false;
         Session* session = AuthenticatedSession(server);
         pConfigUploadValid = session != nullptr && session->admin;
     } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -1206,17 +1341,20 @@ void httpserver::HandleConfigImportPost(WebServer& server) {
     Session* session = AuthenticatedSession(server);
     if (session == nullptr) {
         pConfigUploadBuffer.clear();
+        pConfigImportReady = false;
         server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
         return;
     }
     if (!session->admin) {
         pConfigUploadBuffer.clear();
+        pConfigImportReady = false;
         server.send(403, "application/json", "{\"error\":\"admin session required\"}");
         return;
     }
 
     if (!pConfigUploadValid || pConfigUploadBuffer.isEmpty()) {
         pConfigUploadBuffer.clear();
+        pConfigImportReady = false;
         server.send(400, "application/json", "{\"error\":\"file missing or too large\"}");
         return;
     }
@@ -1225,12 +1363,36 @@ void httpserver::HandleConfigImportPost(WebServer& server) {
     const bool validJson = !deserializeJson(document, pConfigUploadBuffer) && document.is<JsonObjectConst>();
     if (!validJson) {
         pConfigUploadBuffer.clear();
+        pConfigImportReady = false;
         server.send(400, "application/json", "{\"error\":\"file is not a valid configuration (invalid JSON)\"}");
+        return;
+    }
+
+    // Validation only - the buffer is held in memory until the admin
+    // confirms via HandleConfigImportApplyPost, or a new upload replaces it.
+    pConfigImportReady = true;
+    server.send(200, "application/json", "{\"valid\":true}");
+}
+
+void httpserver::HandleConfigImportApplyPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    if (!pConfigImportReady || pConfigUploadBuffer.isEmpty()) {
+        server.send(409, "application/json", "{\"error\":\"no validated configuration to import; upload a file first\"}");
         return;
     }
 
     const filesystem::Result result = FileSystem.WriteAtomic(Defaults.ConfigFileName, pConfigUploadBuffer);
     pConfigUploadBuffer.clear();
+    pConfigImportReady = false;
 
     if (result != filesystem::Result::Ok) {
         server.send(500, "application/json", "{\"error\":\"unable to save configuration\"}");
@@ -1248,6 +1410,47 @@ void httpserver::HandleConfigImportPost(WebServer& server) {
     Logger.Log(
         "Web Server: configuration imported by " + session->username + "@" + server.client().remoteIP().toString() + "; restarting",
         logger::LogLevels::Information
+    );
+
+    server.send(200, "application/json", "{\"success\":true}");
+    server.client().flush();
+
+    DeviceRestart();
+}
+
+void httpserver::HandleConfigResetPost(WebServer& server) {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return;
+    }
+
+    // A minimal, schema-valid configuration with no Settings/Users sections
+    // and no Components: the normal boot path (settings::Load(),
+    // settings::InstallComponents()) falls back to Defaults for every
+    // field and reseeds the default admin/user accounts, exactly as it
+    // does for a brand new device. The schema version must match the
+    // ComponentSchemaVersion constant in ComponentConfig.cpp.
+    const String minimalConfig = "{\"ComponentSchemaVersion\":1,\"Components\":{}}";
+
+    const filesystem::Result result = FileSystem.WriteAtomic(Defaults.ConfigFileName, minimalConfig);
+    if (result != filesystem::Result::Ok) {
+        server.send(500, "application/json", "{\"error\":\"unable to reset configuration\"}");
+        return;
+    }
+
+    const filesystem::Result stateRemoval = FileSystem.Remove(Defaults.StateFileName);
+    if (stateRemoval != filesystem::Result::Ok && stateRemoval != filesystem::Result::NotFound) {
+        Logger.Log("Web Server: could not clear persisted component state during factory reset", logger::LogLevels::Warning);
+    }
+
+    Logger.Log(
+        "Web Server: configuration reset to factory defaults by " + session->username + "@" + server.client().remoteIP().toString() + "; restarting",
+        logger::LogLevels::Warning
     );
 
     server.send(200, "application/json", "{\"success\":true}");

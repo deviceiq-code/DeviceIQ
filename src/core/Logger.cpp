@@ -100,19 +100,12 @@ void logger::LogToFile(const char* message, LogLevels loglevel) {
         } break;
     }
 
-    char line[MESSAGE_SIZE + 32];
-    const int length = snprintf(
-        line,
-        sizeof(line),
-        "%lu|%c|%s\n",
-        static_cast<unsigned long>(Clock.GetEpoch()),
-        levelChar,
-        message
-    );
+    // Same "[date] [level] message" format as LogToSerial, so the file can
+    // be read directly (CLI "log view", the web log viewer/export) without
+    // reformatting.
+    const String line = "[" + Clock.GetDateTime() + "] [" + levelChar + "] " + message + "\n";
 
-    if (length <= 0 || static_cast<size_t>(length) >= sizeof(line)) return;
-
-    FileSystem.AppendRotating(Defaults.LogFileName, reinterpret_cast<const uint8_t*>(line), static_cast<size_t>(length), Defaults.Log.MaxFileSize);
+    FileSystem.AppendRotating(Defaults.LogFileName, reinterpret_cast<const uint8_t*>(line.c_str()), line.length(), Defaults.Log.MaxFileSize);
 }
 
 void logger::LogToSyslog(const char* message, LogLevels loglevel) {

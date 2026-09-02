@@ -19,6 +19,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                 <span>Setup</span>
             </a>
+            <a href="/log.html" class="sidebar-nav-item" id="log-link">
+                <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <span>Log</span>
+            </a>
             <a href="/about.html" class="sidebar-nav-item">
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                 <span>About</span>
@@ -164,8 +168,20 @@
         }
     ];
 
-    const TABS = SECTIONS.map(function (section) { return { id: section.id, label: section.title }; })
-        .concat([{ id: "Backup", label: "Backup" }]);
+    // Telnet and Web are still independent sections for save/read purposes
+    // (each maps to its own /api/settings section id), but share one tab.
+    const COMBINED_TABS = { WebUIAndCLI: ["Telnet", "Web"] };
+
+    const TABS = [];
+    SECTIONS.forEach(function (section) {
+        if (section.id === "Web") return; // rendered together with Telnet, below
+        if (section.id === "Telnet") {
+            TABS.push({ id: "WebUIAndCLI", label: "Web UI and CLI" });
+            return;
+        }
+        TABS.push({ id: section.id, label: section.title });
+    });
+    TABS.push({ id: "Configuration", label: "Configuration" });
 
     const sectionReaders = {};
     let activeTab = TABS[0].id;
@@ -351,10 +367,10 @@
         return panel;
     }
 
-    function renderBackupPanel() {
+    function renderWebUIAndCLIPanel(settings) {
         const panel = document.createElement("div");
         panel.className = "tab-panel";
-        panel.id = "panel-Backup";
+        panel.id = "panel-WebUIAndCLI";
 
         const card = document.createElement("div");
         card.className = "setup-card";
@@ -362,108 +378,217 @@
         const header = document.createElement("div");
         header.className = "panel-header";
         const title = document.createElement("h2");
-        title.textContent = "Backup";
+        title.textContent = "Web UI and CLI";
         const desc = document.createElement("p");
-        desc.textContent = "Save or restore the device configuration.";
+        desc.textContent = "Remote administration over the Telnet CLI and this web interface.";
         header.appendChild(title);
         header.appendChild(desc);
         card.appendChild(header);
 
-        const list = document.createElement("div");
-        list.className = "settings-list";
+        COMBINED_TABS.WebUIAndCLI.forEach(function (sectionId) {
+            const section = SECTIONS.find(function (item) { return item.id === sectionId; });
+            const currentValues = settings[sectionId] || {};
 
-        const exportRow = document.createElement("div");
-        exportRow.className = "setting-row";
-        const exportText = document.createElement("div");
-        exportText.className = "setting-row-text";
-        exportText.innerHTML =
-            '<div class="setting-label">Export configuration</div>' +
-            '<div class="setting-desc">Download the current config.json, including credentials.</div>';
-        exportRow.appendChild(exportText);
-        const exportControl = document.createElement("div");
-        exportControl.className = "setting-row-control";
+            card.appendChild(groupTitleEl(section.title));
+            if (section.note) {
+                const note = document.createElement("p");
+                note.className = "group-desc";
+                note.textContent = section.note;
+                card.appendChild(note);
+            }
+
+            const list = document.createElement("div");
+            list.className = "settings-list";
+
+            const readers = {};
+            section.fields.forEach(function (field) {
+                const built = fieldRow(field, currentValues[field.key], {});
+                readers[field.key] = built.read;
+                list.appendChild(built.row);
+            });
+            sectionReaders[sectionId] = readers;
+            card.appendChild(list);
+        });
+
+        panel.appendChild(card);
+        return panel;
+    }
+
+    function groupTitleEl(text) {
+        const el = document.createElement("div");
+        el.className = "group-title";
+        el.textContent = text;
+        return el;
+    }
+
+    function settingsRow(labelText, descText) {
+        const row = document.createElement("div");
+        row.className = "setting-row";
+
+        const text = document.createElement("div");
+        text.className = "setting-row-text";
+        const label = document.createElement("div");
+        label.className = "setting-label";
+        label.textContent = labelText;
+        text.appendChild(label);
+        if (descText) {
+            const desc = document.createElement("div");
+            desc.className = "setting-desc";
+            desc.textContent = descText;
+            text.appendChild(desc);
+        }
+        row.appendChild(text);
+
+        const control = document.createElement("div");
+        control.className = "setting-row-control";
+        row.appendChild(control);
+
+        return { row: row, control: control };
+    }
+
+    function renderConfigurationPanel() {
+        const panel = document.createElement("div");
+        panel.className = "tab-panel";
+        panel.id = "panel-Configuration";
+
+        const card = document.createElement("div");
+        card.className = "setup-card";
+
+        const header = document.createElement("div");
+        header.className = "panel-header";
+        const title = document.createElement("h2");
+        title.textContent = "Configuration";
+        const desc = document.createElement("p");
+        desc.textContent = "Back up, restore, or reset the device configuration.";
+        header.appendChild(title);
+        header.appendChild(desc);
+        card.appendChild(header);
+
+        // ---- Backup and Restore ----
+        card.appendChild(groupTitleEl("Backup and Restore"));
+        const backupList = document.createElement("div");
+        backupList.className = "settings-list";
+
+        const exportRow = settingsRow("Export", "Download the current config.json, including credentials.");
         const exportLink = document.createElement("a");
         exportLink.href = "/api/config/export";
         exportLink.setAttribute("download", "config.json");
         exportLink.className = "control-button";
         exportLink.textContent = "Download";
-        exportControl.appendChild(exportLink);
-        exportRow.appendChild(exportControl);
-        list.appendChild(exportRow);
+        exportRow.control.appendChild(exportLink);
+        backupList.appendChild(exportRow.row);
 
-        const importRow = document.createElement("div");
-        importRow.className = "setting-row";
-        const importText = document.createElement("div");
-        importText.className = "setting-row-text";
-        importText.innerHTML =
-            '<div class="setting-label">Import configuration</div>' +
-            '<div class="setting-desc">Replaces config.json and restarts the device.</div>';
-        importRow.appendChild(importText);
-
-        const importControl = document.createElement("div");
-        importControl.className = "setting-row-control";
-
+        const importRow = settingsRow("Import", "Upload a configuration file. It is validated before anything is applied, and you will be asked to confirm before it replaces the current configuration.");
         const fileInput = document.createElement("input");
         fileInput.type = "file";
         fileInput.accept = ".json,application/json";
+        fileInput.style.display = "none";
 
-        const filePicker = document.createElement("label");
-        filePicker.className = "file-picker";
-        const filePickerLabel = document.createElement("span");
-        filePickerLabel.textContent = "Choose file";
-        filePicker.appendChild(fileInput);
-        filePicker.appendChild(filePickerLabel);
-
-        const importButton = document.createElement("button");
-        importButton.className = "control-button";
-        importButton.textContent = "Import & restart";
-        importButton.disabled = true;
+        const uploadButton = document.createElement("button");
+        uploadButton.type = "button";
+        uploadButton.className = "control-button";
+        uploadButton.textContent = "Upload";
+        uploadButton.addEventListener("click", function () { fileInput.click(); });
 
         fileInput.addEventListener("change", function () {
             const file = fileInput.files[0];
-            filePickerLabel.textContent = file ? file.name : "Choose file";
-            importButton.disabled = !file;
-        });
-
-        importButton.addEventListener("click", function () {
-            const file = fileInput.files[0];
             if (!file) return;
 
+            uploadButton.disabled = true;
+            uploadButton.textContent = "Validating...";
+
+            const formData = new FormData();
+            formData.append("file", file, file.name);
+
+            fetch("/api/config/import", { method: "POST", body: formData })
+                .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+                .then(function (result) {
+                    fileInput.value = "";
+                    uploadButton.disabled = false;
+                    uploadButton.textContent = "Upload";
+
+                    if (!result.ok) {
+                        Notifications.show(result.data.error || "The uploaded file is not a valid configuration.");
+                        return;
+                    }
+
+                    Notifications.confirm(
+                        "The uploaded file is a valid configuration. Import it and restart the device now?",
+                        { confirmLabel: "Import & Restart" }
+                    ).then(function (confirmed) {
+                        if (!confirmed) return;
+
+                        fetch("/api/config/import/apply", { method: "POST" })
+                            .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+                            .then(function (result) {
+                                if (!result.ok) {
+                                    Notifications.show(result.data.error || "Import failed.");
+                                    return;
+                                }
+                                Notifications.show("DeviceIQ is restarting...");
+                            })
+                            .catch(function () {
+                                // The device may already be restarting by the
+                                // time the connection drops.
+                                Notifications.show("DeviceIQ is restarting...");
+                            });
+                    });
+                })
+                .catch(function () {
+                    fileInput.value = "";
+                    uploadButton.disabled = false;
+                    uploadButton.textContent = "Upload";
+                    Notifications.show("Unable to reach the device.");
+                });
+        });
+
+        importRow.control.appendChild(fileInput);
+        importRow.control.appendChild(uploadButton);
+        backupList.appendChild(importRow.row);
+
+        card.appendChild(backupList);
+
+        // ---- Reset to Defaults ----
+        card.appendChild(groupTitleEl("Reset to Defaults"));
+        const resetList = document.createElement("div");
+        resetList.className = "settings-list";
+
+        const resetRow = settingsRow(
+            "Restore Factory Defaults",
+            "Erases all user-defined settings and components and restores factory defaults. We recommend exporting a backup of the current configuration first."
+        );
+        const resetButton = document.createElement("button");
+        resetButton.type = "button";
+        resetButton.className = "control-button danger";
+        resetButton.textContent = "Reset to Defaults";
+        resetButton.addEventListener("click", function () {
             Notifications.confirm(
-                "This replaces the current configuration and restarts the device. Continue?",
-                { confirmLabel: "Import & restart" }
+                "This erases all user-defined settings and components and restarts the device. This cannot be undone. Continue?",
+                { confirmLabel: "Reset to Defaults" }
             ).then(function (confirmed) {
                 if (!confirmed) return;
 
-                const formData = new FormData();
-                formData.append("file", file, file.name);
-                importButton.disabled = true;
-
-                fetch("/api/config/import", { method: "POST", body: formData })
+                resetButton.disabled = true;
+                fetch("/api/config/reset", { method: "POST" })
                     .then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
                     .then(function (result) {
                         if (!result.ok) {
-                            importButton.disabled = false;
-                            Notifications.show(result.data.error || "Import failed.");
+                            resetButton.disabled = false;
+                            Notifications.show(result.data.error || "Reset failed.");
                             return;
                         }
                         Notifications.show("DeviceIQ is restarting...");
                     })
                     .catch(function () {
-                        // The device may already be restarting by the time
-                        // the connection drops - treat this as the expected
-                        // outcome rather than a failure.
                         Notifications.show("DeviceIQ is restarting...");
                     });
             });
         });
+        resetRow.control.appendChild(resetButton);
+        resetList.appendChild(resetRow.row);
 
-        importControl.appendChild(filePicker);
-        importControl.appendChild(importButton);
-        importRow.appendChild(importControl);
-        list.appendChild(importRow);
+        card.appendChild(resetList);
 
-        card.appendChild(list);
         panel.appendChild(card);
         return panel;
     }
@@ -495,9 +620,11 @@
         });
 
         SECTIONS.forEach(function (section) {
+            if (section.id === "Telnet" || section.id === "Web") return; // rendered together, below
             panelsContainer.appendChild(renderPanel(section, settings[section.id] || {}));
         });
-        panelsContainer.appendChild(renderBackupPanel());
+        panelsContainer.appendChild(renderWebUIAndCLIPanel(settings));
+        panelsContainer.appendChild(renderConfigurationPanel());
 
         selectTab(activeTab);
     }
@@ -585,6 +712,7 @@
         document.getElementById("whoami").textContent = session.username + " · admin";
         document.getElementById("sidebar-product").textContent = session.productFamily + " " + session.productName;
         document.getElementById("sidebar-version").textContent = "v" + session.softwareVersion;
+        if (!session.logFileEnabled) document.getElementById("log-link").remove();
         Notifications.start();
         return fetch("/api/settings");
     }).then(function (response) { return response.json(); })

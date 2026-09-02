@@ -77,6 +77,10 @@ class httpserver {
         Session pSessions[MAX_SESSIONS];
         String pConfigUploadBuffer;
         bool pConfigUploadValid = false;
+        // Set once an uploaded configuration has passed validation in
+        // HandleConfigImportPost; consumed (and cleared) by
+        // HandleConfigImportApplyPost, or invalidated by the next upload.
+        bool pConfigImportReady = false;
 
         static void TaskEntry(void* parameter);
         void Task();
@@ -87,6 +91,10 @@ class httpserver {
         void HandleSetup(WebServer& server);
         void HandleAbout(WebServer& server);
         void HandleAboutGet(WebServer& server);
+        void HandleLog(WebServer& server);
+        void HandleLogGet(WebServer& server);
+        void HandleLogExportGet(WebServer& server);
+        void HandleLogClearPost(WebServer& server);
         void HandleStyle(WebServer& server);
         void HandleLoginPost(WebServer& server);
         void HandleLogoutPost(WebServer& server);
@@ -99,6 +107,8 @@ class httpserver {
         void HandleConfigExportGet(WebServer& server);
         void HandleConfigImportUpload(WebServer& server);
         void HandleConfigImportPost(WebServer& server);
+        void HandleConfigImportApplyPost(WebServer& server);
+        void HandleConfigResetPost(WebServer& server);
         void HandleScript(WebServer& server);
         void HandleNotFound(WebServer& server);
 
