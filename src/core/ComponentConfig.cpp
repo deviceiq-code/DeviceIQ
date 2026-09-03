@@ -37,6 +37,15 @@ namespace {
         return object["Setup"].as<JsonObject>();
     }
 
+    // Like ComponentSetup(), but for "Properties" - as<JsonObject>() reads
+    // the existing object without touching it. Every configured component
+    // already has one by construction (HasComponentSections()/"comp add"
+    // both require/create it), so unlike the "Events" case below, there's
+    // no need to fall back to a wiping to<JsonObject>() here.
+    JsonObject ComponentProperties(JsonObject object) {
+        return object["Properties"].as<JsonObject>();
+    }
+
     bool HasComponentSections(JsonObjectConst object) {
         if (!object["Setup"].is<JsonObjectConst>() ||
             !object["Properties"].is<JsonObjectConst>() ||
@@ -1011,7 +1020,7 @@ namespace {
         if (property.equalsIgnoreCase("enabled")) {
             bool value = false;
             if (!ParseConfigBoolean(text, value)) return false;
-            item["Properties"].to<JsonObject>()["Enabled"] = value;
+            ComponentProperties(item)["Enabled"] = value;
             return true;
         }
 
@@ -1027,7 +1036,7 @@ namespace {
             if (allowState && property.equalsIgnoreCase("state")) {
                 bool value = false;
                 if (!ParseConfigBoolean(text, value)) return false;
-                item["Properties"].to<JsonObject>()["State"] = value;
+                ComponentProperties(item)["State"] = value;
                 return true;
             }
             if (property.equalsIgnoreCase("type")) {
@@ -1087,7 +1096,7 @@ namespace {
             if (property.equalsIgnoreCase("position")) {
                 long value = 0;
                 if (!ParseInteger(text, 0, 100, value)) return false;
-                item["Properties"].to<JsonObject>()["Position"] = value;
+                ComponentProperties(item)["Position"] = value;
                 return true;
             }
             if (property.equalsIgnoreCase("opensteptimems") || property.equalsIgnoreCase("closesteptimems") ||
@@ -1128,6 +1137,48 @@ namespace {
         return false;
     }
 
+    // Mirrors each class's EventDescriptors() table (Relay.cpp, Button.cpp,
+    // Blinds.cpp, Thermometer.cpp), kept as a plain name list here because
+    // programming an event has to work for a component that has no live
+    // runtime instance yet - e.g. one just added via "comp add"/the web UI,
+    // pending its first boot - and EventDescriptors() is only reachable
+    // through an actual instance.
+    const char* const* ComponentEventNames(const String& componentClass, size_t& count) {
+        static const char* const RelayEvents[] = {"SettingOn", "SettingOff", "SetOn", "SetOff", "Changed", "WriteFailed"};
+        static const char* const ButtonEvents[] = {"Pressed", "Released", "Clicked", "LongClicked", "DoubleClicked", "TripleClicked"};
+        static const char* const BlindsEvents[] = {"Changed", "Opening", "Closing", "Stopped", "Opened", "Closed", "Fault"};
+        static const char* const ThermometerEvents[] = {"TemperatureChanged", "HumidityChanged", "Changed", "ReadFailed", "ReadRecovered"};
+
+        if (componentClass.equalsIgnoreCase("Relay")) {
+            count = sizeof(RelayEvents) / sizeof(RelayEvents[0]);
+            return RelayEvents;
+        }
+        if (componentClass.equalsIgnoreCase("Button")) {
+            count = sizeof(ButtonEvents) / sizeof(ButtonEvents[0]);
+            return ButtonEvents;
+        }
+        if (componentClass.equalsIgnoreCase("Blinds")) {
+            count = sizeof(BlindsEvents) / sizeof(BlindsEvents[0]);
+            return BlindsEvents;
+        }
+        if (componentClass.equalsIgnoreCase("Thermometer")) {
+            count = sizeof(ThermometerEvents) / sizeof(ThermometerEvents[0]);
+            return ThermometerEvents;
+        }
+
+        count = 0;
+        return nullptr;
+    }
+
+    bool ValidEventName(const String& componentClass, const String& eventName) {
+        size_t count = 0;
+        const char* const* names = ComponentEventNames(componentClass, count);
+        for (size_t index = 0; index < count; ++index) {
+            if (eventName.equalsIgnoreCase(names[index])) return true;
+        }
+        return false;
+    }
+
     bool WriteConfigurationDocument(JsonDocument& document) {
         document["ComponentSchemaVersion"] = ComponentSchemaVersion;
         String serialized;
@@ -1153,7 +1204,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
     String subcommand = parameters[0];
     subcommand.toLowerCase();
     if (subcommand.isEmpty()) {
-        output = "Usage: comp list | tree | status [selector] | set selector property=value | trigger selector event [value=integer] | rename selector name=value | remove selector | add class key=value...\r\n";
+        output = "Usage: comp list | tree | status [selector] | set selector property=value | trigger selector event [value=integer] | rename selector name=value | event selector eventName script | remove selector | add class key=value...\r\n";
         return false;
     }
 
@@ -1494,6 +1545,63 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         return true;
     }
 
+    // Programs (or, with an empty script, clears) the action a component
+    // event runs when it fires - distinct from "trigger", which fires an
+    // event immediately rather than configuring what happens when it does.
+    // Takes the event name and the script as separate positional
+    // parameters rather than "name=value", since a script like
+    // "compset(Selector property=value)" legitimately contains its own
+    // '=' and spaces, which SplitAssignment() (used by "set"/"rename")
+    // would reject.
+    if (subcommand == "event") {
+        if (parameters[1].isEmpty() || parameters[2].isEmpty() || !parameters[4].isEmpty()) {
+            output = "Usage: comp event selector eventName script\r\n";
+            return false;
+        }
+
+        int16_t configuredID = 0;
+        JsonObject configured = ResolveConfiguredComponent(components, parameters[1], configuredID);
+        if (configured.isNull()) {
+            output = "Configured component '" + parameters[1] + "' not found.\r\n";
+            return false;
+        }
+
+        const String componentClass = ComponentSetup(configured)["Class"] | "";
+        if (!ValidEventName(componentClass, parameters[2])) {
+            output = "Unknown event '" + parameters[2] + "' for class '" + componentClass + "'.\r\n";
+            return false;
+        }
+
+        String scriptError;
+        if (!parameters[3].isEmpty() && !Automation.ValidateScript(parameters[3], scriptError)) {
+            output = "Invalid action for '" + parameters[2] + "': " + scriptError + ".\r\n";
+            return false;
+        }
+
+        // JsonVariant::to<JsonObject>() always resets to an empty object,
+        // even if it already held one - since events are programmed one
+        // at a time (one "comp event" call per event name), unconditionally
+        // calling .to<JsonObject>() here would wipe out every event set by
+        // an earlier call in the same batch. as<JsonObject>() reads the
+        // existing object without touching it; .to<JsonObject>() only runs
+        // the first time, when there's genuinely nothing there yet.
+        JsonObject events = configured["Events"].is<JsonObject>() ?
+            configured["Events"].as<JsonObject>() : configured["Events"].to<JsonObject>();
+        if (parameters[3].isEmpty()) {
+            events.remove(parameters[2]);
+        } else {
+            events[parameters[2]] = parameters[3];
+        }
+
+        if (!WriteConfigurationDocument(document)) {
+            output = "Error saving configuration.\r\n";
+            return false;
+        }
+
+        output = "Configuration saved. Restart required. Use 'reboot' to apply changes.\r\n";
+        return true;
+    }
+
     if (subcommand == "remove") {
         if (parameters[1].isEmpty() || !parameters[2].isEmpty()) {
             output = "Usage: comp remove selector\r\n";
@@ -1669,7 +1777,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         return true;
     }
 
-    output = "Unknown comp subcommand. Use: comp list|tree|status|set|trigger|rename|remove|add\r\n";
+    output = "Unknown comp subcommand. Use: comp list|tree|status|set|trigger|rename|event|remove|add\r\n";
     return false;
 }
 
@@ -1683,4 +1791,10 @@ bool settings::ReadComponentsCatalog(JsonDocument& document) noexcept {
     if ((document["ComponentSchemaVersion"] | 0) != ComponentSchemaVersion) return false;
 
     return !document["Components"].as<JsonObjectConst>().isNull();
+}
+
+void settings::EventNamesForClass(const String& componentClass, JsonArray output) noexcept {
+    size_t count = 0;
+    const char* const* names = ComponentEventNames(componentClass, count);
+    for (size_t index = 0; index < count; ++index) output.add(names[index]);
 }

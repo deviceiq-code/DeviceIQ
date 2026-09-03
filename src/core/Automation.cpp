@@ -118,6 +118,11 @@ bool automation::ParseScript(const String& script, Binding& binding, String& err
     return true;
 }
 
+bool automation::ValidateScript(const String& script, String& error) noexcept {
+    Binding discarded;
+    return ParseScript(script, discarded, error);
+}
+
 component* automation::ResolveComponent(const String& selector) noexcept {
     if (selector.startsWith("#")) {
         if (selector.length() == 1) return nullptr;

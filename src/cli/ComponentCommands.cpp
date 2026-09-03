@@ -12,6 +12,7 @@ bool cli::RegisterComponentCommands() {
         "comp set [component_name|#component_id] property=value\r\n"
         "comp trigger [component_name|#component_id] event [value=integer]\r\n"
         "comp rename [component_name|#component_id] name=newname\r\n"
+        "comp event [component_name|#component_id] eventName script\r\n"
         "comp remove [component_name|#component_id]\r\n"
         "comp add relay|button|thermometer|blinds name=value [id=value] ...\r\n"
         "Blinds member references use numeric component IDs.",
@@ -19,7 +20,7 @@ bool cli::RegisterComponentCommands() {
             String subcommand = parameters[0];
             subcommand.toLowerCase();
             const bool mutation = subcommand == "set" || subcommand == "trigger" || subcommand == "rename" ||
-                subcommand == "remove" || subcommand == "add";
+                subcommand == "event" || subcommand == "remove" || subcommand == "add";
 
             if (mutation && !TelnetServer.IsSessionAdmin(client)) {
                 Logger.Log("CLI component mutation denied for " + client.remoteIP().toString() + ": comp " + subcommand, logger::LogLevels::Warning);

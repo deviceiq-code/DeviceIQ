@@ -14,6 +14,12 @@ class automation final {
         [[nodiscard]] bool Register(component& source, const String& eventName, const String& script, String& error) noexcept;
         [[nodiscard]] bool Execute(const ComponentEvent& event) noexcept;
         [[nodiscard]] size_t Count() const noexcept { return pBindingCount; }
+        // Checks a script's syntax (e.g. "log(...)" / "compset(selector
+        // property=value)") without resolving an event name or binding it
+        // to a component - used to validate an action before it's saved to
+        // a component's configuration, when no live component instance may
+        // exist yet (e.g. a just-added component, pending its first boot).
+        [[nodiscard]] static bool ValidateScript(const String& script, String& error) noexcept;
 
     private:
         enum class Action : uint8_t { Log, ComponentSet };

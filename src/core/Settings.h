@@ -324,6 +324,10 @@ class settings {
         // itself mutates. Returns false if the file is missing, invalid,
         // or the schema version doesn't match.
         bool ReadComponentsCatalog(JsonDocument& document) noexcept;
+        // Fills `output` with the event names valid for a component class
+        // (e.g. "Relay" -> SettingOn/SettingOff/.../Changed/WriteFailed) -
+        // pure static data, no file access or locking involved.
+        void EventNamesForClass(const String& componentClass, JsonArray output) noexcept;
 };
 
 extern settings Settings;

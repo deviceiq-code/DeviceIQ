@@ -1447,22 +1447,10 @@ void httpserver::HandleComponentsCatalogGet(WebServer& server) {
 
     JsonObjectConst components = catalog["Components"].as<JsonObjectConst>();
     const String idArg = server.arg("id");
+    const String classArg = server.arg("class");
     JsonDocument response;
 
-    if (idArg.isEmpty()) {
-        // Every configured component, including private Blinds members
-        // (never exposed via /api/components) - used to populate
-        // selectors like "Relay Up" when adding or editing a Blinds group.
-        JsonArray items = response["components"].to<JsonArray>();
-        for (JsonPairConst entry : components) {
-            JsonObjectConst item = entry.value().as<JsonObjectConst>();
-            JsonObjectConst setup = item["Setup"].as<JsonObjectConst>();
-            JsonObject out = items.add<JsonObject>();
-            out["id"] = String(entry.key().c_str()).toInt();
-            out["name"] = setup["Name"] | "";
-            out["class"] = setup["Class"] | "";
-        }
-    } else {
+    if (!idArg.isEmpty()) {
         char* end = nullptr;
         const long id = std::strtol(idArg.c_str(), &end, 10);
         if (end == idArg.c_str() || id < 1 || id > INT16_MAX) {
@@ -1479,6 +1467,26 @@ void httpserver::HandleComponentsCatalogGet(WebServer& server) {
         response["id"] = id;
         response["setup"] = item["Setup"];
         response["enabled"] = item["Properties"]["Enabled"] | true;
+        response["events"] = item["Events"];
+        Settings.EventNamesForClass(item["Setup"]["Class"] | "", response["eventNames"].to<JsonArray>());
+    } else if (!classArg.isEmpty()) {
+        // A component being added has no catalog entry yet to read event
+        // names off of - this lets the Events tab know what to render for
+        // the class picked in the form, before the component exists.
+        Settings.EventNamesForClass(classArg, response["eventNames"].to<JsonArray>());
+    } else {
+        // Every configured component, including private Blinds members
+        // (never exposed via /api/components) - used to populate
+        // selectors like "Relay Up" when adding or editing a Blinds group.
+        JsonArray items = response["components"].to<JsonArray>();
+        for (JsonPairConst entry : components) {
+            JsonObjectConst item = entry.value().as<JsonObjectConst>();
+            JsonObjectConst setup = item["Setup"].as<JsonObjectConst>();
+            JsonObject out = items.add<JsonObject>();
+            out["id"] = String(entry.key().c_str()).toInt();
+            out["name"] = setup["Name"] | "";
+            out["class"] = setup["Class"] | "";
+        }
     }
 
     String payload;
@@ -1657,6 +1665,38 @@ void httpserver::HandleComponentsUpdatePost(WebServer& server) {
             );
             server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(property + ": " + output) + "\"}");
             return;
+        }
+    }
+
+    // Optional: the Events tab sends one entry per event name the
+    // component's class supports every time it saves, an empty script
+    // meaning "no action programmed" (which "comp event" treats as a
+    // clear). Applied the same way as `fields` above - one at a time,
+    // stopping at the first rejection.
+    const JsonObjectConst events = request["events"].as<JsonObjectConst>();
+    if (!events.isNull()) {
+        for (JsonPairConst event : events) {
+            const String eventName = event.key().c_str();
+            const String script = event.value().as<String>();
+
+            String parameters[telnetserver::MAX_COMMAND_PARAMETERS];
+            parameters[0] = "event";
+            parameters[1] = "#" + String(id);
+            parameters[2] = eventName;
+            parameters[3] = script;
+
+            String output;
+            const bool success = Settings.ExecuteComponentCommand(parameters, output);
+            output.trim();
+
+            if (!success) {
+                Logger.Log(
+                    "Web Server: component event update rejected for " + identity + ": #" + String(id) + " " + eventName + ": " + output,
+                    logger::LogLevels::Warning
+                );
+                server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(eventName + ": " + output) + "\"}");
+                return;
+            }
         }
     }
 

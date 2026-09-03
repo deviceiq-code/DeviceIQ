@@ -65,21 +65,43 @@
         </header>
 
         <main>
-            <div class="setup-card">
-                <div class="panel-header">
-                    <h2 id="form-title">New Component</h2>
-                    <p id="form-subtitle">Choose a class and configure its settings. A restart is required to apply changes.</p>
+            <div class="tabs-bar">
+                <div class="tabs" id="tabs">
+                    <button type="button" class="tab-button active" data-tab="properties">Properties</button>
+                    <button type="button" class="tab-button" data-tab="events">Events</button>
+                </div>
+            </div>
+
+            <div id="panels">
+                <div class="tab-panel active" id="tab-properties">
+                    <div class="setup-card">
+                        <div class="panel-header">
+                            <h2 id="form-title">New Component</h2>
+                            <p id="form-subtitle">Choose a class and configure its settings. A restart is required to apply changes.</p>
+                        </div>
+
+                        <div class="settings-list" id="basic-list"></div>
+                        <div id="class-fields"></div>
+                    </div>
                 </div>
 
-                <div class="settings-list" id="basic-list"></div>
-                <div id="class-fields"></div>
+                <div class="tab-panel" id="tab-events">
+                    <div class="setup-card">
+                        <div class="panel-header">
+                            <h2>Events</h2>
+                            <p>Program what runs when each event fires. Leave a field blank for no action. Syntax: <code>log(text)</code> or <code>compset(selector property=value)</code> - e.g. <code>compset(GarageLights state=toggle)</code>. Use <code>%NAME%</code> for this component's own name.</p>
+                        </div>
 
-                <div class="setting-row" style="padding-top: 20px;">
-                    <div class="setting-row-text"></div>
-                    <div class="setting-row-control">
-                        <button type="button" class="control-button" id="cancel-button">Cancel</button>
-                        <button type="button" class="control-button" id="save-button">Save</button>
+                        <div class="settings-list" id="events-list">Loading...</div>
                     </div>
+                </div>
+            </div>
+
+            <div class="setting-row" style="padding-top: 4px;">
+                <div class="setting-row-text"></div>
+                <div class="setting-row-control">
+                    <button type="button" class="control-button" id="cancel-button">Cancel</button>
+                    <button type="button" class="control-button" id="save-button">Save</button>
                 </div>
             </div>
         </main>
@@ -96,6 +118,16 @@
     let currentClass = "Relay";
     let catalog = { components: [] };
     let classReaders = {};
+    let eventReaders = {};
+
+    document.querySelectorAll(".tab-button").forEach(function (button) {
+        button.addEventListener("click", function () {
+            document.querySelectorAll(".tab-button").forEach(function (other) { other.classList.remove("active"); });
+            document.querySelectorAll(".tab-panel").forEach(function (panel) { panel.classList.remove("active"); });
+            button.classList.add("active");
+            document.getElementById("tab-" + button.dataset.tab).classList.add("active");
+        });
+    });
 
     function apiPost(path, body) {
         return fetch(path, {
@@ -202,6 +234,7 @@
             classControl.addEventListener("change", function () {
                 currentClass = classControl.value;
                 renderClassFields({});
+                loadEventNamesForClass(currentClass, {});
             });
         }
         list.appendChild(row("Class", "The type of component. Cannot be changed after creation.", classControl));
@@ -305,6 +338,39 @@
         classReaders = Object.assign({ name: classReaders.name, enabled: classReaders.enabled }, readers);
     }
 
+    function renderEventsTab(names, currentEvents) {
+        currentEvents = currentEvents || {};
+        eventReaders = {};
+
+        const list = document.getElementById("events-list");
+        list.innerHTML = "";
+
+        if (!names || names.length === 0) {
+            list.textContent = "This component class exposes no events.";
+            return;
+        }
+
+        names.forEach(function (eventName) {
+            const input = textInput(currentEvents[eventName], "360px");
+            input.placeholder = "No action";
+            list.appendChild(row(eventName, null, input));
+            eventReaders[eventName] = function () { return input.value.trim(); };
+        });
+    }
+
+    function loadEventNamesForClass(className, currentEvents) {
+        fetch("/api/components/catalog?class=" + encodeURIComponent(className))
+            .then(function (response) { return response.json(); })
+            .then(function (data) { renderEventsTab(data.eventNames || [], currentEvents); })
+            .catch(function () { renderEventsTab([], currentEvents); });
+    }
+
+    function collectEvents() {
+        const events = {};
+        Object.keys(eventReaders).forEach(function (eventName) { events[eventName] = eventReaders[eventName](); });
+        return events;
+    }
+
     function collectFields() {
         const fields = {};
         const name = classReaders.name();
@@ -362,14 +428,16 @@
     document.getElementById("save-button").addEventListener("click", function () {
         const fields = collectFields();
         if (!fields) return;
+        const events = collectEvents();
 
         if (isEdit) {
-            apiPost("/api/components/update", { id: Number(editID), fields: fields }).then(function (result) { afterSave(result, null); });
+            apiPost("/api/components/update", { id: Number(editID), fields: fields, events: events }).then(function (result) { afterSave(result, null); });
         } else {
             // The component must already be a valid catalog entry the
             // instant it's created, so identity fields validation depends
             // on (name, and either the address or the member relays) go in
-            // this same call - everything else follows via /update.
+            // this same call - everything else (including events) follows
+            // via /update.
             const addBody = { class: currentClass, name: fields.name };
             if (currentClass === "Blinds") {
                 addBody.relayUp = Number(fields.relayup);
@@ -384,7 +452,7 @@
                     return;
                 }
                 const newID = addResult.data.id;
-                apiPost("/api/components/update", { id: newID, fields: fields }).then(function (updateResult) { afterSave(updateResult, newID); });
+                apiPost("/api/components/update", { id: newID, fields: fields, events: events }).then(function (updateResult) { afterSave(updateResult, newID); });
             });
         }
     });
@@ -415,6 +483,7 @@
                         const setup = Object.assign({}, data.setup, { __enabled: data.enabled });
                         renderBasicFields(setup);
                         renderClassFields(setup);
+                        renderEventsTab(data.eventNames || [], data.events || {});
                     })
                     .catch(function (error) {
                         Notifications.show((error && error.error) || "Unable to load the component.", { title: "Component" });
@@ -426,6 +495,7 @@
                 document.getElementById("form-title").textContent = "New Component";
                 renderBasicFields({});
                 renderClassFields({});
+                loadEventNamesForClass(currentClass, {});
             }
         });
     }
