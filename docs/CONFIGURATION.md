@@ -170,8 +170,9 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 | `Setup.Address` | sim | — | `0`–`255` |
 | `Setup.Type` | não | `"NormallyOpen"` | `"NormallyOpen"` \| `"NormallyClosed"` |
 | `Setup.DriveMode` | não | `"ActiveHigh"` | `"ActiveHigh"` \| `"ActiveLow"` |
+| `Setup.PulseTimeMs` | não | desativado (relé travado) | inteiro (ms), `20`–`5000`. Quando presente, o relé é **momentâneo**: ligar já agenda o desligamento automático após esse tempo — para simular o toque de um botão (ex.: clonar um controle remoto RF) em vez de manter um contato travado. Um relé momentâneo nunca persiste estado em `state.json` e ignora `Properties.State`/qualquer valor herdado — ele sempre inicia desligado. |
 | `Properties.Enabled` | não | `true` | bool |
-| `Properties.State` | não | `false` | bool — apenas a **semente** inicial; se `state.json` já tiver um valor persistido para este ID, ele prevalece. |
+| `Properties.State` | não | `false` | bool — apenas a **semente** inicial; se `state.json` já tiver um valor persistido para este ID, ele prevalece. Ignorado quando `Setup.PulseTimeMs` está definido. |
 | `Events` | — | — | `SettingOn`, `SettingOff`, `SetOn`, `SetOff`, `Changed`, `WriteFailed` |
 
 #### Classe `Button`

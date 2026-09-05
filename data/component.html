@@ -260,10 +260,13 @@
             list.appendChild(row("Type", "Relay contact type.", type));
             const driveMode = selectInput([["ActiveHigh", "Active High"], ["ActiveLow", "Active Low"]], setup.DriveMode || "ActiveHigh");
             list.appendChild(row("Drive Mode", "Logic level that energizes the relay.", driveMode));
+            const pulseTime = numberInput(setup.PulseTimeMs !== undefined ? setup.PulseTimeMs : 0, 0, 5000);
+            list.appendChild(row("Pulse Time (ms)", "0 = normal relay (stays on/off). Above 0 (20-5000) makes it momentary: turning on auto-releases after this many ms, for simulating a button press - e.g. cloning a tactile switch on an RF remote.", pulseTime));
 
             readers.address = function () { return addr.value; };
             readers.type = function () { return type.value; };
             readers.drivemode = function () { return driveMode.value; };
+            readers.pulsetimems = function () { return pulseTime.value; };
         } else if (currentClass === "Button") {
             const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
             list.appendChild(row("GPIO Address", "The GPIO pin this button is wired to (0-255).", addr));
@@ -476,8 +479,8 @@
                     .then(function (data) {
                         currentClass = data.setup.Class;
                         document.getElementById("page-title").textContent = "Edit Component";
-                        document.getElementById("page-subtitle").textContent = data.setup.Name;
-                        document.getElementById("form-title").textContent = "Edit " + data.setup.Name;
+                        document.getElementById("page-subtitle").textContent = data.setup.Name + " (#" + editID + ")";
+                        document.getElementById("form-title").textContent = "Edit " + data.setup.Name + " (#" + editID + ")";
                         const setup = Object.assign({}, data.setup, { __enabled: data.enabled });
                         renderBasicFields(setup);
                         renderClassFields(setup);

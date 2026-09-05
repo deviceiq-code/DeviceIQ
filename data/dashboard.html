@@ -247,7 +247,7 @@
         name.textContent = item.name;
         const cls = document.createElement("div");
         cls.className = "comp-class";
-        cls.textContent = item.class;
+        cls.textContent = item.class + " · #" + item.id;
         title.appendChild(name);
         title.appendChild(cls);
         header.appendChild(title);

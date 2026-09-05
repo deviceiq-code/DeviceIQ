@@ -61,6 +61,13 @@ namespace {
         return sectionCount == 3;
     }
 
+    bool ReadOptionalTime(JsonObjectConst object, const char* name, uint32_t& result) {
+        if (object[name].isNull()) return true;
+        if (!object[name].is<uint32_t>()) return false;
+        result = object[name].as<uint32_t>();
+        return true;
+    }
+
     struct RelayConfiguration {
         String name;
         int16_t id = 0;
@@ -69,6 +76,7 @@ namespace {
         relay::DriveModes driveMode = relay::DriveModes::ActiveHigh;
         bool state = false;
         bool enabled = true;
+        uint32_t pulseTimeMs = 0;
     };
 
     bool ParseRelayConfiguration(JsonObjectConst object, int16_t id, RelayConfiguration& result, JsonObjectConst stateOverride = JsonObjectConst()) {
@@ -119,6 +127,9 @@ namespace {
             }
         }
 
+        if (!ReadOptionalTime(setup, "PulseTimeMs", result.pulseTimeMs)) return false;
+        if (result.pulseTimeMs != 0 && (result.pulseTimeMs < relay::MIN_PULSE_TIME_MS || result.pulseTimeMs > relay::MAX_PULSE_TIME_MS)) return false;
+
         if (!object["Properties"].isNull()) {
             if (!object["Properties"].is<JsonObjectConst>()) return false;
             const JsonObjectConst properties = object["Properties"].as<JsonObjectConst>();
@@ -139,6 +150,12 @@ namespace {
         // since the state file is disposable/regenerable.
         if (stateOverride["State"].is<bool>()) result.state = stateOverride["State"].as<bool>();
 
+        // A momentary relay has no meaningful "on" at rest - Control()
+        // always releases it well before any of this ever gets read back -
+        // so a stale Properties.State or state.json entry is ignored rather
+        // than risking it latching on at boot.
+        if (result.pulseTimeMs > 0) result.state = false;
+
         if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
         return true;
     }
@@ -154,13 +171,6 @@ namespace {
         uint32_t multiClickTimeMs = button::DEFAULT_MULTI_CLICK_TIME_MS;
         bool enabled = true;
     };
-
-    bool ReadOptionalTime(JsonObjectConst object, const char* name, uint32_t& result) {
-        if (object[name].isNull()) return true;
-        if (!object[name].is<uint32_t>()) return false;
-        result = object[name].as<uint32_t>();
-        return true;
-    }
 
     bool ParseButtonConfiguration(JsonObjectConst object, int16_t id, ButtonConfiguration& result) {
         if (!HasComponentSections(object)) return false;
@@ -594,7 +604,8 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 configuration.type,
                 configuration.driveMode,
                 owners[index] < 0 ? configuration.state : false,
-                owners[index] < 0 ? configuration.enabled : true
+                owners[index] < 0 ? configuration.enabled : true,
+                configuration.pulseTimeMs
             ));
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
@@ -960,7 +971,8 @@ namespace {
             RelayConfiguration configuration;
             if (!ParseRelayConfiguration(configured, configuredID, configuration)) return false;
             const relay& value = static_cast<const relay&>(runtime);
-            return configuration.type == value.Type() && configuration.driveMode == value.DriveMode();
+            return configuration.type == value.Type() && configuration.driveMode == value.DriveMode() &&
+                configuration.pulseTimeMs == value.PulseTime();
         }
 
         if (runtime.Class() == component::Classes::Button) {
@@ -1047,6 +1059,13 @@ namespace {
             if (property.equalsIgnoreCase("drivemode")) {
                 if (!text.equalsIgnoreCase("ActiveHigh") && !text.equalsIgnoreCase("ActiveLow")) return false;
                 setup["DriveMode"] = text.equalsIgnoreCase("ActiveHigh") ? "ActiveHigh" : "ActiveLow";
+                return true;
+            }
+            if (property.equalsIgnoreCase("pulsetimems")) {
+                long value = 0;
+                if (!ParseInteger(text, 0, relay::MAX_PULSE_TIME_MS, value)) return false;
+                if (value != 0 && value < relay::MIN_PULSE_TIME_MS) return false;
+                setup["PulseTimeMs"] = static_cast<uint32_t>(value);
                 return true;
             }
         }

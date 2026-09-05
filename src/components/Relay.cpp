@@ -1,9 +1,10 @@
 #include "Relay.h"
 
 #include <driver/gpio.h>
+#include <freertos/task.h>
 
-relay::relay(String name, int16_t id, Buses bus, uint8_t address, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled) : component(std::move(name), id, bus, address, enabled), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState) {}
-relay::relay(String name, int16_t id, Pcf8574Output& outputDevice, uint8_t output, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled) : component(std::move(name), id, Buses::I2C, output, enabled), pOutputDevice(&outputDevice), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState) {}
+relay::relay(String name, int16_t id, Buses bus, uint8_t address, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled, uint32_t pulseTimeMs) : component(std::move(name), id, bus, address, enabled), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState), pPulseTimeMs(pulseTimeMs), pPulseTicks(pdMS_TO_TICKS(pulseTimeMs)) {}
+relay::relay(String name, int16_t id, Pcf8574Output& outputDevice, uint8_t output, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled, uint32_t pulseTimeMs) : component(std::move(name), id, Buses::I2C, output, enabled), pOutputDevice(&outputDevice), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState), pPulseTimeMs(pulseTimeMs), pPulseTicks(pdMS_TO_TICKS(pulseTimeMs)) {}
 
 bool relay::State(bool newState, TickType_t timeout) noexcept {
     return RequestCommand(newState ? CommandCodes::TurnOn : CommandCodes::TurnOff, newState ? 1 : 0, timeout);
@@ -35,6 +36,7 @@ void relay::GetInfo(String& output) const {
     output += "RelayType      | " + String(Type() == RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed") + "\r\n";
     output += "DriveMode      | " + String(DriveMode() == DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow") + "\r\n";
     output += "InitialState   | " + String(pInitialState ? "on" : "off") + "\r\n";
+    if (pPulseTimeMs > 0) output += "PulseTimeMs    | " + String(pPulseTimeMs) + "\r\n";
 }
 
 bool relay::Configure() noexcept {
@@ -69,6 +71,11 @@ bool relay::Initialize() noexcept {
 
 void relay::EnabledChanged(bool enabled) noexcept {
     if (!enabled) (void)ApplyState(false, true);
+}
+
+void relay::Control(TickType_t now) {
+    if (pPulseTimeMs == 0 || !State()) return;
+    if (static_cast<TickType_t>(now - pPulseStartedAt) >= pPulseTicks) (void)ApplyState(false, true);
 }
 
 void relay::HandleCommand(const ComponentCommand& command) {
@@ -127,6 +134,7 @@ bool relay::ApplyState(bool newState, bool publishEvents) noexcept {
 
     pState.store(newState, std::memory_order_relaxed);
     MarkStateChanged();
+    if (newState && pPulseTimeMs > 0) pPulseStartedAt = xTaskGetTickCount();
 
     if (publishEvents) {
         (void)PublishEvent(newState ? EventCodes::SetOn : EventCodes::SetOff, newState ? 1 : 0);

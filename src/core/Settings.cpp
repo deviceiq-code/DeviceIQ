@@ -1016,7 +1016,12 @@ bool settings::Save(const String& configfilename) const noexcept {
                     const relay& relayComponent = static_cast<const relay&>(*source);
                     setup["Type"] = relayComponent.Type() == relay::RelayTypes::NormallyOpen ? "NormallyOpen" : "NormallyClosed";
                     setup["DriveMode"] = relayComponent.DriveMode() == relay::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
-                    properties["State"] = source->IsPublic() ? relayComponent.State() : false;
+                    if (relayComponent.PulseTime() > 0) setup["PulseTimeMs"] = relayComponent.PulseTime();
+                    // A momentary relay has no meaningful "on" at rest (Control()
+                    // always releases it), so it never seeds Properties.State - a
+                    // transient true caught mid-pulse would just be ignored again
+                    // by ParseRelayConfiguration() on the next install anyway.
+                    properties["State"] = (source->IsPublic() && relayComponent.PulseTime() == 0) ? relayComponent.State() : false;
                 } else if (source->Class() == component::Classes::Button) {
                     const button& buttonComponent = static_cast<const button&>(*source);
                     setup["ActiveLevel"] = buttonComponent.ActiveLevel() == button::ActiveLevels::High ? "High" : "Low";
