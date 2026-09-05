@@ -19,7 +19,8 @@ class button final : public component {
             Clicked,
             LongClicked,
             DoubleClicked,
-            TripleClicked
+            TripleClicked,
+            Changed
         };
 
         static constexpr uint32_t DEFAULT_DEBOUNCE_TIME_MS = 50;

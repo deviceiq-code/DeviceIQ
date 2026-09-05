@@ -128,7 +128,8 @@ const ComponentDescriptor* button::EventDescriptors(size_t& count) const noexcep
         {"Clicked", EventCodes::Clicked},
         {"LongClicked", EventCodes::LongClicked},
         {"DoubleClicked", EventCodes::DoubleClicked},
-        {"TripleClicked", EventCodes::TripleClicked}
+        {"TripleClicked", EventCodes::TripleClicked},
+        {"Changed", EventCodes::Changed}
     };
 
     count = sizeof(descriptors) / sizeof(descriptors[0]);
@@ -166,6 +167,7 @@ void button::ApplyState(bool pressed, TickType_t now) noexcept {
 
     pState.store(pressed, std::memory_order_relaxed);
     MarkStateChanged();
+    (void)PublishEvent(EventCodes::Changed, pressed ? 1 : 0);
 
     if (pressed) {
         if (pClickCount > 0 && Elapsed(pRawChangedAt, pLastReleasedAt, pMultiClickTicks)) {

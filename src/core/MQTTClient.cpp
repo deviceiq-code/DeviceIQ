@@ -34,6 +34,11 @@ bool mqttclient::Start() noexcept {
     pEventQueue = xQueueCreateStatic(EVENT_QUEUE_LENGTH, sizeof(ComponentEvent), pEventQueueStorage, &pEventQueueControl);
     if (pEventQueue == nullptr) return false;
 
+    pDiscoveryRemovalQueue = xQueueCreateStatic(
+        DISCOVERY_REMOVAL_QUEUE_LENGTH, sizeof(DiscoveryRemoval), pDiscoveryRemovalQueueStorage, &pDiscoveryRemovalQueueControl
+    );
+    if (pDiscoveryRemovalQueue == nullptr) return false;
+
     pClient.setServer(pBroker.c_str(), pPort);
     pClient.setCallback(MessageCallback);
     pClient.setKeepAlive(MQTT_KEEP_ALIVE_SECONDS);
@@ -55,6 +60,12 @@ bool mqttclient::Notify(const ComponentEvent& event) noexcept {
     if (xQueueSend(pEventQueue, &event, 0) == pdTRUE) return true;
     pDroppedEvents.fetch_add(1, std::memory_order_relaxed);
     return false;
+}
+
+bool mqttclient::RequestDiscoveryRemoval(component::Classes componentClass, int16_t id) noexcept {
+    if (!pEnabled || pDiscoveryRemovalQueue == nullptr) return false;
+    const DiscoveryRemoval removal{componentClass, id};
+    return xQueueSend(pDiscoveryRemovalQueue, &removal, 0) == pdTRUE;
 }
 
 void mqttclient::TaskEntry(void* parameter) {
@@ -92,6 +103,10 @@ void mqttclient::Task() {
             PublishAllStates();
         }
         ProcessEvents();
+        // Left queued (not discarded) while disconnected, unlike
+        // pEventQueue - a removal is still worth applying once back
+        // online, whereas a stale runtime event no longer is.
+        ProcessDiscoveryRemovals();
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -138,6 +153,13 @@ void mqttclient::ProcessEvents() {
     while (xQueueReceive(pEventQueue, &event, 0) == pdTRUE) ProcessEvent(event);
 }
 
+
+void mqttclient::ProcessDiscoveryRemovals() {
+    DiscoveryRemoval removal;
+    while (xQueueReceive(pDiscoveryRemovalQueue, &removal, 0) == pdTRUE) {
+        UnpublishDiscovery(removal.componentClass, removal.id);
+    }
+}
 
 void mqttclient::DiscardEvents() {
     ComponentEvent event;
@@ -298,6 +320,7 @@ void mqttclient::PublishButtonDiscovery(const component& item) {
     eventTypes.add("LongClicked");
     eventTypes.add("DoubleClicked");
     eventTypes.add("TripleClicked");
+    eventTypes.add("Changed");
     String eventPayload;
     if (serializeJson(eventDocument, eventPayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/event/" + eventUnique + "/config", eventPayload, true);
@@ -362,6 +385,36 @@ void mqttclient::PublishBlindsDiscovery(const component& item) {
     }
 }
 
+// Mirrors PublishRelayDiscovery/PublishButtonDiscovery/PublishThermometerDiscovery/
+// PublishBlindsDiscovery's topics exactly, empty payload instead of a real
+// config - Home Assistant's own protocol for forgetting a discovered entity.
+// The component is already gone by the time this runs (comp remove already
+// erased it from config.json), so there's no HasHumidity() to check for
+// Thermometer - clearing the humidity topic unconditionally is harmless
+// even for a component that never had one.
+void mqttclient::UnpublishDiscovery(component::Classes componentClass, int16_t id) {
+    if (!pDiscoveryEnabled) return;
+
+    switch (componentClass) {
+        case component::Classes::Relay:
+            (void)Publish(pDiscoveryPrefix + "/switch/" + UniqueID(id, "state") + "/config", "", true);
+            break;
+        case component::Classes::Button:
+            (void)Publish(pDiscoveryPrefix + "/binary_sensor/" + UniqueID(id, "state") + "/config", "", true);
+            (void)Publish(pDiscoveryPrefix + "/event/" + UniqueID(id, "event") + "/config", "", true);
+            break;
+        case component::Classes::Thermometer:
+            (void)Publish(pDiscoveryPrefix + "/sensor/" + UniqueID(id, "temperature") + "/config", "", true);
+            (void)Publish(pDiscoveryPrefix + "/sensor/" + UniqueID(id, "humidity") + "/config", "", true);
+            break;
+        case component::Classes::Blinds:
+            (void)Publish(pDiscoveryPrefix + "/cover/" + UniqueID(id, "cover") + "/config", "", true);
+            break;
+        default:
+            break;
+    }
+}
+
 void mqttclient::AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId) {
     document["name"] = item.Name();
     document["uniq_id"] = uniqueId;
@@ -406,7 +459,11 @@ String mqttclient::AvailabilityTopic() const {
 }
 
 String mqttclient::UniqueID(const component& item, const char* suffix) const {
-    return pDeviceID + "_" + String(item.ID()) + "_" + suffix;
+    return UniqueID(item.ID(), suffix);
+}
+
+String mqttclient::UniqueID(int16_t id, const char* suffix) const {
+    return pDeviceID + "_" + String(id) + "_" + suffix;
 }
 
 bool mqttclient::ValidTopicSegment(const String& value) noexcept {

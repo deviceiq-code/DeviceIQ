@@ -1145,7 +1145,7 @@ namespace {
     // through an actual instance.
     const char* const* ComponentEventNames(const String& componentClass, size_t& count) {
         static const char* const RelayEvents[] = {"SettingOn", "SettingOff", "SetOn", "SetOff", "Changed", "WriteFailed"};
-        static const char* const ButtonEvents[] = {"Pressed", "Released", "Clicked", "LongClicked", "DoubleClicked", "TripleClicked"};
+        static const char* const ButtonEvents[] = {"Pressed", "Released", "Clicked", "LongClicked", "DoubleClicked", "TripleClicked", "Changed"};
         static const char* const BlindsEvents[] = {"Changed", "Opening", "Closing", "Stopped", "Opened", "Closed", "Fault"};
         static const char* const ThermometerEvents[] = {"TemperatureChanged", "HumidityChanged", "Changed", "ReadFailed", "ReadRecovered"};
 
@@ -1615,6 +1615,15 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
             return false;
         }
 
+        // Captured before the entry is erased below - needed afterward to
+        // tell Home Assistant which discovery topics to forget.
+        const String removedClassName = ComponentSetup(configured)["Class"] | "";
+        component::Classes removedClass = component::Classes::Base;
+        if (removedClassName.equalsIgnoreCase("Relay")) removedClass = component::Classes::Relay;
+        else if (removedClassName.equalsIgnoreCase("Button")) removedClass = component::Classes::Button;
+        else if (removedClassName.equalsIgnoreCase("Thermometer")) removedClass = component::Classes::Thermometer;
+        else if (removedClassName.equalsIgnoreCase("Blinds")) removedClass = component::Classes::Blinds;
+
         components.remove(String(configuredID));
 
         if (!ValidateCatalog(components)) {
@@ -1626,6 +1635,14 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
             output = "Error saving configuration.\r\n";
             return false;
         }
+
+        // Best-effort: the component keeps running (and keeps publishing
+        // state/discovery) until the pending restart actually happens, but
+        // Home Assistant should stop being told about it right away rather
+        // than only after the reboot's own fresh PublishDiscovery() pass -
+        // which would republish everything else but never clears what's
+        // no longer there.
+        (void)MQTTClient.RequestDiscoveryRemoval(removedClass, configuredID);
 
         output = "Component removed from configuration. Restart required. Use 'reboot' to apply changes.\r\n";
         return true;

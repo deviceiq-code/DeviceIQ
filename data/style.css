@@ -332,6 +332,12 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); back
     padding-right: 4px;
 }
 
+.hostname-chip {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+}
+
 .icon-button {
     width: 34px;
     height: 34px;
@@ -349,8 +355,6 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); back
 
 .icon-button svg { width: 17px; height: 17px; stroke: currentColor; }
 .icon-button:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-
-.icon-button.restart-button:hover { border-color: var(--error); color: var(--error); background: var(--error-soft); }
 
 main {
     max-width: 1040px;

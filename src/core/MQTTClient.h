@@ -22,9 +22,20 @@ class mqttclient final {
         [[nodiscard]] bool Connected() noexcept { return pClient.connected(); }
         [[nodiscard]] bool Notify(const ComponentEvent& event) noexcept;
         [[nodiscard]] uint32_t TakeDroppedEvents() noexcept { return pDroppedEvents.exchange(0, std::memory_order_relaxed); }
+        // Thread-safe, like Notify() - callable from whatever task removed the
+        // component (Telnet or the web server), never from the MQTT task
+        // itself. Queued rather than published inline because pClient (and
+        // every Publish*Discovery call) is only ever touched from Task().
+        [[nodiscard]] bool RequestDiscoveryRemoval(component::Classes componentClass, int16_t id) noexcept;
 
     private:
+        struct DiscoveryRemoval {
+            component::Classes componentClass;
+            int16_t id;
+        };
+
         static constexpr UBaseType_t EVENT_QUEUE_LENGTH = 32;
+        static constexpr UBaseType_t DISCOVERY_REMOVAL_QUEUE_LENGTH = 16;
         static constexpr uint32_t TASK_STACK_SIZE = 6144;
         static constexpr UBaseType_t TASK_PRIORITY = 2;
         static constexpr uint16_t MQTT_BUFFER_SIZE = 2048;
@@ -41,6 +52,14 @@ class mqttclient final {
         void ProcessEvents();
         void DiscardEvents();
         void ProcessEvent(const ComponentEvent& event);
+        void ProcessDiscoveryRemovals();
+        // Publishes an empty, retained payload to every discovery config
+        // topic a component of this class could have had - the MQTT
+        // discovery protocol's own way to tell Home Assistant to forget an
+        // entity. Safe to call for a component that never had discovery
+        // published (private Blinds member, or discovery was disabled at
+        // the time) - clearing a topic with nothing retained is a no-op.
+        void UnpublishDiscovery(component::Classes componentClass, int16_t id);
         void HandleMessage(const String& topic, const uint8_t* payload, size_t length);
         void PublishAvailability(const char* state);
         void PublishAllStates();
@@ -55,6 +74,7 @@ class mqttclient final {
         [[nodiscard]] String ComponentTopic(const component& item, const char* direction, const char* property) const;
         [[nodiscard]] String AvailabilityTopic() const;
         [[nodiscard]] String UniqueID(const component& item, const char* suffix) const;
+        [[nodiscard]] String UniqueID(int16_t id, const char* suffix) const;
         [[nodiscard]] static bool ValidTopicSegment(const String& value) noexcept;
         [[nodiscard]] static String DeviceIdentifier();
 
@@ -79,4 +99,8 @@ class mqttclient final {
         StaticQueue_t pEventQueueControl{};
         uint8_t pEventQueueStorage[EVENT_QUEUE_LENGTH * sizeof(ComponentEvent)]{};
         QueueHandle_t pEventQueue = nullptr;
+
+        StaticQueue_t pDiscoveryRemovalQueueControl{};
+        uint8_t pDiscoveryRemovalQueueStorage[DISCOVERY_REMOVAL_QUEUE_LENGTH * sizeof(DiscoveryRemoval)]{};
+        QueueHandle_t pDiscoveryRemovalQueue = nullptr;
 };

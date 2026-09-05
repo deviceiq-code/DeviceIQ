@@ -49,10 +49,8 @@
                 <p>Live component status and controls</p>
             </div>
             <div class="app-header-actions">
+                <span class="hostname-chip" id="topbar-hostname"></span>
                 <span class="user-chip" id="whoami"></span>
-                <button class="icon-button restart-button" id="restart-button" title="Restart device">
-                    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                </button>
                 <button class="icon-button" id="logout-button" title="Sign out">
                     <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                 </button>
@@ -319,7 +317,9 @@
             window.location.replace("/");
             return;
         }
+        document.getElementById("topbar-hostname").textContent = data.hostname;
         document.getElementById("whoami").textContent = data.username + (data.admin ? " · admin" : "");
+        document.title = "DeviceIQ [" + data.hostname + "] - Dashboard";
         document.getElementById("sidebar-product").textContent = data.productFamily + " " + data.productName;
         document.getElementById("sidebar-version").textContent = "v" + data.softwareVersion;
         if (!data.admin) {
@@ -327,7 +327,6 @@
             document.getElementById("users-link").remove();
             document.getElementById("update-link").remove();
             document.getElementById("log-link").remove();
-            document.getElementById("restart-button").remove();
         } else if (!data.logFileEnabled) {
             document.getElementById("log-link").remove();
         }
@@ -337,13 +336,6 @@
         refresh();
         refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
     }).catch(function () { window.location.replace("/"); });
-
-    document.getElementById("restart-button").addEventListener("click", function () {
-        Notifications.confirm("Restart DeviceIQ now?", { confirmLabel: "Restart" }).then(function (confirmed) {
-            if (!confirmed) return;
-            Notifications.reboot();
-        });
-    });
 
     document.getElementById("add-component-button").addEventListener("click", function () {
         window.location.href = "/component.html";

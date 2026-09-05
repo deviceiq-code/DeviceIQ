@@ -44,6 +44,20 @@ namespace {
 
         json = std::move(compact);
     }
+
+    // RFC 1035 label grammar: starts and ends with a letter-or-digit,
+    // hyphens only in the middle, at most 63 octets. Collapses runs of
+    // "-" and trims from both ends rather than rejecting the label
+    // outright, matching how the rest of this file's sanitizers favor
+    // "fix it up" over "reset to default".
+    constexpr size_t MAX_HOSTNAME_LABEL_LENGTH = 63;
+
+    void SanitizeHostnameLabel(String& label) {
+        while (label.indexOf("--") >= 0) label.replace("--", "-");
+        while (label.length() > 0 && label.charAt(0) == '-') label.remove(0, 1);
+        while (label.length() > 0 && label.charAt(label.length() - 1) == '-') label.remove(label.length() - 1);
+        if (label.length() > MAX_HOSTNAME_LABEL_LENGTH) label.remove(MAX_HOSTNAME_LABEL_LENGTH);
+    }
 }
 
 settings::settings() noexcept
@@ -68,20 +82,44 @@ void settings::network::Hostname(String value) noexcept {
     value.toLowerCase();
     value.replace(" ", "-");
 
+    // RFC 952/1123 hostname syntax: a dot-separated sequence of RFC 1035
+    // labels. The DHCP Host Name option (RFC 2132) explicitly allows this
+    // dot-qualified form, not just a single label, so '.' is accepted here
+    // alongside the label alphabet - each label between dots is then
+    // sanitized on its own via SanitizeHostnameLabel().
+    constexpr size_t MAX_HOSTNAME_LENGTH = 255;
+
     for (size_t i = 0; i < value.length(); ++i) {
         char c = value.charAt(i);
-        bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || (c == '-');
+        bool ok = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '.';
         if (!ok) value.setCharAt(i, '-');
     }
 
-    while (value.indexOf("--") >= 0) value.replace("--", "-");
-    while (value.length() > 0 && value.charAt(0) == '-') value.remove(0, 1);
-    while (value.length() > 0 && value.charAt(value.length() - 1) == '-') value.remove(value.length() - 1);
+    String assembled;
+    int start = 0;
+    while (start <= static_cast<int>(value.length())) {
+        const int dot = value.indexOf('.', start);
+        const int end = dot < 0 ? static_cast<int>(value.length()) : dot;
+        String label = value.substring(start, end);
+        SanitizeHostnameLabel(label);
+        if (label.length() > 0) {
+            if (assembled.length() > 0) assembled += '.';
+            assembled += label;
+        }
+        if (dot < 0) break;
+        start = dot + 1;
+    }
 
-    if (value.length() > 63) value.remove(63);
-    if (value.length() == 0) value = "dev";
+    if (assembled.length() > MAX_HOSTNAME_LENGTH) assembled.remove(MAX_HOSTNAME_LENGTH);
+    // Truncation above can only land mid-label or right on a separator;
+    // either way, strip whatever now dangles at the end so the result
+    // always ends in a letter-or-digit, per RFC 1035.
+    while (assembled.length() > 0 && (assembled.charAt(assembled.length() - 1) == '.' || assembled.charAt(assembled.length() - 1) == '-')) {
+        assembled.remove(assembled.length() - 1);
+    }
+    if (assembled.length() == 0) assembled = "dev";
 
-    pHostname = std::move(value);
+    pHostname = std::move(assembled);
 }
 
 void settings::sanitizeIpString(String& s) noexcept {

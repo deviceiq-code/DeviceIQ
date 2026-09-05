@@ -1278,8 +1278,12 @@ void httpserver::HandleSessionGet(WebServer& server) {
     server.send(
         200, "application/json",
         "{\"authenticated\":true,\"username\":\"" + JsonEscaped(session->username) + "\",\"admin\":" + (session->admin ? "true" : "false") +
-            ",\"productFamily\":\"" + JsonEscaped(Version::ProductFamily) + "\",\"productName\":\"" + JsonEscaped(Version::ProductName) +
-            "\",\"softwareVersion\":\"" + JsonEscaped(Version::Software::Info()) + "\",\"logFileEnabled\":" + (logFileEnabled ? "true" : "false") + "}"
+            ",\"hostname\":\"" + JsonEscaped(Settings.Network.Hostname()) + "\",\"productFamily\":\"" + JsonEscaped(Version::ProductFamily) + "\",\"productName\":\"" + JsonEscaped(Version::ProductName) +
+            "\",\"softwareVersion\":\"" + JsonEscaped(Version::Software::Info()) + "\",\"logFileEnabled\":" + (logFileEnabled ? "true" : "false") +
+            // Lets the client warn the user (and log out client-side) ahead of
+            // the same idle timeout FindSession() already enforces server-side -
+            // 0 means disabled, same convention as everywhere else this value flows.
+            ",\"idleTimeoutMs\":" + String(IdleTimeout()) + "}"
     );
 }
 

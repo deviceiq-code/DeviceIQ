@@ -187,6 +187,116 @@
         }).catch(function () {});
     }
 
+    // --- Idle session watchdog --------------------------------------------
+    // Mirrors the Telnet CLI's idle-timeout behavior (TelnetServer.cpp's
+    // PollSessions(), which closes the connection and announces why). HTTP
+    // has no connection to close, so the server just lets the cookie expire
+    // silently (HTTPServer.cpp's FindSession()) and the user only finds out
+    // on their next click, via a 302 back to the login page. This makes that
+    // moment visible instead: it warns shortly before the same deadline and,
+    // if there's still no response, logs out client-side rather than leaving
+    // a "logged in" page sitting on a session the server has already dropped.
+    //
+    // Tracked independently of any polling this page does (Notifications.start()
+    // included) - only real input events count as activity, so a background
+    // poll can't keep a session "alive" while the person is actually away.
+    const IDLE_ACTIVITY_EVENTS = ["mousedown", "mousemove", "keydown", "wheel", "touchstart"];
+    const IDLE_CHECK_INTERVAL_MS = 1000;
+    const IDLE_MIN_WARNING_MS = 10000;
+    const IDLE_MAX_WARNING_MS = 60000;
+
+    let idleTimeoutMs = 0;
+    let idleWarningMs = 0;
+    let idleLastActivityAt = 0;
+    let idleCheckTimer = null;
+    let idleOverlay = null;
+    let idleWarningShown = false;
+
+    function ensureIdleOverlay() {
+        if (idleOverlay) return idleOverlay;
+        idleOverlay = document.createElement("div");
+        idleOverlay.className = "modal-overlay";
+        idleOverlay.innerHTML =
+            '<div class="modal-box">' +
+                '<div class="modal-message"></div>' +
+                '<div class="modal-actions">' +
+                    '<button data-role="stay">Stay signed in</button>' +
+                '</div>' +
+            '</div>';
+        document.body.appendChild(idleOverlay);
+        idleOverlay.querySelector('[data-role="stay"]').addEventListener("click", function () {
+            idleMarkActivity();
+        });
+        return idleOverlay;
+    }
+
+    function hideIdleWarning() {
+        if (idleOverlay) idleOverlay.classList.remove("visible");
+        idleWarningShown = false;
+    }
+
+    function showIdleWarning(remainingMs) {
+        const overlay = ensureIdleOverlay();
+        const seconds = Math.max(1, Math.ceil(remainingMs / 1000));
+        overlay.querySelector(".modal-message").textContent =
+            "You've been inactive for a while - this session will end in " + seconds + "s.";
+        overlay.classList.add("visible");
+        idleWarningShown = true;
+    }
+
+    function idleMarkActivity() {
+        idleLastActivityAt = Date.now();
+        if (idleWarningShown) hideIdleWarning();
+    }
+
+    function expireIdleSession() {
+        stopIdleWatchdog();
+        // keepalive so the request survives the navigation that follows -
+        // same reasoning as Notifications.reboot() below.
+        fetch("/api/logout", { method: "POST", keepalive: true }).catch(function () {});
+        window.location.href = "/";
+    }
+
+    function checkIdle() {
+        const remaining = idleTimeoutMs - (Date.now() - idleLastActivityAt);
+        if (remaining <= 0) {
+            expireIdleSession();
+        } else if (remaining <= idleWarningMs) {
+            showIdleWarning(remaining);
+        } else if (idleWarningShown) {
+            hideIdleWarning();
+        }
+    }
+
+    function stopIdleWatchdog() {
+        if (idleCheckTimer) clearInterval(idleCheckTimer);
+        idleCheckTimer = null;
+        IDLE_ACTIVITY_EVENTS.forEach(function (name) { document.removeEventListener(name, idleMarkActivity); });
+        hideIdleWarning();
+    }
+
+    // valueMs is the server's configured Web Server idle timeout
+    // (Settings.WebServer.IdleTimeoutMs, from GET /api/session). 0 disables
+    // it, same convention as the server side.
+    function startIdleWatchdog(valueMs) {
+        stopIdleWatchdog();
+        idleTimeoutMs = valueMs | 0;
+        if (idleTimeoutMs <= 0) return;
+
+        idleWarningMs = Math.min(IDLE_MAX_WARNING_MS, Math.max(IDLE_MIN_WARNING_MS, Math.floor(idleTimeoutMs * 0.2)));
+        idleLastActivityAt = Date.now();
+        IDLE_ACTIVITY_EVENTS.forEach(function (name) { document.addEventListener(name, idleMarkActivity, { passive: true }); });
+        idleCheckTimer = setInterval(checkIdle, IDLE_CHECK_INTERVAL_MS);
+    }
+
+    // Every authenticated page includes this script, so this is the one
+    // place that needs to know the timeout - no per-page wiring required.
+    fetch("/api/session").then(function (response) {
+        return response.ok ? response.json() : null;
+    }).then(function (session) {
+        if (session && session.authenticated) startIdleWatchdog(session.idleTimeoutMs);
+    }).catch(function () {});
+
     window.Notifications = {
         show: show,
         confirm: confirmDialog,
