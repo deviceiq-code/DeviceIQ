@@ -367,6 +367,7 @@
     const sectionReaders = {};
     let activeTab = TABS[0].id;
     let dirty = false;
+    let currentHostname = "";
 
     function markDirty() {
         dirty = true;
@@ -657,7 +658,7 @@
         const exportRow = settingsRow("Export", "Download the current config.json, including credentials.");
         const exportLink = document.createElement("a");
         exportLink.href = "/api/config/export";
-        exportLink.setAttribute("download", "config.json");
+        exportLink.setAttribute("download", "config-" + currentHostname + ".json");
         exportLink.className = "control-button";
         exportLink.textContent = "Download";
         exportRow.control.appendChild(exportLink);
@@ -901,6 +902,7 @@
             window.location.replace("/dashboard.html");
             return Promise.reject();
         }
+        currentHostname = session.hostname;
         document.getElementById("topbar-hostname").textContent = session.hostname;
         document.getElementById("whoami").textContent = session.username + " · admin";
         document.title = "DeviceIQ [" + session.hostname + "] - Setup";
