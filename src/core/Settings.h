@@ -125,43 +125,6 @@ class settings {
                 [[nodiscard]] uint16_t FallbackAPRetention() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pFallbackAPRetention : 0; }
                 void FallbackAPRetention(uint16_t value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pFallbackAPRetention = value; }
         } Network;
-        class update {
-            private:
-                SemaphoreHandle_t pMutex;
-                String pManifestURL;
-                bool pAllowInsecure{};
-                bool pEnableLANOTA{};
-                String pPasswordLANOTA;
-                uint16_t pCheckInterval{};
-                bool pAutoReboot{};
-                bool pDebug{};
-                bool pCheckAtStartup{};
-            public:
-                explicit update(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
-                [[nodiscard]] String ManifestURL() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pManifestURL : String(); }
-                void ManifestURL(String value) noexcept;
-
-                [[nodiscard]] bool AllowInsecure() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAllowInsecure : false; }
-                void AllowInsecure(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAllowInsecure = value; }
-
-                [[nodiscard]] bool EnableLANOTA() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnableLANOTA : false; }
-                void EnableLANOTA(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnableLANOTA = value; }
-
-                [[nodiscard]] String PasswordLANOTA() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPasswordLANOTA : String(); }
-                void PasswordLANOTA(String value) noexcept;
-
-                [[nodiscard]] uint16_t CheckInterval() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pCheckInterval : 0; }
-                void CheckInterval(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pCheckInterval = value; }
-
-                [[nodiscard]] bool AutoReboot() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAutoReboot : false; }
-                void AutoReboot(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAutoReboot = value; }
-
-                [[nodiscard]] bool Debug() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pDebug : false; }
-                void Debug(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pDebug = value; }
-
-                [[nodiscard]] bool CheckAtStartup() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pCheckAtStartup : false; }
-                void CheckAtStartup(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pCheckAtStartup = value; }
-        } Update;
         class general {
             private:
                 SemaphoreHandle_t pMutex;
@@ -183,27 +146,6 @@ class settings {
                 [[nodiscard]] uint16_t SaveStatePooling() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pSaveStatePooling : 0; }
                 void SaveStatePooling(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pSaveStatePooling = (value <= 1) ? Defaults.General.SaveStatePooling : value; }
         } General;
-        class orchestrator {
-            private:
-                SemaphoreHandle_t pMutex;
-                bool pAssigned{};
-                String pServerID;
-                IPAddress pIP_Address{0,0,0,0};
-                uint16_t pPort{};
-            public:
-                explicit orchestrator(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
-                [[nodiscard]] bool Assigned() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pAssigned : false; }
-                void Assigned(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pAssigned = value; }
-
-                [[nodiscard]] String ServerID() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pServerID : String(); }
-                void ServerID(String value) noexcept;
-
-                [[nodiscard]] IPAddress IP_Address() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pIP_Address : IPAddress(0,0,0,0); }
-                void IP_Address(String value) noexcept;
-
-                [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
-                void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.Orchestrator.Port : value; }
-        } Orchestrator;
         class webserver {
             private:
                 SemaphoreHandle_t pMutex;

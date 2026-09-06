@@ -21,8 +21,8 @@ DeviceIQ is home/building automation firmware for the ESP32-S3, built with **Pla
 ```text
 DeviceIQ/
 ├── platformio.ini
-├── data/
-│   └── config.json        # provisioned configuration, uploaded to LittleFS
+├── data/                   # web UI assets, uploaded to LittleFS - no config.json here
+│                           # on purpose, see "Configuration" below
 └── src/
     ├── main.cpp
     ├── core/               # app lifecycle, settings, network, telnet server,
@@ -41,6 +41,8 @@ On boot, DeviceIQ reads `/config.json` from LittleFS. It holds:
 
 - Logging, network, MQTT, Telnet, and user account settings
 - The component catalog: for each component, a `Setup` section (class, bus, address, wiring), a `Properties` section (seed values used only until runtime state exists), and an `Events` section (automation bindings)
+
+There's no `config.json` committed to `data/`, and that's deliberate: it would get flashed as-is to every device's LittleFS on `uploadfs`, baking in whatever Wi-Fi/MQTT credentials and component catalog it last held. Instead, a device with no `config.json` (first boot, or after `Restore Factory Defaults`) generates one on its own from the built-in defaults, including a fresh `admin`/`user` account pair - see [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) for the full format and every default value.
 
 Component runtime state that changes frequently (a relay's on/off state, a blind's position) is persisted separately to `/state.json`, written every few seconds while something has changed. This keeps the credential-bearing `config.json` untouched by routine state changes and out of the write path most of the time. On boot, `state.json` — when present — overrides the seed `Properties` values from `config.json` per component ID; if it's missing (first boot, or after being lost), the seed values apply.
 
@@ -85,13 +87,18 @@ Connect to the configured Telnet port (default `23`) and run `help` for the full
 
 ## Building
 
-Requires [PlatformIO](https://platformio.org/).
+Requires [PlatformIO](https://platformio.org/). `platformio.ini` defines two environments - pick one with `-e` (omitting it builds both):
 
 ```sh
-pio run                        # build
-pio run --target upload        # flash the firmware
-pio run --target uploadfs      # upload data/ (config.json) to LittleFS
-pio device monitor             # serial monitor
+pio run -e esp32dev                        # build, ESP32-S3 N16R8
+pio run -e esp32dev --target upload        # flash the firmware
+pio run -e esp32dev --target uploadfs      # upload data/ (web UI assets) to LittleFS
+pio device monitor -e esp32dev             # serial monitor
+
+pio run -e esp32-wroom32                   # same, for a plain ESP32-WROOM-32
 ```
 
-Target board: ESP32-S3 N16R8 (16 MB flash, octal PSRAM). See `platformio.ini` for the exact board definition and library dependencies.
+- **`esp32dev`** - ESP32-S3 N16R8 (16 MB flash, octal PSRAM). Combined-package OTA upload via the Web UI needs the PSRAM this board has.
+- **`esp32-wroom32`** - plain ESP32-WROOM-32 (4 MB flash, no PSRAM). Same firmware, no code differences - only `platformio.ini` changes (board id, partition table). Reflash via cable only; the Web UI's Update page is hidden on this board since its upload buffer needs PSRAM this board doesn't have.
+
+See `platformio.ini` for the exact board definitions and library dependencies.

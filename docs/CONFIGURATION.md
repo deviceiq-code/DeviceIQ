@@ -1,10 +1,10 @@
 # Formato de configuração (`config.json`)
 
-Este documento descreve o formato do arquivo `data/config.json`, lido pelo firmware a partir de `/config.json` no LittleFS na inicialização (`settings::Load()`, [Settings.cpp](../src/core/Settings.cpp)). O formato atual — o que está em uso hoje no repositório — é identificado pelo campo `ComponentSchemaVersion: 1`.
+Este documento descreve o formato do `config.json`, lido pelo firmware a partir de `/config.json` no LittleFS na inicialização (`settings::Load()`, [Settings.cpp](../src/core/Settings.cpp)). Esse arquivo **não é versionado em `data/`** de propósito — cada device gera o seu sozinho a partir dos defaults no primeiro boot (ver [Defaults e auto-correção](#defaults-e-auto-correção)), em vez de todo device sair de fábrica com as mesmas credenciais de Wi-Fi/MQTT gravadas. O formato atual é identificado pelo campo `ComponentSchemaVersion: 1`.
 
 O arquivo é um único objeto JSON com duas partes bem distintas:
 
-- **Seções de sistema** (`Log`, `Network`, `Update`, `General`, `Orchestrator`, `Web Server`, `Webhooks`, `MQTT`, `Telnet`, `Users`): configuração de infraestrutura do dispositivo. Toleram campos ausentes ou inválidos — nesse caso, cada campo assume seu próprio *default* (ver [Defaults e auto-correção](#defaults-e-auto-correção) abaixo).
+- **Seções de sistema** (`Log`, `Network`, `General`, `Web Server`, `Webhooks`, `MQTT`, `Telnet`, `Users`): configuração de infraestrutura do dispositivo. Toleram campos ausentes ou inválidos — nesse caso, cada campo assume seu próprio *default* (ver [Defaults e auto-correção](#defaults-e-auto-correção) abaixo).
 - **Catálogo de componentes** (`ComponentSchemaVersion` + `Components`): descreve o hardware ligado ao dispositivo (relés, botões, cortinas, termômetros) e a automação declarativa entre eles. Ao contrário das seções de sistema, este catálogo é **validado como um todo**: se algo estiver fora do formato esperado, ou se `ComponentSchemaVersion` não bater com a versão que o firmware entende, a instalação dos componentes falha por inteiro (`settings::InstallComponents()`, [ComponentConfig.cpp](../src/core/ComponentConfig.cpp)) e nenhum componente é criado.
 
 ---
@@ -43,19 +43,6 @@ Cada seção abaixo é um objeto opcional dentro da raiz do JSON. Se a seção i
 | `Fallback AP Password` | string | `"DeviceIQ-Setup"` | Vazio é aceito (mantém vazio); qualquer outro valor fora de 8–63 chars ASCII imprimíveis recai no **default** (não fica vazio, pois o AP de recuperação precisa continuar acessível). |
 | `Fallback AP Retention` | inteiro (s) | `300` | Tempo que o AP de recuperação fica ativo. |
 
-### `Update`
-
-| Campo | Tipo | Default | Observações |
-|---|---|---|---|
-| `Manifest URL` | string | `"https://server.dts-network.com:8081/update-dpk.json"` | Precisa começar com `http://`/`https://`, 10–200 chars, só ASCII imprimível; inválida **fica vazia** (atualização fica efetivamente desativada, não volta ao servidor default). |
-| `Allow Insecure` | bool | `true` | Permite TLS sem verificação de certificado. |
-| `Enable LAN OTA` | bool | `false` | |
-| `Password LAN OTA` | string | `""` | 6–64 chars ASCII imprimível; inválida fica vazia. |
-| `Check Interval` | inteiro (s) | `3600` | |
-| `Auto Reboot` | bool | `true` | Reinicia automaticamente após aplicar uma atualização. |
-| `Debug` | bool | `false` | |
-| `Check At Startup` | bool | `true` | |
-
 ### `General`
 
 | Campo | Tipo | Default | Observações |
@@ -64,15 +51,6 @@ Cada seção abaixo é um objeto opcional dentro da raiz do JSON. Se a seção i
 | `NTP Server` | string | `"pool.ntp.org"` | 3–128 chars, apenas `[a-z0-9.-]`, sem espaços; qualquer valor inválido (ou vazio) recai em `"pool.ntp.org"`. |
 | `Time Zone` | inteiro (h) | `-3` | Fixado (`constrain`) entre `-12` e `14`. |
 | `Save State Pooling` | inteiro (s) | `20` | Intervalo de gravação de `state.json`. Valores `<= 1` recaem no default. |
-
-### `Orchestrator`
-
-| Campo | Tipo | Default | Observações |
-|---|---|---|---|
-| `Assigned` | bool | `false` | Indica se o dispositivo foi atribuído a um orquestrador central. |
-| `Server ID` | string | `""` | Precisa ter exatamente 15 chars alfanuméricos (é normalizado para maiúsculas); qualquer outro valor fica vazio. |
-| `IP Address` | string | `"0.0.0.0"` | Mesma validação de IP das demais. |
-| `Port` | inteiro | `30030` | `0` recai no default. |
 
 ### `Web Server`
 
@@ -264,7 +242,7 @@ O firmware nunca falha ao carregar por causa de um campo de sistema ausente ou i
 Além disso, cada *setter* de `settings` (em [Settings.cpp](../src/core/Settings.cpp)) aplica sua própria sanitização/validação sobre o valor já lido — é aqui que um valor presente, mas **semanticamente inválido**, é tratado. O comportamento não é uniforme, e a distinção importa para quem provisiona um `config.json` manualmente:
 
 - **Recai no default** (`Defaults.*`): portas (`0` → porta default), contagens/limites (`Max Sessions`, `Save State Pooling`, `Connection Timeout`, intervalos de reconexão), `NTP Server`, `Discovery Prefix`, `Netmask`, `Fallback AP Password` (quando não vazio e inválido).
-- **Fica vazio/desativado**, em vez de usar o default — para não mascarar silenciosamente uma credencial ou endpoint mal configurado: `Passphrase` do Wi-Fi, `Manifest URL` de atualização, `Password LAN OTA`, `Server ID` do orquestrador, `Token` de Webhooks (o que também força `Webhooks.Enabled = false`), `Broker`/`User`/`Password` do MQTT.
+- **Fica vazio/desativado**, em vez de usar o default — para não mascarar silenciosamente uma credencial ou endpoint mal configurado: `Passphrase` do Wi-Fi, `Token` de Webhooks (o que também força `Webhooks.Enabled = false`), `Broker`/`User`/`Password` do MQTT.
 - **`Idle Timeout` (Web/Telnet)**: `0` é um valor válido (desativa o timeout), não recai em default.
 
 O catálogo de componentes (`Components`) não segue esse modelo de "cada campo com seu default": campos opcionais de `Setup`/`Properties` têm defaults pontuais (documentados nas tabelas da seção 2), mas a estrutura como um todo — chaves válidas, `ComponentSchemaVersion`, unicidade de nome/endereço, referências de `Blinds` — é validada atomicamente. Um erro em qualquer componente aborta a instalação de todos.

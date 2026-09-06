@@ -64,9 +64,7 @@ settings::settings() noexcept
     : pMutex(xSemaphoreCreateRecursiveMutexStatic(&pMutexStorage)),
       Log(pMutex),
       Network(pMutex),
-      Update(pMutex),
       General(pMutex),
-      Orchestrator(pMutex),
       WebServer(pMutex),
       Webhooks(pMutex),
       TelnetServer(pMutex),
@@ -134,30 +132,6 @@ void settings::sanitizeIpString(String& s) noexcept {
 }
 
 void settings::network::IP_Address(String value) noexcept {
-    Lock lock(pMutex);
-    if (!lock.IsLocked()) return;
-    sanitizeIpString(value);
-
-    if (value.length() == 0) {
-        pIP_Address = IPAddress(0,0,0,0);
-        return;
-    }
-
-    IPAddress parsed;
-    if (!parsed.fromString(value)) {
-        pIP_Address = IPAddress(0,0,0,0);
-        return;
-    }
-
-    if (parsed[0] == 255 && parsed[1] == 255 && parsed[2] == 255 && parsed[3] == 255) {
-        pIP_Address = IPAddress(0,0,0,0);
-        return;
-    }
-
-    pIP_Address = parsed;
-}
-
-void settings::orchestrator::IP_Address(String value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
     sanitizeIpString(value);
@@ -338,59 +312,6 @@ void settings::network::FallbackAPPassword(String value) noexcept {
     pFallbackAPPassword = Defaults.Network.FallbackAPPassword;
 }
 
-void settings::update::ManifestURL(String value) noexcept {
-    Lock lock(pMutex);
-    if (!lock.IsLocked()) return;
-    value.trim();
-    value.toLowerCase();
-
-    constexpr size_t MIN_URL_LEN = 10;
-    constexpr size_t MAX_URL_LEN = 200;
-
-    if (value.length() < MIN_URL_LEN || value.length() > MAX_URL_LEN) {
-        pManifestURL = String();
-        return;
-    }
-
-    if (!value.startsWith("http://") && !value.startsWith("https://")) {
-        pManifestURL = String();
-        return;
-    }
-    for (size_t i = 0; i < value.length(); ++i) {
-        unsigned char c = static_cast<unsigned char>(value[i]);
-        if (c <= 0x20 || c >= 0x7F) {
-            pManifestURL = String();
-            return;
-        }
-    }
-
-    pManifestURL = std::move(value);
-}
-
-void settings::update::PasswordLANOTA(String value) noexcept {
-    Lock lock(pMutex);
-    if (!lock.IsLocked()) return;
-    value.trim();
-
-    constexpr size_t MIN_LEN = 6;
-    constexpr size_t MAX_LEN = 64;
-
-    if (value.length() < MIN_LEN || value.length() > MAX_LEN) {
-        pPasswordLANOTA = String();
-        return;
-    }
-
-    for (size_t i = 0; i < value.length(); ++i) {
-        unsigned char c = static_cast<unsigned char>(value[i]);
-        if (c < 0x20 || c > 0x7E) {
-            pPasswordLANOTA = String();
-            return;
-        }
-    }
-
-    pPasswordLANOTA = std::move(value);
-}
-
 void settings::general::NTPServer(String value) noexcept {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return;
@@ -425,30 +346,6 @@ void settings::general::NTPServer(String value) noexcept {
     }
 
     pNTPServer = std::move(value);
-}
-
-void settings::orchestrator::ServerID(String value) noexcept {
-    Lock lock(pMutex);
-    if (!lock.IsLocked()) return;
-    value.trim();
-    value.toUpperCase();
-
-    constexpr size_t REQUIRED_LEN = 15;
-    if (value.length() != REQUIRED_LEN) {
-        pServerID = String();
-        return;
-    }
-
-    for (size_t i = 0; i < value.length(); ++i) {
-        char c = value.charAt(i);
-        bool ok = (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-        if (!ok) {
-            pServerID = String();
-            return;
-        }
-    }
-
-    pServerID = std::move(value);
 }
 
 void settings::webhooks::Token(String value) noexcept {
@@ -613,27 +510,11 @@ void settings::LoadDefaults() {
     Network.FallbackAPPassword(Defaults.Network.FallbackAPPassword);
     Network.FallbackAPRetention(Defaults.Network.FallbackAPRetention);
 
-    // Update
-    Update.ManifestURL(Defaults.Update.ManifestURL);
-    Update.AllowInsecure(Defaults.Update.AllowInsecure);
-    Update.EnableLANOTA(Defaults.Update.EnableLANOTA);
-    Update.PasswordLANOTA(Defaults.Update.PasswordLANOTA);
-    Update.CheckInterval(Defaults.Update.CheckInterval);
-    Update.AutoReboot(Defaults.Update.AutoReboot);
-    Update.Debug(Defaults.Update.Debug);
-    Update.CheckAtStartup(Defaults.Update.CheckAtStartup);
-
     // General
     General.NTPUpdate(Defaults.General.NTPUpdate);
     General.NTPServer(Defaults.General.NTPServer);
     General.TimeZone(Defaults.General.TimeZone);
     General.SaveStatePooling(Defaults.General.SaveStatePooling);
-
-    // Orchestrator
-    Orchestrator.Assigned(Defaults.Orchestrator.Assigned);
-    Orchestrator.ServerID(Defaults.Orchestrator.ServerID);
-    Orchestrator.IP_Address(Defaults.Orchestrator.IP_Address);
-    Orchestrator.Port(Defaults.Orchestrator.Port);
 
     // WebServer
     WebServer.Port(Defaults.WebServer.Port);
@@ -746,19 +627,6 @@ bool settings::Load(const String& configfilename) noexcept {
             Network.FallbackAPRetention((uint16_t)(net["Fallback AP Retention"] | Defaults.Network.FallbackAPRetention));
         }
 
-        // Update
-        if (root["Update"].is<JsonObjectConst>()) {
-            JsonObjectConst up = root["Update"].as<JsonObjectConst>();
-            Update.ManifestURL(String(up["Manifest URL"] | Defaults.Update.ManifestURL));
-            Update.AllowInsecure((bool)(up["Allow Insecure"] | Defaults.Update.AllowInsecure));
-            Update.EnableLANOTA((bool)(up["Enable LAN OTA"] | Defaults.Update.EnableLANOTA));
-            Update.PasswordLANOTA(String(up["Password LAN OTA"] | Defaults.Update.PasswordLANOTA));
-            Update.CheckInterval((uint16_t)(up["Check Interval"] | Defaults.Update.CheckInterval));
-            Update.AutoReboot((bool)(up["Auto Reboot"] | Defaults.Update.AutoReboot));
-            Update.Debug((bool)(up["Debug"] | Defaults.Update.Debug));
-            Update.CheckAtStartup((bool)(up["Check At Startup"] | Defaults.Update.CheckAtStartup));
-        }
-
         // General
         if (root["General"].is<JsonObjectConst>()) {
             JsonObjectConst gen = root["General"].as<JsonObjectConst>();
@@ -766,15 +634,6 @@ bool settings::Load(const String& configfilename) noexcept {
             General.NTPServer(String(gen["NTP Server"] | Defaults.General.NTPServer));
             General.TimeZone((int)(gen["Time Zone"] | Defaults.General.TimeZone));
             General.SaveStatePooling((uint32_t)(gen["Save State Pooling"] | Defaults.General.SaveStatePooling));
-        }
-
-        // Orchestrator
-        if (root["Orchestrator"].is<JsonObjectConst>()) {
-            JsonObjectConst orch = root["Orchestrator"].as<JsonObjectConst>();
-            Orchestrator.Assigned((bool)(orch["Assigned"] | Defaults.Orchestrator.Assigned));
-            Orchestrator.ServerID(String(orch["Server ID"] | Defaults.Orchestrator.ServerID));
-            Orchestrator.IP_Address(String(orch["IP Address"] | Defaults.Orchestrator.IP_Address));
-            Orchestrator.Port((uint16_t)(orch["Port"] | Defaults.Orchestrator.Port));
         }
 
         // Web Server
@@ -913,19 +772,6 @@ bool settings::Save(const String& configfilename) const noexcept {
             net["Fallback AP Retention"] = Network.FallbackAPRetention();
         }
 
-        // Update
-        {
-            JsonObject up = doc["Update"].to<JsonObject>();
-            up["Manifest URL"] = Update.ManifestURL();
-            up["Allow Insecure"] = Update.AllowInsecure();
-            up["Enable LAN OTA"] = Update.EnableLANOTA();
-            up["Password LAN OTA"] = Update.PasswordLANOTA();
-            up["Check Interval"] = Update.CheckInterval();
-            up["Auto Reboot"] = Update.AutoReboot();
-            up["Debug"] = Update.Debug();
-            up["Check At Startup"] = Update.CheckAtStartup();
-        }
-
         // General
         {
             JsonObject gen = doc["General"].to<JsonObject>();
@@ -933,15 +779,6 @@ bool settings::Save(const String& configfilename) const noexcept {
             gen["NTP Server"] = General.NTPServer();
             gen["Time Zone"] = General.TimeZone();
             gen["Save State Pooling"] = General.SaveStatePooling();
-        }
-
-        // Orchestrator
-        {
-            JsonObject orch = doc["Orchestrator"].to<JsonObject>();
-            orch["Assigned"] = Orchestrator.Assigned();
-            orch["Server ID"] = Orchestrator.ServerID();
-            orch["IP Address"] = Orchestrator.IP_Address().toString();
-            orch["Port"] = Orchestrator.Port();
         }
 
         // Web Server

@@ -143,10 +143,11 @@
             }
         },
         {
-            id: "Hardware", title: "Hardware", desc: "ESP32-S3 chip and radio information.",
+            id: "Hardware", title: "Hardware", desc: "Chip and radio information.",
             rows: function (data) {
                 return [
                     row("Model", data.hardware.model),
+                    row("PSRAM", data.hardware.psramBytes > 0 ? formatBytes(data.hardware.psramBytes) : "Not available"),
                     row("Revision", String(data.hardware.revision)),
                     row("CPU Cores", String(data.hardware.cores)),
                     row("CPU Frequency", data.hardware.cpuFrequencyMHz + " MHz"),
@@ -286,8 +287,9 @@
             document.getElementById("users-link").remove();
             document.getElementById("update-link").remove();
             document.getElementById("log-link").remove();
-        } else if (!session.logFileEnabled) {
-            document.getElementById("log-link").remove();
+        } else {
+            if (!session.logFileEnabled) document.getElementById("log-link").remove();
+            if (!session.psramAvailable) document.getElementById("update-link").remove();
         }
 
         Notifications.start();

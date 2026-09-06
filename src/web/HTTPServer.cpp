@@ -667,6 +667,12 @@ namespace {
         hardware["model"] = ESP.getChipModel();
         hardware["revision"] = ESP.getChipRevision();
         hardware["cores"] = ESP.getChipCores();
+        // Visible to every viewer (not gated behind isAdmin like the
+        // heap/psram usage detail further below) - this is board identity,
+        // the same thing "Model" is, not a diagnostic. 0 means no PSRAM
+        // fitted (e.g. a plain ESP-WROOM-32), which is also why /update
+        // is hidden for this session - see HandleSessionGet/HandleUpdate.
+        hardware["psramBytes"] = ESP.getPsramSize();
         hardware["cpuFrequencyMHz"] = ESP.getCpuFreqMHz();
         hardware["crystalFrequencyMHz"] = getXtalFrequencyMhz();
         hardware["apbFrequencyMHz"] = getApbFrequency() / 1000000UL;
@@ -1056,7 +1062,23 @@ void httpserver::HandleSetup(WebServer& server) {
 }
 
 void httpserver::HandleUpdate(WebServer& server) {
-    ServeProtectedFile(server, "/update.html", "text/html", true);
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.sendHeader("Location", "/");
+        server.send(302, "text/plain", "Redirecting to /");
+        return;
+    }
+
+    // The combined firmware+filesystem upload buffer only exists on
+    // PSRAM-equipped boards (HandleOTAUpload, MAX_OTA_UPLOAD_BYTES) -
+    // nothing to show on a board without it (e.g. a plain ESP-WROOM-32).
+    if (!session->admin || ESP.getPsramSize() == 0) {
+        server.sendHeader("Location", "/dashboard.html");
+        server.send(302, "text/plain", "Redirecting to /dashboard.html");
+        return;
+    }
+
+    ServeFile(server, "/update.html", "text/html");
 }
 
 void httpserver::HandleUsers(WebServer& server) {
@@ -1283,7 +1305,11 @@ void httpserver::HandleSessionGet(WebServer& server) {
             // Lets the client warn the user (and log out client-side) ahead of
             // the same idle timeout FindSession() already enforces server-side -
             // 0 means disabled, same convention as everywhere else this value flows.
-            ",\"idleTimeoutMs\":" + String(IdleTimeout()) + "}"
+            ",\"idleTimeoutMs\":" + String(IdleTimeout()) +
+            // Lets the sidebar hide the Update link on a board with no PSRAM
+            // (e.g. a plain ESP-WROOM-32) - HandleOTAUpload's combined-package
+            // buffer only exists on PSRAM, see MAX_OTA_UPLOAD_BYTES.
+            ",\"psramAvailable\":" + (ESP.getPsramSize() > 0 ? "true" : "false") + "}"
     );
 }
 

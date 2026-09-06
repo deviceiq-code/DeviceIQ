@@ -40,29 +40,12 @@ struct defaults {
         const char* FallbackAPPassword = "DeviceIQ-Setup";
         const uint16_t FallbackAPRetention = 300;
     } Network;
-    struct update {
-        const char* ManifestURL = "https://server.dts-network.com:8081/update-dpk.json";
-        const bool AllowInsecure = true;
-        const bool EnableLANOTA = false;
-        const char* PasswordLANOTA = "";
-        const uint16_t CheckInterval = 3600;
-        const bool AutoReboot = true;
-        const bool Debug = false;
-        const bool CheckAtStartup = true;
-    } Update;
     struct general {
         const uint16_t SaveStatePooling = 20;
         const bool NTPUpdate = true;
         const char* NTPServer = "pool.ntp.org";
         const int8_t TimeZone = -3;
     } General;
-    struct orchestrator {
-        const char* Provider = "Orchestrator";
-        const bool Assigned = false;
-        const char* ServerID = "";
-        const char* IP_Address = "";
-        const uint16_t Port = 30030;
-    } Orchestrator;
     struct webserver {
         const uint16_t Port = 80;
         const bool Enabled = true;

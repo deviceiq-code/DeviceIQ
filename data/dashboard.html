@@ -327,8 +327,9 @@
             document.getElementById("users-link").remove();
             document.getElementById("update-link").remove();
             document.getElementById("log-link").remove();
-        } else if (!data.logFileEnabled) {
-            document.getElementById("log-link").remove();
+        } else {
+            if (!data.logFileEnabled) document.getElementById("log-link").remove();
+            if (!data.psramAvailable) document.getElementById("update-link").remove();
         }
         isAdmin = data.admin;
         if (isAdmin) document.getElementById("add-component-button").hidden = false;
