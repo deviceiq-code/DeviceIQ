@@ -58,6 +58,21 @@
         </header>
 
         <main>
+            <div class="dashboard-toolbar">
+                <div class="view-toggle" id="view-toggle">
+                    <button type="button" class="view-toggle-btn" data-view="grid">Grid</button>
+                    <button type="button" class="view-toggle-btn" data-view="grouped">By Type</button>
+                </div>
+                <label class="refresh-select">
+                    Refresh
+                    <select id="refresh-interval-select">
+                        <option value="500">0.5s</option>
+                        <option value="1000">1s</option>
+                        <option value="3000">3s</option>
+                        <option value="5000">5s</option>
+                    </select>
+                </label>
+            </div>
             <div id="components"></div>
             <button class="fab" id="add-component-button" title="Add component" hidden>
                 <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -69,9 +84,30 @@
 <script src="/notifications.js"></script>
 <script>
 (function () {
-    const REFRESH_INTERVAL_MS = 3000;
+    const DEFAULT_REFRESH_INTERVAL_MS = 1000;
+    const VALID_REFRESH_INTERVALS_MS = [500, 1000, 3000, 5000];
+    const VIEW_COOKIE_NAME = "dashboardView";
+    const REFRESH_COOKIE_NAME = "dashboardRefreshMs";
+    const CLASS_ORDER = ["Relay", "Button", "Blinds", "Thermometer"];
     let isAdmin = false;
     let refreshTimer = null;
+    let lastComponents = [];
+
+    function getCookie(name) {
+        const match = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+        return match ? decodeURIComponent(match[1]) : null;
+    }
+
+    function setCookie(name, value) {
+        // 1 year, readable by this page's own JS only (no HttpOnly) - just a
+        // display preference, not something the server needs to see.
+        document.cookie = name + "=" + encodeURIComponent(value) + "; path=/; max-age=31536000; samesite=lax";
+    }
+
+    let viewMode = getCookie(VIEW_COOKIE_NAME) === "grouped" ? "grouped" : "grid";
+
+    const storedRefreshMs = parseInt(getCookie(REFRESH_COOKIE_NAME), 10);
+    let refreshIntervalMs = VALID_REFRESH_INTERVALS_MS.indexOf(storedRefreshMs) >= 0 ? storedRefreshMs : DEFAULT_REFRESH_INTERVAL_MS;
 
     // Same viewBox/stroke conventions as the sidebar icons.
     const COMPONENT_ICONS = {
@@ -283,7 +319,15 @@
         return card;
     }
 
+    function buildGrid(items) {
+        const grid = document.createElement("div");
+        grid.className = "comp-grid";
+        items.forEach(function (item) { grid.appendChild(renderCard(item)); });
+        return grid;
+    }
+
     function render(components) {
+        lastComponents = components;
         const container = document.getElementById("components");
         container.innerHTML = "";
 
@@ -292,10 +336,39 @@
             return;
         }
 
-        const grid = document.createElement("div");
-        grid.className = "comp-grid";
-        components.forEach(function (item) { grid.appendChild(renderCard(item)); });
-        container.appendChild(grid);
+        if (viewMode !== "grouped") {
+            container.appendChild(buildGrid(components));
+            return;
+        }
+
+        const classes = CLASS_ORDER.filter(function (className) {
+            return components.some(function (item) { return item.class === className; });
+        });
+        // Any class not in CLASS_ORDER still gets a group, just after the known ones.
+        components.forEach(function (item) {
+            if (classes.indexOf(item.class) < 0) classes.push(item.class);
+        });
+
+        classes.forEach(function (className) {
+            const items = components.filter(function (item) { return item.class === className; });
+            const group = document.createElement("div");
+            group.className = "comp-group";
+            const title = document.createElement("div");
+            title.className = "group-title";
+            title.textContent = className;
+            group.appendChild(title);
+            group.appendChild(buildGrid(items));
+            container.appendChild(group);
+        });
+    }
+
+    function setViewMode(mode) {
+        viewMode = mode;
+        setCookie(VIEW_COOKIE_NAME, mode);
+        document.querySelectorAll(".view-toggle-btn").forEach(function (button) {
+            button.classList.toggle("active", button.dataset.view === mode);
+        });
+        render(lastComponents);
     }
 
     function setProperty(id, property, value) {
@@ -310,6 +383,11 @@
         fetch("/api/components").then(function (response) { return response.json(); }).then(function (data) {
             render(data.components || []);
         }).catch(function () {});
+    }
+
+    function startRefreshTimer() {
+        if (refreshTimer) clearInterval(refreshTimer);
+        refreshTimer = setInterval(refresh, refreshIntervalMs);
     }
 
     fetch("/api/session").then(function (response) { return response.json(); }).then(function (data) {
@@ -335,8 +413,21 @@
         if (isAdmin) document.getElementById("add-component-button").hidden = false;
 
         refresh();
-        refreshTimer = setInterval(refresh, REFRESH_INTERVAL_MS);
+        startRefreshTimer();
     }).catch(function () { window.location.replace("/"); });
+
+    document.querySelectorAll(".view-toggle-btn").forEach(function (button) {
+        button.classList.toggle("active", button.dataset.view === viewMode);
+        button.addEventListener("click", function () { setViewMode(button.dataset.view); });
+    });
+
+    const refreshSelect = document.getElementById("refresh-interval-select");
+    refreshSelect.value = String(refreshIntervalMs);
+    refreshSelect.addEventListener("change", function () {
+        refreshIntervalMs = parseInt(refreshSelect.value, 10);
+        setCookie(REFRESH_COOKIE_NAME, String(refreshIntervalMs));
+        startRefreshTimer();
+    });
 
     document.getElementById("add-component-button").addEventListener("click", function () {
         window.location.href = "/component.html";

@@ -219,6 +219,30 @@ UserReturn users::Add(const String& username, const String& password, bool admin
     return UserReturn::NoError;
 }
 
+UserReturn users::AddStored(const String& username, bool admin, const uint8_t (&salt)[PASS_SALTLEN], const uint8_t (&hash)[PASS_HASHLEN]) {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return UserReturn::SynchronizationError;
+
+    String normalizedUsername = username;
+    if (!user::NormalizeUsername(normalizedUsername)) return UserReturn::InvalidUsername;
+
+    if (pUserCount >= MAX_USERS) return UserReturn::MaxUsersReached;
+
+    for (size_t i = 0; i < pUserCount; ++i) {
+        if (pUsers[i].Username() == normalizedUsername) return UserReturn::UserExists;
+    }
+
+    user& u = pUsers[pUserCount];
+
+    if (!u.Username(std::move(normalizedUsername))) return UserReturn::InvalidUsername;
+
+    u.Admin(admin);
+    u.SetCredentials(salt, hash);
+
+    ++pUserCount;
+    return UserReturn::NoError;
+}
+
 UserReturn users::Remove(const String& username) {
     Lock lock(pMutex);
     if (!lock.IsLocked()) return UserReturn::SynchronizationError;

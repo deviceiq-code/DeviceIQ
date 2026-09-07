@@ -1909,7 +1909,10 @@ void httpserver::HandleConfigExportGet(WebServer& server) {
 
     Logger.Log("Web Server: configuration exported by " + session->username + "@" + server.client().remoteIP().toString(), logger::LogLevels::Information);
 
-    server.sendHeader("Content-Disposition", "attachment; filename=\"config.json\"");
+    // The server's Content-Disposition filename wins over the <a download>
+    // attribute the client also sets - browsers use whichever the response
+    // actually carries, so this is the one that has to match the hostname.
+    server.sendHeader("Content-Disposition", "attachment; filename=\"config-" + Settings.Network.Hostname() + ".json\"");
     server.send(200, "application/json", content);
 }
 

@@ -43,6 +43,13 @@ class user {
             memcpy(salt, pSalt, sizeof(pSalt));
             memcpy(hash, pHash, sizeof(pHash));
         }
+        // Restores an already-computed salt/hash pair as-is (config.json on
+        // load) - unlike SetPassword(), takes no plaintext and runs no
+        // PBKDF2, since the point is to skip recomputing it every boot.
+        void SetCredentials(const uint8_t (&salt)[PASS_SALTLEN], const uint8_t (&hash)[PASS_HASHLEN]) noexcept {
+            memcpy(pSalt, salt, sizeof(pSalt));
+            memcpy(pHash, hash, sizeof(pHash));
+        }
 
         // Runs the PBKDF2 computation against a detached salt/hash pair, without
         // holding any lock. Used by users::Authenticate so the expensive hash
@@ -66,6 +73,10 @@ class users {
         inline size_t CountAdmins() const noexcept { Lock lock(pMutex); if (!lock.IsLocked()) return 0; size_t count = 0; for (size_t i = 0; i < pUserCount; ++i) if (pUsers[i].Admin()) count++; return count; }
         UserReturn SetAdmin(const String& username, bool admin);
         UserReturn Add(const String& username, const String& password, bool admin = false);
+        // Restores a user from config.json's persisted Salt/Hash, bypassing
+        // SetPassword()'s PBKDF2 computation entirely - the credential was
+        // already derived once, at the time the password was actually set.
+        UserReturn AddStored(const String& username, bool admin, const uint8_t (&salt)[PASS_SALTLEN], const uint8_t (&hash)[PASS_HASHLEN]);
         UserReturn Remove(const String& username);
         UserReturn Authenticate(const String& username, const String& password, IPAddress clientIP);
         UserReturn Find(const String& username, UserInfo* outUser = nullptr);

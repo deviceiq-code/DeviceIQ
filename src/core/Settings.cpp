@@ -703,6 +703,14 @@ bool settings::Load(const String& configfilename) noexcept {
                     hash[i++] = v.as<uint8_t>();
                 }
             }
+
+            // Restores the credential as persisted - no PBKDF2 involved, that
+            // already ran once when the password was actually set. A
+            // malformed entry (bad username, duplicate, MAX_USERS reached)
+            // is skipped rather than failing the whole load; the same
+            // "Users.Count() == 0" fallback below still catches the case
+            // where nothing here was usable.
+            (void)Users.AddStored(username, admin, salt, hash);
         }
     }
 

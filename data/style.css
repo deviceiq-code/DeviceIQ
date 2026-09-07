@@ -426,6 +426,65 @@ main.setup-main {
 
 /* ---- Component dashboard ------------------------------------------------ */
 
+.dashboard-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.view-toggle {
+    display: flex;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.view-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 32px;
+    margin: 0;
+    padding: 0 36px;
+    border: none;
+    border-left: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text-dim);
+    font-size: 15px;
+    font-family: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.view-toggle-btn:first-child { border-left: none; }
+.view-toggle-btn:hover { color: var(--text); }
+.view-toggle-btn.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+.refresh-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+}
+
+.refresh-select select {
+    height: 32px;
+    padding: 0 30px 0 14px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.comp-group + .comp-group { margin-top: 20px; }
+
 .comp-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
