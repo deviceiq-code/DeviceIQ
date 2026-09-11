@@ -64,12 +64,16 @@ class mqttclient final {
         void PublishAvailability(const char* state);
         void PublishAllStates();
         void PublishComponentState(const component& item);
+        void PublishThermometerAvailability(const component& item);
         void PublishDiscovery();
         void PublishRelayDiscovery(const component& item);
         void PublishButtonDiscovery(const component& item);
         void PublishThermometerDiscovery(const component& item);
         void PublishBlindsDiscovery(const component& item);
-        void AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId);
+        void AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId, bool includeAvailability = true);
+        // Two avty entries with avty_mode "all": available only when both
+        // the device is online and the sensor's own last read succeeded.
+        void AddThermometerAvailability(JsonDocument& document, const component& item);
         [[nodiscard]] bool Publish(const String& topic, const String& payload, bool retained = false);
         [[nodiscard]] String ComponentTopic(const component& item, const char* direction, const char* property) const;
         [[nodiscard]] String AvailabilityTopic() const;

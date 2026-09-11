@@ -185,7 +185,9 @@ void mqttclient::ProcessEvent(const ComponentEvent& event) {
         (event.code == button::EventCodes::Pressed || event.code == button::EventCodes::Released)) {
         PublishComponentState(*event.source);
     } else if (event.source->Class() == component::Classes::Thermometer &&
-        event.code == thermometer::EventCodes::Changed) {
+        (event.code == thermometer::EventCodes::Changed ||
+            event.code == thermometer::EventCodes::ReadFailed ||
+            event.code == thermometer::EventCodes::ReadRecovered)) {
         PublishComponentState(*event.source);
     } else if (event.source->Class() == component::Classes::Blinds && event.code == blinds::EventCodes::Changed) {
         PublishComponentState(*event.source);
@@ -254,6 +256,7 @@ void mqttclient::PublishComponentState(const component& item) {
         (void)Publish(ComponentTopic(item, "Get", "state"), value.State() ? "pressed" : "released", true);
     } else if (item.Class() == component::Classes::Thermometer) {
         const thermometer& value = static_cast<const thermometer&>(item);
+        PublishThermometerAvailability(item);
         if (!value.Available()) return;
         (void)Publish(ComponentTopic(item, "Get", "temperature"), String(value.Temperature(), 2), true);
         if (value.HasHumidity()) {
@@ -266,6 +269,25 @@ void mqttclient::PublishComponentState(const component& item) {
         (void)Publish(ComponentTopic(item, "Get", "state"), state, true);
         (void)Publish(ComponentTopic(item, "Get", "position"), String(value.Position()), true);
     }
+}
+
+void mqttclient::AddThermometerAvailability(JsonDocument& document, const component& item) {
+    JsonArray availability = document["avty"].to<JsonArray>();
+    JsonObject device = availability.add<JsonObject>();
+    device["t"] = AvailabilityTopic();
+    device["pl_avail"] = "online";
+    device["pl_not_avail"] = "offline";
+    JsonObject sensor = availability.add<JsonObject>();
+    sensor["t"] = ComponentTopic(item, "Get", "availability");
+    sensor["pl_avail"] = "online";
+    sensor["pl_not_avail"] = "offline";
+    document["avty_mode"] = "all";
+}
+
+void mqttclient::PublishThermometerAvailability(const component& item) {
+    if (!ValidTopicSegment(item.Name())) return;
+    const thermometer& value = static_cast<const thermometer&>(item);
+    (void)Publish(ComponentTopic(item, "Get", "availability"), value.Available() ? "online" : "offline", true);
 }
 
 void mqttclient::PublishDiscovery() {
@@ -332,13 +354,14 @@ void mqttclient::PublishThermometerDiscovery(const component& item) {
 
     const String temperatureUnique = UniqueID(item, "temperature");
     JsonDocument temperatureDocument;
-    AddDiscoveryMetadata(temperatureDocument, item, temperatureUnique);
+    AddDiscoveryMetadata(temperatureDocument, item, temperatureUnique, false);
     temperatureDocument["name"] = item.Name() + " Temperature";
     temperatureDocument["stat_t"] = ComponentTopic(item, "Get", "temperature");
     temperatureDocument["dev_cla"] = "temperature";
     temperatureDocument["unit_of_meas"] = "°C";
     temperatureDocument["stat_cla"] = "measurement";
     temperatureDocument["sug_dsp_prc"] = 1;
+    AddThermometerAvailability(temperatureDocument, item);
     String temperaturePayload;
     if (serializeJson(temperatureDocument, temperaturePayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/sensor/" + temperatureUnique + "/config", temperaturePayload, true);
@@ -347,13 +370,14 @@ void mqttclient::PublishThermometerDiscovery(const component& item) {
     if (!value.HasHumidity()) return;
     const String humidityUnique = UniqueID(item, "humidity");
     JsonDocument humidityDocument;
-    AddDiscoveryMetadata(humidityDocument, item, humidityUnique);
+    AddDiscoveryMetadata(humidityDocument, item, humidityUnique, false);
     humidityDocument["name"] = item.Name() + " Humidity";
     humidityDocument["stat_t"] = ComponentTopic(item, "Get", "humidity");
     humidityDocument["dev_cla"] = "humidity";
     humidityDocument["unit_of_meas"] = "%";
     humidityDocument["stat_cla"] = "measurement";
     humidityDocument["sug_dsp_prc"] = 1;
+    AddThermometerAvailability(humidityDocument, item);
     String humidityPayload;
     if (serializeJson(humidityDocument, humidityPayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/sensor/" + humidityUnique + "/config", humidityPayload, true);
@@ -415,12 +439,14 @@ void mqttclient::UnpublishDiscovery(component::Classes componentClass, int16_t i
     }
 }
 
-void mqttclient::AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId) {
+void mqttclient::AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId, bool includeAvailability) {
     document["name"] = item.Name();
     document["uniq_id"] = uniqueId;
-    document["avty_t"] = AvailabilityTopic();
-    document["pl_avail"] = "online";
-    document["pl_not_avail"] = "offline";
+    if (includeAvailability) {
+        document["avty_t"] = AvailabilityTopic();
+        document["pl_avail"] = "online";
+        document["pl_not_avail"] = "offline";
+    }
     JsonObject device = document["dev"].to<JsonObject>();
     device["ids"] = pDeviceID;
     device["name"] = pHostname;
