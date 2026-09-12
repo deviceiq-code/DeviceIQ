@@ -43,6 +43,7 @@ class thermometer final : public component {
         [[nodiscard]] uint32_t PollingInterval() const noexcept { return pPollingIntervalMs; }
         [[nodiscard]] bool HasHumidity() const noexcept { return pType != ThermometerTypes::Ds18b20; }
         [[nodiscard]] bool Available() const noexcept { return pAvailable.load(std::memory_order_relaxed); }
+        [[nodiscard]] uint8_t DeviceCount() const noexcept { return pDeviceCount.load(std::memory_order_relaxed); }
         [[nodiscard]] float Temperature() const noexcept;
         [[nodiscard]] float Humidity() const noexcept;
 
@@ -78,6 +79,7 @@ class thermometer final : public component {
         std::atomic<int32_t> pTemperature{INVALID_READING};
         std::atomic<int32_t> pHumidity{INVALID_READING};
         std::atomic<bool> pAvailable{false};
+        std::atomic<uint8_t> pDeviceCount{0};
         std::unique_ptr<DHT> pDht;
         std::unique_ptr<OneWire> pOneWire;
         std::unique_ptr<DallasTemperature> pDallas;

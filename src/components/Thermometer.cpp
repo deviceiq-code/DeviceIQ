@@ -39,6 +39,7 @@ void thermometer::GetInfo(String& output) const {
     component::GetInfo(output);
     output += "Type           | " + String(TypeName(Type())) + "\r\n";
     output += "PollingMs      | " + String(PollingInterval()) + "\r\n";
+    if (pType == ThermometerTypes::Ds18b20) output += "DeviceCount    | " + String(DeviceCount()) + "\r\n";
     output += "Available      | " + String(Available() ? "true" : "false") + "\r\n";
     output += "Temperature    | " + String(Available() ? String(Temperature(), 2) : String("unavailable")) + "\r\n";
     if (HasHumidity()) {
@@ -88,6 +89,7 @@ bool thermometer::Initialize() noexcept {
         pDallas->begin();
         pDallas->setResolution(12);
         pDallas->setWaitForConversion(false);
+        pDeviceCount.store(pDallas->getDeviceCount(), std::memory_order_relaxed);
     } else {
         uint8_t dhtType = DHT22;
         if (pType == ThermometerTypes::Dht11) dhtType = DHT11;

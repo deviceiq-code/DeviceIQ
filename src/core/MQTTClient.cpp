@@ -497,15 +497,16 @@ bool mqttclient::ValidTopicSegment(const String& value) noexcept {
 }
 
 String mqttclient::DeviceIdentifier() {
-    String identifier = Network.MAC_Address();
-    identifier.toLowerCase();
-    identifier.replace(":", "");
-    identifier.replace("-", "");
-    if (identifier.isEmpty()) {
-        const uint64_t chip = ESP.getEfuseMac();
-        char fallback[13];
-        snprintf(fallback, sizeof(fallback), "%04x%08x", static_cast<uint16_t>(chip >> 32), static_cast<uint32_t>(chip));
-        identifier = fallback;
-    }
-    return "deviceiq_" + identifier;
+    // Reads the eFuse MAC directly (same call Network.cpp uses for
+    // pMACAddress) instead of going through Network.MAC_Address(), which
+    // stays empty until the Network task's first UpdateConnectionState()
+    // - a race MQTTClient.Start() can win. Losing it used to fall back to
+    // ESP.getEfuseMac(), whose byte order is reversed from esp_read_mac(),
+    // producing a different device["ids"] on some boots and duplicate
+    // devices in Home Assistant for the same physical unit.
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    char identifier[13];
+    snprintf(identifier, sizeof(identifier), "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return "deviceiq_" + String(identifier);
 }
