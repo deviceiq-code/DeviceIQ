@@ -70,7 +70,8 @@ class component {
             Thermometer,
             CurrentMeter,
             Doorbell,
-            ContactSensor
+            ContactSensor,
+            RGB_LED
         };
 
         component(String name, int16_t id, Buses bus = Buses::Onboard, uint8_t address = 0, bool enabled = true);

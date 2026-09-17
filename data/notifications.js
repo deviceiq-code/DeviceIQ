@@ -162,6 +162,8 @@
             if (before.available !== after.available) {
                 return after.name + (after.available ? " is reporting again" : " became unavailable");
             }
+        } else if (after.class === "RGB_LED") {
+            if (before.state !== after.state) return after.name + " turned " + (after.state ? "on" : "off");
         }
         return null;
     }

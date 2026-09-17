@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/RGB_LED.h"
 #include "components/Thermometer.h"
 
 #include <ArduinoJson.h>
@@ -878,6 +879,15 @@ bool settings::Save(const String& configfilename) const noexcept {
                     const thermometer& thermometerComponent = static_cast<const thermometer&>(*source);
                     setup["Type"] = thermometer::TypeName(thermometerComponent.Type());
                     setup["PollingIntervalMs"] = thermometerComponent.PollingInterval();
+                } else if (source->Class() == component::Classes::RGB_LED) {
+                    const rgb_led& rgbLedComponent = static_cast<const rgb_led&>(*source);
+                    setup.remove("Address");
+                    setup["RedPin"] = rgbLedComponent.RedPin();
+                    setup["GreenPin"] = rgbLedComponent.GreenPin();
+                    setup["BluePin"] = rgbLedComponent.BluePin();
+                    setup["DriveMode"] = rgbLedComponent.DriveMode() == rgb_led::DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow";
+                    properties["State"] = rgbLedComponent.State();
+                    properties["RGB"] = String(rgbLedComponent.Red()) + "," + String(rgbLedComponent.Green()) + "," + String(rgbLedComponent.Blue());
                 } else if (source->Class() == component::Classes::Blinds) {
                     const blinds& blindsComponent = static_cast<const blinds&>(*source);
                     setup.remove("Address");

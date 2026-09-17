@@ -94,6 +94,7 @@ const char* component::ClassName(Classes value) noexcept {
         case Classes::CurrentMeter: return "CurrentMeter";
         case Classes::Doorbell: return "Doorbell";
         case Classes::ContactSensor: return "ContactSensor";
+        case Classes::RGB_LED: return "RGB_LED";
         default: return "Unknown";
     }
 }

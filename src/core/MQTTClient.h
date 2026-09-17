@@ -70,6 +70,7 @@ class mqttclient final {
         void PublishButtonDiscovery(const component& item);
         void PublishThermometerDiscovery(const component& item);
         void PublishBlindsDiscovery(const component& item);
+        void PublishRGB_LEDDiscovery(const component& item);
         void AddDiscoveryMetadata(JsonDocument& document, const component& item, const String& uniqueId, bool includeAvailability = true);
         // Two avty entries with avty_mode "all": available only when both
         // the device is online and the sensor's own last read succeeded.

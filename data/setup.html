@@ -252,6 +252,13 @@
                             { label: item.name + " - Set position (0-100)", property: "position", value: "50" }
                         ];
                     }
+                    if (item.class === "RGB_LED") {
+                        return [
+                            { label: item.name + " - Turn on", property: "state", value: "on" },
+                            { label: item.name + " - Turn off", property: "state", value: "off" },
+                            { label: item.name + " - Set color (R,G,B)", property: "rgb", value: "255,0,0" }
+                        ];
+                    }
                     return [];
                 }
 

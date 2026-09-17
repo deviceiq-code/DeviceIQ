@@ -227,7 +227,8 @@
                 ["Relay", "Relay"],
                 ["Button", "Button"],
                 ["Blinds", "Blinds"],
-                ["Thermometer", "Thermometer"]
+                ["Thermometer", "Thermometer"],
+                ["RGB_LED", "RGB_LED"]
             ], currentClass);
             classControl.addEventListener("change", function () {
                 currentClass = classControl.value;
@@ -300,6 +301,20 @@
             readers.address = function () { return addr.value; };
             readers.type = function () { return type.value; };
             readers.pollingintervalms = function () { return polling.value; };
+        } else if (currentClass === "RGB_LED") {
+            const redPin = numberInput(setup.RedPin >= 0 ? setup.RedPin : "", 0, 255);
+            list.appendChild(row("Red Pin", "The GPIO pin driving the red channel (0-255).", redPin));
+            const greenPin = numberInput(setup.GreenPin >= 0 ? setup.GreenPin : "", 0, 255);
+            list.appendChild(row("Green Pin", "The GPIO pin driving the green channel (0-255).", greenPin));
+            const bluePin = numberInput(setup.BluePin >= 0 ? setup.BluePin : "", 0, 255);
+            list.appendChild(row("Blue Pin", "The GPIO pin driving the blue channel (0-255).", bluePin));
+            const driveMode = selectInput([["ActiveHigh", "Active High"], ["ActiveLow", "Active Low"]], setup.DriveMode || "ActiveHigh");
+            list.appendChild(row("Drive Mode", "Active High for common-cathode LEDs, Active Low for common-anode.", driveMode));
+
+            readers.redpin = function () { return redPin.value; };
+            readers.greenpin = function () { return greenPin.value; };
+            readers.bluepin = function () { return bluePin.value; };
+            readers.drivemode = function () { return driveMode.value; };
         } else if (currentClass === "Blinds") {
             const relayUp = selectInput(memberOptions("Relay", false), setup.RelayUp ? String(setup.RelayUp) : "");
             list.appendChild(row("Relay Up", "The relay that drives the blinds upward.", relayUp));
@@ -394,6 +409,12 @@
                 return null;
             }
         }
+        if (currentClass === "RGB_LED") {
+            if (classReaders.redpin() === "" || classReaders.greenpin() === "" || classReaders.bluepin() === "") {
+                Notifications.show("Red Pin, Green Pin, and Blue Pin are required.", { title: "Component" });
+                return null;
+            }
+        }
 
         Object.keys(classReaders).forEach(function (key) {
             if (key === "name" || key === "enabled") return;
@@ -443,6 +464,10 @@
             if (currentClass === "Blinds") {
                 addBody.relayUp = Number(fields.relayup);
                 addBody.relayDown = Number(fields.relaydown);
+            } else if (currentClass === "RGB_LED") {
+                addBody.redPin = Number(fields.redpin);
+                addBody.greenPin = Number(fields.greenpin);
+                addBody.bluePin = Number(fields.bluepin);
             } else {
                 addBody.address = Number(fields.address);
             }

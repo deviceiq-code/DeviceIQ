@@ -7,6 +7,7 @@
 #include "components/Blinds.h"
 #include "components/Button.h"
 #include "components/Component.h"
+#include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
 
@@ -46,6 +47,10 @@ namespace {
                 entry["temperature"] = value.Temperature();
                 if (value.HasHumidity()) entry["humidity"] = value.Humidity();
             }
+        } else if (item.Class() == component::Classes::RGB_LED) {
+            const rgb_led& value = static_cast<const rgb_led&>(item);
+            entry["state"] = value.State();
+            entry["rgb"] = String(value.Red()) + "," + String(value.Green()) + "," + String(value.Blue());
         }
     }
 }

@@ -17,6 +17,7 @@
 #include "core/Version.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
 
@@ -1353,6 +1354,10 @@ void httpserver::HandleComponentsGet(WebServer& server) {
                 entry["temperature"] = value.Temperature();
                 if (value.HasHumidity()) entry["humidity"] = value.Humidity();
             }
+        } else if (item->Class() == component::Classes::RGB_LED) {
+            const rgb_led& value = static_cast<const rgb_led&>(*item);
+            entry["state"] = value.State();
+            entry["rgb"] = String(value.Red()) + "," + String(value.Green()) + "," + String(value.Blue());
         }
     }
 
@@ -1542,7 +1547,8 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
     }
 
     const String componentClass = request["class"] | "";
-    if (componentClass != "Relay" && componentClass != "Button" && componentClass != "Blinds" && componentClass != "Thermometer") {
+    if (componentClass != "Relay" && componentClass != "Button" && componentClass != "Blinds" &&
+        componentClass != "Thermometer" && componentClass != "RGB_LED") {
         server.send(400, "application/json", "{\"error\":\"unsupported component class\"}");
         return;
     }
@@ -1563,7 +1569,7 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
         return;
     }
 
-    String identityParameters[2];
+    String identityParameters[3];
     if (componentClass == "Blinds") {
         const long relayUp = request["relayUp"] | 0L;
         const long relayDown = request["relayDown"] | 0L;
@@ -1573,6 +1579,17 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
         }
         identityParameters[0] = "relayup=" + String(relayUp);
         identityParameters[1] = "relaydown=" + String(relayDown);
+    } else if (componentClass == "RGB_LED") {
+        const long redPin = request["redPin"] | -1L;
+        const long greenPin = request["greenPin"] | -1L;
+        const long bluePin = request["bluePin"] | -1L;
+        if (redPin < 0 || redPin > UINT8_MAX || greenPin < 0 || greenPin > UINT8_MAX || bluePin < 0 || bluePin > UINT8_MAX) {
+            server.send(400, "application/json", "{\"error\":\"redPin, greenPin, and bluePin are required\"}");
+            return;
+        }
+        identityParameters[0] = "redpin=" + String(redPin);
+        identityParameters[1] = "greenpin=" + String(greenPin);
+        identityParameters[2] = "bluepin=" + String(bluePin);
     } else {
         const long address = request["address"] | -1L;
         if (address < 0 || address > UINT8_MAX) {
@@ -1610,6 +1627,7 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
     parameters[3] = "name=" + name;
     parameters[4] = identityParameters[0];
     if (!identityParameters[1].isEmpty()) parameters[5] = identityParameters[1];
+    if (!identityParameters[2].isEmpty()) parameters[6] = identityParameters[2];
 
     String output;
     const bool success = Settings.ExecuteComponentCommand(parameters, output);

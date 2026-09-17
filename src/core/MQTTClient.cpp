@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
 
@@ -191,6 +192,8 @@ void mqttclient::ProcessEvent(const ComponentEvent& event) {
         PublishComponentState(*event.source);
     } else if (event.source->Class() == component::Classes::Blinds && event.code == blinds::EventCodes::Changed) {
         PublishComponentState(*event.source);
+    } else if (event.source->Class() == component::Classes::RGB_LED && event.code == rgb_led::EventCodes::Changed) {
+        PublishComponentState(*event.source);
     }
 }
 
@@ -268,6 +271,10 @@ void mqttclient::PublishComponentState(const component& item) {
             value.Position() == 0 ? "closed" : value.Position() == 100 ? "open" : "stopped";
         (void)Publish(ComponentTopic(item, "Get", "state"), state, true);
         (void)Publish(ComponentTopic(item, "Get", "position"), String(value.Position()), true);
+    } else if (item.Class() == component::Classes::RGB_LED) {
+        const rgb_led& value = static_cast<const rgb_led&>(item);
+        (void)Publish(ComponentTopic(item, "Get", "state"), value.State() ? "on" : "off", true);
+        (void)Publish(ComponentTopic(item, "Get", "rgb"), String(value.Red()) + "," + String(value.Green()) + "," + String(value.Blue()), true);
     }
 }
 
@@ -299,6 +306,7 @@ void mqttclient::PublishDiscovery() {
         else if (item->Class() == component::Classes::Button) PublishButtonDiscovery(*item);
         else if (item->Class() == component::Classes::Thermometer) PublishThermometerDiscovery(*item);
         else if (item->Class() == component::Classes::Blinds) PublishBlindsDiscovery(*item);
+        else if (item->Class() == component::Classes::RGB_LED) PublishRGB_LEDDiscovery(*item);
     }
 }
 
@@ -409,6 +417,24 @@ void mqttclient::PublishBlindsDiscovery(const component& item) {
     }
 }
 
+void mqttclient::PublishRGB_LEDDiscovery(const component& item) {
+    const String unique = UniqueID(item, "state");
+    JsonDocument document;
+    AddDiscoveryMetadata(document, item, unique);
+    document["cmd_t"] = ComponentTopic(item, "Set", "state");
+    document["stat_t"] = ComponentTopic(item, "Get", "state");
+    document["pl_on"] = "on";
+    document["pl_off"] = "off";
+    document["stat_on"] = "on";
+    document["stat_off"] = "off";
+    document["rgb_cmd_t"] = ComponentTopic(item, "Set", "rgb");
+    document["rgb_stat_t"] = ComponentTopic(item, "Get", "rgb");
+    String payload;
+    if (serializeJson(document, payload) > 0) {
+        (void)Publish(pDiscoveryPrefix + "/light/" + unique + "/config", payload, true);
+    }
+}
+
 // Mirrors PublishRelayDiscovery/PublishButtonDiscovery/PublishThermometerDiscovery/
 // PublishBlindsDiscovery's topics exactly, empty payload instead of a real
 // config - Home Assistant's own protocol for forgetting a discovered entity.
@@ -433,6 +459,9 @@ void mqttclient::UnpublishDiscovery(component::Classes componentClass, int16_t i
             break;
         case component::Classes::Blinds:
             (void)Publish(pDiscoveryPrefix + "/cover/" + UniqueID(id, "cover") + "/config", "", true);
+            break;
+        case component::Classes::RGB_LED:
+            (void)Publish(pDiscoveryPrefix + "/light/" + UniqueID(id, "state") + "/config", "", true);
             break;
         default:
             break;

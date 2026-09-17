@@ -9,6 +9,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
 
@@ -402,6 +403,130 @@ namespace {
         if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
         return true;
     }
+
+    bool AddressesCollide(const uint8_t* a, uint8_t aCount, const uint8_t* b, uint8_t bCount) {
+        for (uint8_t ai = 0; ai < aCount; ++ai) {
+            for (uint8_t bi = 0; bi < bCount; ++bi) {
+                if (a[ai] == b[bi]) return true;
+            }
+        }
+        return false;
+    }
+
+    bool ParseRGBTriple(const String& text, uint8_t& red, uint8_t& green, uint8_t& blue) {
+        const int firstComma = text.indexOf(',');
+        const int secondComma = text.indexOf(',', firstComma + 1);
+        if (firstComma <= 0 || secondComma <= firstComma + 1 || secondComma == static_cast<int>(text.length()) - 1) return false;
+
+        String parts[3] = {text.substring(0, firstComma), text.substring(firstComma + 1, secondComma), text.substring(secondComma + 1)};
+        long parsed[3] = {0, 0, 0};
+        for (uint8_t index = 0; index < 3; ++index) {
+            parts[index].trim();
+            char* end = nullptr;
+            parsed[index] = std::strtol(parts[index].c_str(), &end, 10);
+            if (end == parts[index].c_str() || *end != '\0' || parsed[index] < 0 || parsed[index] > 255) return false;
+        }
+
+        red = static_cast<uint8_t>(parsed[0]);
+        green = static_cast<uint8_t>(parsed[1]);
+        blue = static_cast<uint8_t>(parsed[2]);
+        return true;
+    }
+
+    struct RGBLedConfiguration {
+        String name;
+        int16_t id = 0;
+        uint8_t redPin = 0;
+        uint8_t greenPin = 0;
+        uint8_t bluePin = 0;
+        rgb_led::DriveModes driveMode = rgb_led::DriveModes::ActiveHigh;
+        uint8_t red = 0;
+        uint8_t green = 0;
+        uint8_t blue = 0;
+        bool state = false;
+        bool enabled = true;
+    };
+
+    bool ParseRGBLedConfiguration(JsonObjectConst object, int16_t id, RGBLedConfiguration& result, JsonObjectConst stateOverride = JsonObjectConst()) {
+        if (!HasComponentSections(object)) return false;
+        const JsonObjectConst setup = ComponentSetup(object);
+        if (!setup["Name"].is<const char*>() ||
+            !setup["Class"].is<const char*>() ||
+            !setup["Bus"].is<const char*>() ||
+            !setup["RedPin"].is<int>() ||
+            !setup["GreenPin"].is<int>() ||
+            !setup["BluePin"].is<int>()) {
+            return false;
+        }
+
+        result.name = setup["Name"].as<const char*>();
+        result.name.trim();
+        if (result.name.isEmpty()) return false;
+
+        const int redPin = setup["RedPin"].as<int>();
+        const int greenPin = setup["GreenPin"].as<int>();
+        const int bluePin = setup["BluePin"].as<int>();
+        if (redPin < 0 || redPin > UINT8_MAX || greenPin < 0 || greenPin > UINT8_MAX ||
+            bluePin < 0 || bluePin > UINT8_MAX || redPin == greenPin || redPin == bluePin || greenPin == bluePin) return false;
+
+        const String componentClass = setup["Class"].as<const char*>();
+        const String bus = setup["Bus"].as<const char*>();
+        if (!componentClass.equalsIgnoreCase("RGB_LED") || !bus.equalsIgnoreCase("Onboard")) return false;
+
+        result.id = id;
+        result.redPin = static_cast<uint8_t>(redPin);
+        result.greenPin = static_cast<uint8_t>(greenPin);
+        result.bluePin = static_cast<uint8_t>(bluePin);
+
+        if (!setup["DriveMode"].isNull()) {
+            if (!setup["DriveMode"].is<const char*>()) return false;
+            const String driveMode = setup["DriveMode"].as<const char*>();
+            if (driveMode.equalsIgnoreCase("ActiveHigh")) {
+                result.driveMode = rgb_led::DriveModes::ActiveHigh;
+            } else if (driveMode.equalsIgnoreCase("ActiveLow")) {
+                result.driveMode = rgb_led::DriveModes::ActiveLow;
+            } else {
+                return false;
+            }
+        }
+
+        if (!object["Properties"].isNull()) {
+            if (!object["Properties"].is<JsonObjectConst>()) return false;
+            const JsonObjectConst properties = object["Properties"].as<JsonObjectConst>();
+
+            if (!properties["Enabled"].isNull()) {
+                if (!properties["Enabled"].is<bool>()) return false;
+                result.enabled = properties["Enabled"].as<bool>();
+            }
+
+            if (!properties["State"].isNull()) {
+                if (!properties["State"].is<bool>()) return false;
+                result.state = properties["State"].as<bool>();
+            }
+
+            if (!properties["RGB"].isNull()) {
+                if (!properties["RGB"].is<const char*>() ||
+                    !ParseRGBTriple(properties["RGB"].as<const char*>(), result.red, result.green, result.blue)) return false;
+            }
+        }
+
+        // A persisted state.json entry overrides the configured seed value -
+        // same pattern as Relay.State/Blinds.Position. Malformed overrides
+        // are ignored rather than failing installation, since the state
+        // file is disposable/regenerable.
+        if (stateOverride["State"].is<bool>()) result.state = stateOverride["State"].as<bool>();
+        if (stateOverride["RGB"].is<const char*>()) {
+            uint8_t red = result.red, green = result.green, blue = result.blue;
+            if (ParseRGBTriple(stateOverride["RGB"].as<const char*>(), red, green, blue)) {
+                result.red = red;
+                result.green = green;
+                result.blue = blue;
+            }
+        }
+
+        if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
+        return true;
+    }
 }
 
 bool settings::InstallComponents(const String& configfilename) noexcept {
@@ -455,9 +580,11 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         String name;
         int16_t id;
         component::Buses bus;
-        uint8_t address;
+        // Up to 3 GPIOs (RGB_LED); Relay/Button/Thermometer use just [0],
+        // Blinds uses none - addressCount says how many are meaningful.
+        uint8_t addresses[3];
         component::Classes type;
-        bool hasAddress;
+        uint8_t addressCount;
     };
 
     ComponentIdentity identities[MaxConfiguredComponents];
@@ -489,28 +616,28 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Relay configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Relay, true};
+            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Relay, 1};
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(object, configuredID, configuration)) {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Button configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Button, true};
+            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
             if (!ParseThermometerConfiguration(object, configuredID, configuration)) {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Thermometer configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, configuration.bus, configuration.address, component::Classes::Thermometer, true};
+            identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Thermometer, 1};
         } else if (componentClass.equalsIgnoreCase("Blinds")) {
             BlindsConfiguration configuration;
             if (!ParseBlindsConfiguration(object, configuredID, configuration, false)) {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Blinds configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Group, 0, component::Classes::Blinds, false};
+            identities[count] = {configuration.name, configuration.id, component::Buses::Group, {}, component::Classes::Blinds, 0};
             installable[count] = configuration.openStepTimeMs > 0 && configuration.closeStepTimeMs > 0;
             if (!installable[count]) {
                 Logger.Log(
@@ -518,6 +645,16 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                     logger::LogLevels::Warning
                 );
             }
+        } else if (componentClass.equalsIgnoreCase("RGB_LED")) {
+            RGBLedConfiguration configuration;
+            if (!ParseRGBLedConfiguration(object, configuredID, configuration)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid RGB_LED configuration", logger::LogLevels::Error);
+                return false;
+            }
+            identities[count] = {
+                configuration.name, configuration.id, component::Buses::Onboard,
+                {configuration.redPin, configuration.greenPin, configuration.bluePin}, component::Classes::RGB_LED, 3
+            };
         } else {
             Logger.Log("Component #" + String(configuredID) + ": unsupported class '" + componentClass + "'", logger::LogLevels::Error);
             return false;
@@ -525,9 +662,9 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
 
         for (size_t previous = 0; previous < count; ++previous) {
             if (identities[previous].name.equalsIgnoreCase(identities[count].name) ||
-                (identities[previous].hasAddress && identities[count].hasAddress &&
-                    identities[previous].bus == identities[count].bus &&
-                    identities[previous].address == identities[count].address)) {
+                (identities[previous].bus == identities[count].bus &&
+                    AddressesCollide(identities[previous].addresses, identities[previous].addressCount,
+                        identities[count].addresses, identities[count].addressCount))) {
                 return false;
             }
         }
@@ -632,6 +769,22 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 configuration.address,
                 configuration.type,
                 configuration.pollingIntervalMs,
+                configuration.enabled
+            ));
+        } else if (componentClass.equalsIgnoreCase("RGB_LED")) {
+            RGBLedConfiguration configuration;
+            if (!ParseRGBLedConfiguration(object, configuredID, configuration, ComponentState(stateRoot, configuredID))) return false;
+            instances[index].reset(new (std::nothrow) rgb_led(
+                configuration.name,
+                configuration.id,
+                configuration.redPin,
+                configuration.greenPin,
+                configuration.bluePin,
+                configuration.driveMode,
+                configuration.red,
+                configuration.green,
+                configuration.blue,
+                configuration.state,
                 configuration.enabled
             ));
         }
@@ -768,6 +921,10 @@ bool settings::SaveComponentsState(const String& statefilename) noexcept {
             entry["State"] = static_cast<const relay&>(*item).State();
         } else if (item->Class() == component::Classes::Blinds) {
             entry["Position"] = static_cast<const blinds&>(*item).Position();
+        } else if (item->Class() == component::Classes::RGB_LED) {
+            const rgb_led& value = static_cast<const rgb_led&>(*item);
+            entry["State"] = value.State();
+            entry["RGB"] = String(value.Red()) + "," + String(value.Green()) + "," + String(value.Blue());
         }
     }
 
@@ -868,9 +1025,9 @@ namespace {
             String name;
             int16_t id;
             component::Buses bus;
-            uint8_t address;
+            uint8_t addresses[3];
             component::Classes type;
-            bool hasAddress;
+            uint8_t addressCount;
         };
 
         Identity identities[MaxConfiguredComponents];
@@ -889,28 +1046,35 @@ namespace {
             if (componentClass.equalsIgnoreCase("Relay")) {
                 RelayConfiguration configuration;
                 if (!ParseRelayConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Relay, true};
+                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Relay, 1};
             } else if (componentClass.equalsIgnoreCase("Button")) {
                 ButtonConfiguration configuration;
                 if (!ParseButtonConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, configuration.address, component::Classes::Button, true};
+                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
             } else if (componentClass.equalsIgnoreCase("Thermometer")) {
                 ThermometerConfiguration configuration;
                 if (!ParseThermometerConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, configuration.bus, configuration.address, component::Classes::Thermometer, true};
+                identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Thermometer, 1};
             } else if (componentClass.equalsIgnoreCase("Blinds")) {
                 BlindsConfiguration configuration;
                 if (!ParseBlindsConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Group, 0, component::Classes::Blinds, false};
+                identities[count] = {configuration.name, configuration.id, component::Buses::Group, {}, component::Classes::Blinds, 0};
+            } else if (componentClass.equalsIgnoreCase("RGB_LED")) {
+                RGBLedConfiguration configuration;
+                if (!ParseRGBLedConfiguration(object, configuredID, configuration)) return false;
+                identities[count] = {
+                    configuration.name, configuration.id, component::Buses::Onboard,
+                    {configuration.redPin, configuration.greenPin, configuration.bluePin}, component::Classes::RGB_LED, 3
+                };
             } else {
                 return false;
             }
 
             for (size_t previous = 0; previous < count; ++previous) {
                 if (identities[previous].name.equalsIgnoreCase(identities[count].name) ||
-                    (identities[previous].hasAddress && identities[count].hasAddress &&
-                        identities[previous].bus == identities[count].bus &&
-                        identities[previous].address == identities[count].address)) return false;
+                    (identities[previous].bus == identities[count].bus &&
+                        AddressesCollide(identities[previous].addresses, identities[previous].addressCount,
+                            identities[count].addresses, identities[count].addressCount))) return false;
             }
             owners[count] = -1;
             ++count;
@@ -963,7 +1127,7 @@ namespace {
         const JsonObjectConst properties = configured["Properties"].as<JsonObjectConst>();
         if (configuredName != runtime.Name() || properties.isNull()) return false;
 
-        if (runtime.Class() != component::Classes::Blinds &&
+        if (runtime.Class() != component::Classes::Blinds && runtime.Class() != component::Classes::RGB_LED &&
             (setup["Address"] | -1) != runtime.Address()) return false;
         if (runtime.IsPublic() && (properties["Enabled"] | true) != runtime.Enabled()) return false;
 
@@ -992,6 +1156,14 @@ namespace {
             const thermometer& value = static_cast<const thermometer&>(runtime);
             return configuration.bus == value.Bus() && configuration.type == value.Type() &&
                 configuration.pollingIntervalMs == value.PollingInterval();
+        }
+
+        if (runtime.Class() == component::Classes::RGB_LED) {
+            RGBLedConfiguration configuration;
+            if (!ParseRGBLedConfiguration(configured, configuredID, configuration)) return false;
+            const rgb_led& value = static_cast<const rgb_led&>(runtime);
+            return configuration.redPin == value.RedPin() && configuration.greenPin == value.GreenPin() &&
+                configuration.bluePin == value.BluePin() && configuration.driveMode == value.DriveMode();
         }
 
         if (runtime.Class() == component::Classes::Blinds) {
@@ -1153,6 +1325,34 @@ namespace {
             }
         }
 
+        if (componentClass.equalsIgnoreCase("RGB_LED")) {
+            if (property.equalsIgnoreCase("redpin") || property.equalsIgnoreCase("greenpin") || property.equalsIgnoreCase("bluepin")) {
+                long value = 0;
+                if (!ParseInteger(text, 0, UINT8_MAX, value)) return false;
+                const char* key = property.equalsIgnoreCase("redpin") ? "RedPin" :
+                    property.equalsIgnoreCase("greenpin") ? "GreenPin" : "BluePin";
+                setup[key] = value;
+                return true;
+            }
+            if (property.equalsIgnoreCase("drivemode")) {
+                if (!text.equalsIgnoreCase("ActiveHigh") && !text.equalsIgnoreCase("ActiveLow")) return false;
+                setup["DriveMode"] = text.equalsIgnoreCase("ActiveHigh") ? "ActiveHigh" : "ActiveLow";
+                return true;
+            }
+            if (allowState && property.equalsIgnoreCase("state")) {
+                bool value = false;
+                if (!ParseConfigBoolean(text, value)) return false;
+                ComponentProperties(item)["State"] = value;
+                return true;
+            }
+            if (property.equalsIgnoreCase("rgb")) {
+                uint8_t red = 0, green = 0, blue = 0;
+                if (!ParseRGBTriple(text, red, green, blue)) return false;
+                ComponentProperties(item)["RGB"] = text;
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -1167,6 +1367,7 @@ namespace {
         static const char* const ButtonEvents[] = {"Pressed", "Released", "Clicked", "LongClicked", "DoubleClicked", "TripleClicked", "Changed"};
         static const char* const BlindsEvents[] = {"Changed", "Opening", "Closing", "Stopped", "Opened", "Closed", "Fault"};
         static const char* const ThermometerEvents[] = {"TemperatureChanged", "HumidityChanged", "Changed", "ReadFailed", "ReadRecovered"};
+        static const char* const RGBLedEvents[] = {"SettingOn", "SettingOff", "SetOn", "SetOff", "ColorChanged", "Changed"};
 
         if (componentClass.equalsIgnoreCase("Relay")) {
             count = sizeof(RelayEvents) / sizeof(RelayEvents[0]);
@@ -1183,6 +1384,10 @@ namespace {
         if (componentClass.equalsIgnoreCase("Thermometer")) {
             count = sizeof(ThermometerEvents) / sizeof(ThermometerEvents[0]);
             return ThermometerEvents;
+        }
+        if (componentClass.equalsIgnoreCase("RGB_LED")) {
+            count = sizeof(RGBLedEvents) / sizeof(RGBLedEvents[0]);
+            return RGBLedEvents;
         }
 
         count = 0;
@@ -1642,6 +1847,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         else if (removedClassName.equalsIgnoreCase("Button")) removedClass = component::Classes::Button;
         else if (removedClassName.equalsIgnoreCase("Thermometer")) removedClass = component::Classes::Thermometer;
         else if (removedClassName.equalsIgnoreCase("Blinds")) removedClass = component::Classes::Blinds;
+        else if (removedClassName.equalsIgnoreCase("RGB_LED")) removedClass = component::Classes::RGB_LED;
 
         components.remove(String(configuredID));
 
@@ -1669,7 +1875,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
     if (subcommand == "add") {
         if (parameters[1].isEmpty()) {
-            output = "Usage: comp add relay|button|thermometer|blinds name=value [id=value] ...\r\n";
+            output = "Usage: comp add relay|button|thermometer|blinds|rgb_led name=value [id=value] ...\r\n";
             return false;
         }
         if (components.size() >= MaxConfiguredComponents) {
@@ -1679,8 +1885,9 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
         String componentClass = parameters[1];
         if (!componentClass.equalsIgnoreCase("Relay") && !componentClass.equalsIgnoreCase("Button") &&
-            !componentClass.equalsIgnoreCase("Thermometer") && !componentClass.equalsIgnoreCase("Blinds")) {
-            output = "Unsupported component class. Expected relay, button, thermometer, or blinds.\r\n";
+            !componentClass.equalsIgnoreCase("Thermometer") && !componentClass.equalsIgnoreCase("Blinds") &&
+            !componentClass.equalsIgnoreCase("RGB_LED")) {
+            output = "Unsupported component class. Expected relay, button, thermometer, blinds, or rgb_led.\r\n";
             return false;
         }
 
@@ -1715,9 +1922,10 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         JsonObject setup = item["Setup"].to<JsonObject>();
         setup["Class"] = componentClass.equalsIgnoreCase("Relay") ? "Relay" :
             componentClass.equalsIgnoreCase("Button") ? "Button" :
-            componentClass.equalsIgnoreCase("Thermometer") ? "Thermometer" : "Blinds";
+            componentClass.equalsIgnoreCase("Thermometer") ? "Thermometer" :
+            componentClass.equalsIgnoreCase("RGB_LED") ? "RGB_LED" : "Blinds";
         setup["Bus"] = componentClass.equalsIgnoreCase("Blinds") ? "Group" : "Onboard";
-        if (!componentClass.equalsIgnoreCase("Blinds")) setup["Address"] = -1;
+        if (!componentClass.equalsIgnoreCase("Blinds") && !componentClass.equalsIgnoreCase("RGB_LED")) setup["Address"] = -1;
         JsonObject properties = item["Properties"].to<JsonObject>();
         properties["Enabled"] = true;
         item["Events"].to<JsonObject>();
@@ -1735,6 +1943,13 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             setup["Type"] = "DS18B20";
             setup["PollingIntervalMs"] = thermometer::DEFAULT_POLLING_INTERVAL_MS;
+        } else if (componentClass.equalsIgnoreCase("RGB_LED")) {
+            setup["RedPin"] = -1;
+            setup["GreenPin"] = -1;
+            setup["BluePin"] = -1;
+            setup["DriveMode"] = "ActiveHigh";
+            properties["State"] = false;
+            properties["RGB"] = "0,0,0";
         } else {
             setup["RelayUp"] = 0;
             setup["RelayDown"] = 0;
