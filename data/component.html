@@ -226,6 +226,7 @@
             classControl = selectInput([
                 ["Relay", "Relay"],
                 ["Button", "Button"],
+                ["Doorbell", "Doorbell"],
                 ["Blinds", "Blinds"],
                 ["Thermometer", "Thermometer"],
                 ["RGB_LED", "RGB_LED"]
@@ -288,6 +289,20 @@
             readers.debouncetimems = function () { return debounce.value; };
             readers.longclicktimems = function () { return longClick.value; };
             readers.multiclicktimems = function () { return multiClick.value; };
+        } else if (currentClass === "Doorbell") {
+            const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
+            list.appendChild(row("GPIO Address", "The GPIO pin this doorbell button is wired to (0-255).", addr));
+            const activeLevel = selectInput([["High", "High"], ["Low", "Low"]], setup.ActiveLevel || "Low");
+            list.appendChild(row("Active Level", "Logic level read while the doorbell button is pressed.", activeLevel));
+            const inputMode = selectInput([["Floating", "Floating"], ["PullUp", "Pull Up"], ["PullDown", "Pull Down"]], setup.InputMode || "PullUp");
+            list.appendChild(row("Input Mode", "Internal pin biasing.", inputMode));
+            const debounce = numberInput(setup.DebounceTimeMs !== undefined ? setup.DebounceTimeMs : 50, 0);
+            list.appendChild(row("Debounce Time (ms)", "Minimum time a level must hold to register.", debounce));
+
+            readers.address = function () { return addr.value; };
+            readers.activelevel = function () { return activeLevel.value; };
+            readers.inputmode = function () { return inputMode.value; };
+            readers.debouncetimems = function () { return debounce.value; };
         } else if (currentClass === "Thermometer") {
             const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
             list.appendChild(row("GPIO Address", "The GPIO pin this sensor is wired to (0-255).", addr));
@@ -397,7 +412,7 @@
         fields.name = name;
         fields.enabled = classReaders.enabled() ? "true" : "false";
 
-        if (currentClass === "Relay" || currentClass === "Button" || currentClass === "Thermometer") {
+        if (currentClass === "Relay" || currentClass === "Button" || currentClass === "Doorbell" || currentClass === "Thermometer") {
             if (classReaders.address() === "") {
                 Notifications.show("GPIO Address is required.", { title: "Component" });
                 return null;

@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/Doorbell.h"
 #include "components/RGB_LED.h"
 #include "components/Thermometer.h"
 
@@ -875,6 +876,11 @@ bool settings::Save(const String& configfilename) const noexcept {
                     setup["DebounceTimeMs"] = buttonComponent.DebounceTime();
                     setup["LongClickTimeMs"] = buttonComponent.LongClickTime();
                     setup["MultiClickTimeMs"] = buttonComponent.MultiClickTime();
+                } else if (source->Class() == component::Classes::Doorbell) {
+                    const doorbell& doorbellComponent = static_cast<const doorbell&>(*source);
+                    setup["ActiveLevel"] = doorbellComponent.ActiveLevel() == doorbell::ActiveLevels::High ? "High" : "Low";
+                    setup["InputMode"] = doorbellComponent.InputMode() == doorbell::InputModes::PullUp ? "PullUp" : doorbellComponent.InputMode() == doorbell::InputModes::PullDown ? "PullDown" : "Floating";
+                    setup["DebounceTimeMs"] = doorbellComponent.DebounceTime();
                 } else if (source->Class() == component::Classes::Thermometer) {
                     const thermometer& thermometerComponent = static_cast<const thermometer&>(*source);
                     setup["Type"] = thermometer::TypeName(thermometerComponent.Type());

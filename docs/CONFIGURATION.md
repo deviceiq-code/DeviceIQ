@@ -131,7 +131,7 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 - Até **32 componentes** no total (`MaxConfiguredComponents`).
 - Cada entrada tem exatamente três seções, todas obrigatórias: `Setup`, `Properties`, `Events` (mesmo que `Properties`/`Events` sejam objetos vazios `{}`).
 - `Name` (em `Setup`) deve ser único entre todos os componentes (case-insensitive).
-- Para componentes endereçáveis (Relay, Button, Thermometer), o par `(Bus, Address)` deve ser único.
+- Para componentes endereçáveis (Relay, Button, Doorbell, Thermometer), o par `(Bus, Address)` deve ser único.
 - `Setup.Class` determina qual sub-schema abaixo se aplica.
 
 #### Classe `Relay`
@@ -172,6 +172,28 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 | `Setup.MultiClickTimeMs` | não | `400` | inteiro (ms) |
 | `Properties.Enabled` | não | `true` | bool |
 | `Events` | — | — | `Pressed`, `Released`, `Clicked`, `LongClicked`, `DoubleClicked`, `TripleClicked`, `Changed` |
+
+#### Classe `Doorbell`
+
+Uma entrada GPIO com debounce, como um `Button` simplificado (sem clique longo/múltiplo), publicada no Home Assistant como entidade `event` com `device_class: doorbell` — é isso que faz o HomeKit Bridge do HA expor um acessório **Campainha** nativo (notificação push / toque no HomePod), sem precisar de câmera. Mesmo modelo do `DoorBell` do DeviceIQ Lite.
+
+```json
+"Setup": { "Name": "FrontDoor", "Class": "Doorbell", "Bus": "Onboard", "Address": 4, "ActiveLevel": "Low", "InputMode": "PullUp", "DebounceTimeMs": 50 },
+"Properties": { "Enabled": true },
+"Events": { "Pressed": "compset(Chime state=on)" }
+```
+
+| Campo | Obrigatório | Default | Valores aceitos |
+|---|---|---|---|
+| `Setup.Bus` | sim | — | apenas `"Onboard"` |
+| `Setup.Address` | sim | — | `0`–`255` |
+| `Setup.ActiveLevel` | não | `"Low"` | `"High"` \| `"Low"` |
+| `Setup.InputMode` | não | `"PullUp"` | `"Floating"` \| `"PullUp"` \| `"PullDown"` |
+| `Setup.DebounceTimeMs` | não | `50` | inteiro (ms) |
+| `Properties.Enabled` | não | `true` | bool |
+| `Events` | — | — | `Pressed` (o toque), `Released`, `Changed` |
+
+MQTT: cada toque publica `{"event_type":"press"}` (não retido) em `<hostname>/<Name>/Get/ring` — tópico exclusivo, para que `Released`/`Changed` (que continuam saindo em `Get/event`, como nas demais classes) não disparem a campainha no HomeKit uma segunda vez.
 
 #### Classe `Thermometer`
 

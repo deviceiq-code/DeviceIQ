@@ -17,6 +17,7 @@
 #include "core/Version.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/Doorbell.h"
 #include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
@@ -1341,6 +1342,10 @@ void httpserver::HandleComponentsGet(WebServer& server) {
             entry["state"] = static_cast<const relay&>(*item).State();
         } else if (item->Class() == component::Classes::Button) {
             entry["state"] = static_cast<const button&>(*item).State();
+        } else if (item->Class() == component::Classes::Doorbell) {
+            const doorbell& value = static_cast<const doorbell&>(*item);
+            entry["state"] = value.State();
+            entry["rings"] = value.Rings();
         } else if (item->Class() == component::Classes::Blinds) {
             const blinds& value = static_cast<const blinds&>(*item);
             entry["state"] = blinds::MotionName(value.State());
@@ -1547,8 +1552,8 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
     }
 
     const String componentClass = request["class"] | "";
-    if (componentClass != "Relay" && componentClass != "Button" && componentClass != "Blinds" &&
-        componentClass != "Thermometer" && componentClass != "RGB_LED") {
+    if (componentClass != "Relay" && componentClass != "Button" && componentClass != "Doorbell" &&
+        componentClass != "Blinds" && componentClass != "Thermometer" && componentClass != "RGB_LED") {
         server.send(400, "application/json", "{\"error\":\"unsupported component class\"}");
         return;
     }

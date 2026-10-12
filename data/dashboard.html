@@ -88,7 +88,7 @@
     const VALID_REFRESH_INTERVALS_MS = [500, 1000, 3000, 5000];
     const VIEW_COOKIE_NAME = "dashboardView";
     const REFRESH_COOKIE_NAME = "dashboardRefreshMs";
-    const CLASS_ORDER = ["Relay", "Button", "Blinds", "Thermometer", "RGB_LED"];
+    const CLASS_ORDER = ["Relay", "Button", "Doorbell", "Blinds", "Thermometer", "RGB_LED"];
     let isAdmin = false;
     let refreshTimer = null;
     let lastComponents = [];
@@ -113,6 +113,7 @@
     const COMPONENT_ICONS = {
         Relay: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
         Button: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/>',
+        Doorbell: '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>',
         Blinds: '<rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/>',
         Thermometer: '<path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0z"/>',
         RGB_LED: '<path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>'
@@ -188,6 +189,20 @@
         const wrap = document.createElement("div");
         wrap.className = "comp-row";
         wrap.appendChild(pill(item.state ? "Pressed" : "Released", item.state ? "on" : "off"));
+        return wrap;
+    }
+
+    // A ring is momentary, so polling will almost always read "Idle" - the
+    // ring count is what actually shows a press happened (and is what
+    // notifications.js compares to announce one).
+    function doorbellBody(item) {
+        const wrap = document.createElement("div");
+        wrap.className = "comp-row";
+        wrap.appendChild(pill(item.state ? "Ringing" : "Idle", item.state ? "on" : "off"));
+        const rings = document.createElement("span");
+        rings.className = "state";
+        rings.textContent = item.rings + (item.rings === 1 ? " ring" : " rings") + " since boot";
+        wrap.appendChild(rings);
         return wrap;
     }
 
@@ -338,6 +353,7 @@
         let content;
         if (item.class === "Relay") content = relayBody(item);
         else if (item.class === "Button") content = buttonBody(item);
+        else if (item.class === "Doorbell") content = doorbellBody(item);
         else if (item.class === "Blinds") content = blindsBody(item);
         else if (item.class === "Thermometer") content = thermometerBody(item);
         else if (item.class === "RGB_LED") content = rgbLedBody(item);

@@ -14,7 +14,7 @@ bool cli::RegisterComponentCommands() {
         "comp rename [component_name|#component_id] name=newname\r\n"
         "comp event [component_name|#component_id] eventName script\r\n"
         "comp remove [component_name|#component_id]\r\n"
-        "comp add relay|button|thermometer|blinds|rgb_led name=value [id=value] ...\r\n"
+        "comp add relay|button|doorbell|thermometer|blinds|rgb_led name=value [id=value] ...\r\n"
         "Blinds member references use numeric component IDs.",
         [](WiFiClient& client, String* parameters) {
             String subcommand = parameters[0];

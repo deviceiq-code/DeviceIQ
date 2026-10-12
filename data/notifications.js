@@ -154,6 +154,8 @@
             if (before.state !== after.state) return after.name + " turned " + (after.state ? "on" : "off");
         } else if (after.class === "Button") {
             if (before.state !== after.state) return after.name + " " + (after.state ? "pressed" : "released");
+        } else if (after.class === "Doorbell") {
+            if (after.rings > before.rings) return after.name + " rang";
         } else if (after.class === "Blinds") {
             if (before.state !== after.state || before.position !== after.position) {
                 return after.name + ": " + after.state + " (" + after.position + "%)";

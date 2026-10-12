@@ -68,6 +68,7 @@ class mqttclient final {
         void PublishDiscovery();
         void PublishRelayDiscovery(const component& item);
         void PublishButtonDiscovery(const component& item);
+        void PublishDoorbellDiscovery(const component& item);
         void PublishThermometerDiscovery(const component& item);
         void PublishBlindsDiscovery(const component& item);
         void PublishRGB_LEDDiscovery(const component& item);

@@ -7,6 +7,7 @@
 #include "components/Blinds.h"
 #include "components/Button.h"
 #include "components/Component.h"
+#include "components/Doorbell.h"
 #include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
@@ -34,6 +35,10 @@ namespace {
             entry["state"] = static_cast<const relay&>(item).State();
         } else if (item.Class() == component::Classes::Button) {
             entry["state"] = static_cast<const button&>(item).State();
+        } else if (item.Class() == component::Classes::Doorbell) {
+            const doorbell& value = static_cast<const doorbell&>(item);
+            entry["state"] = value.State();
+            entry["rings"] = value.Rings();
         } else if (item.Class() == component::Classes::Blinds) {
             const blinds& value = static_cast<const blinds&>(item);
             entry["state"] = blinds::MotionName(value.State());

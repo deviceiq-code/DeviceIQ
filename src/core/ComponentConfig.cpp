@@ -9,6 +9,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/Doorbell.h"
 #include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
@@ -228,6 +229,82 @@ namespace {
             !ReadOptionalTime(setup, "MultiClickTimeMs", result.multiClickTimeMs)) {
             return false;
         }
+
+        if (!object["Properties"].isNull()) {
+            if (!object["Properties"].is<JsonObjectConst>()) return false;
+            const JsonObjectConst properties = object["Properties"].as<JsonObjectConst>();
+
+            if (!properties["Enabled"].isNull()) {
+                if (!properties["Enabled"].is<bool>()) return false;
+                result.enabled = properties["Enabled"].as<bool>();
+            }
+        }
+
+        if (!object["Events"].isNull() && !object["Events"].is<JsonObjectConst>()) return false;
+        return true;
+    }
+
+    struct DoorbellConfiguration {
+        String name;
+        int16_t id = 0;
+        uint8_t address = 0;
+        doorbell::ActiveLevels activeLevel = doorbell::ActiveLevels::Low;
+        doorbell::InputModes inputMode = doorbell::InputModes::PullUp;
+        uint32_t debounceTimeMs = doorbell::DEFAULT_DEBOUNCE_TIME_MS;
+        bool enabled = true;
+    };
+
+    bool ParseDoorbellConfiguration(JsonObjectConst object, int16_t id, DoorbellConfiguration& result) {
+        if (!HasComponentSections(object)) return false;
+        const JsonObjectConst setup = ComponentSetup(object);
+        if (!setup["Name"].is<const char*>() ||
+            !setup["Class"].is<const char*>() ||
+            !setup["Bus"].is<const char*>() ||
+            !setup["Address"].is<int>()) {
+            return false;
+        }
+
+        result.name = setup["Name"].as<const char*>();
+        result.name.trim();
+        if (result.name.isEmpty()) return false;
+
+        const int address = setup["Address"].as<int>();
+        if (address < 0 || address > UINT8_MAX) return false;
+
+        const String componentClass = setup["Class"].as<const char*>();
+        const String bus = setup["Bus"].as<const char*>();
+        if (!componentClass.equalsIgnoreCase("Doorbell") || !bus.equalsIgnoreCase("Onboard")) return false;
+
+        result.id = id;
+        result.address = static_cast<uint8_t>(address);
+
+        if (!setup["ActiveLevel"].isNull()) {
+            if (!setup["ActiveLevel"].is<const char*>()) return false;
+            const String activeLevel = setup["ActiveLevel"].as<const char*>();
+            if (activeLevel.equalsIgnoreCase("High")) {
+                result.activeLevel = doorbell::ActiveLevels::High;
+            } else if (activeLevel.equalsIgnoreCase("Low")) {
+                result.activeLevel = doorbell::ActiveLevels::Low;
+            } else {
+                return false;
+            }
+        }
+
+        if (!setup["InputMode"].isNull()) {
+            if (!setup["InputMode"].is<const char*>()) return false;
+            const String inputMode = setup["InputMode"].as<const char*>();
+            if (inputMode.equalsIgnoreCase("Floating")) {
+                result.inputMode = doorbell::InputModes::Floating;
+            } else if (inputMode.equalsIgnoreCase("PullUp")) {
+                result.inputMode = doorbell::InputModes::PullUp;
+            } else if (inputMode.equalsIgnoreCase("PullDown")) {
+                result.inputMode = doorbell::InputModes::PullDown;
+            } else {
+                return false;
+            }
+        }
+
+        if (!ReadOptionalTime(setup, "DebounceTimeMs", result.debounceTimeMs)) return false;
 
         if (!object["Properties"].isNull()) {
             if (!object["Properties"].is<JsonObjectConst>()) return false;
@@ -624,6 +701,13 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 return false;
             }
             identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
+        } else if (componentClass.equalsIgnoreCase("Doorbell")) {
+            DoorbellConfiguration configuration;
+            if (!ParseDoorbellConfiguration(object, configuredID, configuration)) {
+                Logger.Log("Component #" + String(configuredID) + ": invalid Doorbell configuration", logger::LogLevels::Error);
+                return false;
+            }
+            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Doorbell, 1};
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
             if (!ParseThermometerConfiguration(object, configuredID, configuration)) {
@@ -758,6 +842,19 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 configuration.longClickTimeMs,
                 configuration.multiClickTimeMs,
                 owners[index] < 0 ? configuration.enabled : true
+            ));
+        } else if (componentClass.equalsIgnoreCase("Doorbell")) {
+            DoorbellConfiguration configuration;
+            if (!ParseDoorbellConfiguration(object, configuredID, configuration)) return false;
+            instances[index].reset(new (std::nothrow) doorbell(
+                configuration.name,
+                configuration.id,
+                component::Buses::Onboard,
+                configuration.address,
+                configuration.activeLevel,
+                configuration.inputMode,
+                configuration.debounceTimeMs,
+                configuration.enabled
             ));
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
@@ -1051,6 +1148,10 @@ namespace {
                 ButtonConfiguration configuration;
                 if (!ParseButtonConfiguration(object, configuredID, configuration)) return false;
                 identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
+            } else if (componentClass.equalsIgnoreCase("Doorbell")) {
+                DoorbellConfiguration configuration;
+                if (!ParseDoorbellConfiguration(object, configuredID, configuration)) return false;
+                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Doorbell, 1};
             } else if (componentClass.equalsIgnoreCase("Thermometer")) {
                 ThermometerConfiguration configuration;
                 if (!ParseThermometerConfiguration(object, configuredID, configuration)) return false;
@@ -1150,6 +1251,15 @@ namespace {
                    configuration.multiClickTimeMs == value.MultiClickTime();
         }
 
+        if (runtime.Class() == component::Classes::Doorbell) {
+            DoorbellConfiguration configuration;
+            if (!ParseDoorbellConfiguration(configured, configuredID, configuration)) return false;
+            const doorbell& value = static_cast<const doorbell&>(runtime);
+            return configuration.activeLevel == value.ActiveLevel() &&
+                   configuration.inputMode == value.InputMode() &&
+                   configuration.debounceTimeMs == value.DebounceTime();
+        }
+
         if (runtime.Class() == component::Classes::Thermometer) {
             ThermometerConfiguration configuration;
             if (!ParseThermometerConfiguration(configured, configuredID, configuration)) return false;
@@ -1238,6 +1348,26 @@ namespace {
                 if (!ParseInteger(text, 0, relay::MAX_PULSE_TIME_MS, value)) return false;
                 if (value != 0 && value < relay::MIN_PULSE_TIME_MS) return false;
                 setup["PulseTimeMs"] = static_cast<uint32_t>(value);
+                return true;
+            }
+        }
+
+        if (componentClass.equalsIgnoreCase("Doorbell")) {
+            if (property.equalsIgnoreCase("activelevel")) {
+                if (!text.equalsIgnoreCase("High") && !text.equalsIgnoreCase("Low")) return false;
+                setup["ActiveLevel"] = text.equalsIgnoreCase("High") ? "High" : "Low";
+                return true;
+            }
+            if (property.equalsIgnoreCase("inputmode")) {
+                if (!text.equalsIgnoreCase("Floating") && !text.equalsIgnoreCase("PullUp") && !text.equalsIgnoreCase("PullDown")) return false;
+                setup["InputMode"] = text.equalsIgnoreCase("Floating") ? "Floating" :
+                    text.equalsIgnoreCase("PullDown") ? "PullDown" : "PullUp";
+                return true;
+            }
+            if (property.equalsIgnoreCase("debouncetimems")) {
+                long value = 0;
+                if (!ParseInteger(text, 0, INT32_MAX, value)) return false;
+                setup["DebounceTimeMs"] = static_cast<uint32_t>(value);
                 return true;
             }
         }
@@ -1357,7 +1487,7 @@ namespace {
     }
 
     // Mirrors each class's EventDescriptors() table (Relay.cpp, Button.cpp,
-    // Blinds.cpp, Thermometer.cpp), kept as a plain name list here because
+    // Doorbell.cpp, Blinds.cpp, Thermometer.cpp, RGB_LED.cpp), kept as a plain name list here because
     // programming an event has to work for a component that has no live
     // runtime instance yet - e.g. one just added via "comp add"/the web UI,
     // pending its first boot - and EventDescriptors() is only reachable
@@ -1365,6 +1495,7 @@ namespace {
     const char* const* ComponentEventNames(const String& componentClass, size_t& count) {
         static const char* const RelayEvents[] = {"SettingOn", "SettingOff", "SetOn", "SetOff", "Changed", "WriteFailed"};
         static const char* const ButtonEvents[] = {"Pressed", "Released", "Clicked", "LongClicked", "DoubleClicked", "TripleClicked", "Changed"};
+        static const char* const DoorbellEvents[] = {"Pressed", "Released", "Changed"};
         static const char* const BlindsEvents[] = {"Changed", "Opening", "Closing", "Stopped", "Opened", "Closed", "Fault"};
         static const char* const ThermometerEvents[] = {"TemperatureChanged", "HumidityChanged", "Changed", "ReadFailed", "ReadRecovered"};
         static const char* const RGBLedEvents[] = {"SettingOn", "SettingOff", "SetOn", "SetOff", "ColorChanged", "Changed"};
@@ -1376,6 +1507,10 @@ namespace {
         if (componentClass.equalsIgnoreCase("Button")) {
             count = sizeof(ButtonEvents) / sizeof(ButtonEvents[0]);
             return ButtonEvents;
+        }
+        if (componentClass.equalsIgnoreCase("Doorbell")) {
+            count = sizeof(DoorbellEvents) / sizeof(DoorbellEvents[0]);
+            return DoorbellEvents;
         }
         if (componentClass.equalsIgnoreCase("Blinds")) {
             count = sizeof(BlindsEvents) / sizeof(BlindsEvents[0]);
@@ -1845,6 +1980,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         component::Classes removedClass = component::Classes::Base;
         if (removedClassName.equalsIgnoreCase("Relay")) removedClass = component::Classes::Relay;
         else if (removedClassName.equalsIgnoreCase("Button")) removedClass = component::Classes::Button;
+        else if (removedClassName.equalsIgnoreCase("Doorbell")) removedClass = component::Classes::Doorbell;
         else if (removedClassName.equalsIgnoreCase("Thermometer")) removedClass = component::Classes::Thermometer;
         else if (removedClassName.equalsIgnoreCase("Blinds")) removedClass = component::Classes::Blinds;
         else if (removedClassName.equalsIgnoreCase("RGB_LED")) removedClass = component::Classes::RGB_LED;
@@ -1875,7 +2011,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
     if (subcommand == "add") {
         if (parameters[1].isEmpty()) {
-            output = "Usage: comp add relay|button|thermometer|blinds|rgb_led name=value [id=value] ...\r\n";
+            output = "Usage: comp add relay|button|doorbell|thermometer|blinds|rgb_led name=value [id=value] ...\r\n";
             return false;
         }
         if (components.size() >= MaxConfiguredComponents) {
@@ -1885,9 +2021,10 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
 
         String componentClass = parameters[1];
         if (!componentClass.equalsIgnoreCase("Relay") && !componentClass.equalsIgnoreCase("Button") &&
+            !componentClass.equalsIgnoreCase("Doorbell") &&
             !componentClass.equalsIgnoreCase("Thermometer") && !componentClass.equalsIgnoreCase("Blinds") &&
             !componentClass.equalsIgnoreCase("RGB_LED")) {
-            output = "Unsupported component class. Expected relay, button, thermometer, blinds, or rgb_led.\r\n";
+            output = "Unsupported component class. Expected relay, button, doorbell, thermometer, blinds, or rgb_led.\r\n";
             return false;
         }
 
@@ -1922,6 +2059,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         JsonObject setup = item["Setup"].to<JsonObject>();
         setup["Class"] = componentClass.equalsIgnoreCase("Relay") ? "Relay" :
             componentClass.equalsIgnoreCase("Button") ? "Button" :
+            componentClass.equalsIgnoreCase("Doorbell") ? "Doorbell" :
             componentClass.equalsIgnoreCase("Thermometer") ? "Thermometer" :
             componentClass.equalsIgnoreCase("RGB_LED") ? "RGB_LED" : "Blinds";
         setup["Bus"] = componentClass.equalsIgnoreCase("Blinds") ? "Group" : "Onboard";
@@ -1940,6 +2078,10 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
             setup["DebounceTimeMs"] = button::DEFAULT_DEBOUNCE_TIME_MS;
             setup["LongClickTimeMs"] = button::DEFAULT_LONG_CLICK_TIME_MS;
             setup["MultiClickTimeMs"] = button::DEFAULT_MULTI_CLICK_TIME_MS;
+        } else if (componentClass.equalsIgnoreCase("Doorbell")) {
+            setup["ActiveLevel"] = "Low";
+            setup["InputMode"] = "PullUp";
+            setup["DebounceTimeMs"] = doorbell::DEFAULT_DEBOUNCE_TIME_MS;
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             setup["Type"] = "DS18B20";
             setup["PollingIntervalMs"] = thermometer::DEFAULT_POLLING_INTERVAL_MS;

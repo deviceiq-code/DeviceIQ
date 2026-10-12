@@ -3,6 +3,7 @@
 #include "Globals.h"
 #include "components/Blinds.h"
 #include "components/Button.h"
+#include "components/Doorbell.h"
 #include "components/RGB_LED.h"
 #include "components/Relay.h"
 #include "components/Thermometer.h"
@@ -185,6 +186,14 @@ void mqttclient::ProcessEvent(const ComponentEvent& event) {
     } else if (event.source->Class() == component::Classes::Button &&
         (event.code == button::EventCodes::Pressed || event.code == button::EventCodes::Released)) {
         PublishComponentState(*event.source);
+    } else if (event.source->Class() == component::Classes::Doorbell && event.code == doorbell::EventCodes::Pressed) {
+        // Its own topic rather than the generic Get/event above: that one
+        // also carries Released/Changed, and HA's HomeKit Bridge rings the
+        // HomeKit doorbell on *every* update of a doorbell event entity -
+        // so this one carries exactly one message per ring. Unretained,
+        // like every HA "event" payload (a retained one would re-ring on
+        // each HA restart). Same payload DeviceIQ Lite publishes.
+        (void)Publish(ComponentTopic(*event.source, "Get", "ring"), "{\"event_type\":\"press\"}", false);
     } else if (event.source->Class() == component::Classes::Thermometer &&
         (event.code == thermometer::EventCodes::Changed ||
             event.code == thermometer::EventCodes::ReadFailed ||
@@ -304,6 +313,7 @@ void mqttclient::PublishDiscovery() {
         if (item == nullptr || !item->IsPublic() || !ValidTopicSegment(item->Name())) continue;
         if (item->Class() == component::Classes::Relay) PublishRelayDiscovery(*item);
         else if (item->Class() == component::Classes::Button) PublishButtonDiscovery(*item);
+        else if (item->Class() == component::Classes::Doorbell) PublishDoorbellDiscovery(*item);
         else if (item->Class() == component::Classes::Thermometer) PublishThermometerDiscovery(*item);
         else if (item->Class() == component::Classes::Blinds) PublishBlindsDiscovery(*item);
         else if (item->Class() == component::Classes::RGB_LED) PublishRGB_LEDDiscovery(*item);
@@ -354,6 +364,26 @@ void mqttclient::PublishButtonDiscovery(const component& item) {
     String eventPayload;
     if (serializeJson(eventDocument, eventPayload) > 0) {
         (void)Publish(pDiscoveryPrefix + "/event/" + eventUnique + "/config", eventPayload, true);
+    }
+}
+
+// HA's "event" platform: there is no retained level to compare against -
+// the entity just reports the timestamp of the most recent message on
+// stat_t as its state (see ProcessEvent()). device_class "doorbell" is what
+// makes HA's own HomeKit Bridge integration surface this as a native
+// HomeKit Doorbell accessory (push notification / HomePod chime) - no
+// camera/linked_doorbell_sensor needed. Mirrors DeviceIQ Lite.
+void mqttclient::PublishDoorbellDiscovery(const component& item) {
+    const String unique = UniqueID(item, "ring");
+    JsonDocument document;
+    AddDiscoveryMetadata(document, item, unique);
+    document["dev_cla"] = "doorbell";
+    document["stat_t"] = ComponentTopic(item, "Get", "ring");
+    JsonArray eventTypes = document["event_types"].to<JsonArray>();
+    eventTypes.add("press");
+    String payload;
+    if (serializeJson(document, payload) > 0) {
+        (void)Publish(pDiscoveryPrefix + "/event/" + unique + "/config", payload, true);
     }
 }
 
@@ -435,7 +465,7 @@ void mqttclient::PublishRGB_LEDDiscovery(const component& item) {
     }
 }
 
-// Mirrors PublishRelayDiscovery/PublishButtonDiscovery/PublishThermometerDiscovery/
+// Mirrors PublishRelayDiscovery/PublishButtonDiscovery/PublishDoorbellDiscovery/PublishThermometerDiscovery/
 // PublishBlindsDiscovery's topics exactly, empty payload instead of a real
 // config - Home Assistant's own protocol for forgetting a discovered entity.
 // The component is already gone by the time this runs (comp remove already
@@ -452,6 +482,9 @@ void mqttclient::UnpublishDiscovery(component::Classes componentClass, int16_t i
         case component::Classes::Button:
             (void)Publish(pDiscoveryPrefix + "/binary_sensor/" + UniqueID(id, "state") + "/config", "", true);
             (void)Publish(pDiscoveryPrefix + "/event/" + UniqueID(id, "event") + "/config", "", true);
+            break;
+        case component::Classes::Doorbell:
+            (void)Publish(pDiscoveryPrefix + "/event/" + UniqueID(id, "ring") + "/config", "", true);
             break;
         case component::Classes::Thermometer:
             (void)Publish(pDiscoveryPrefix + "/sensor/" + UniqueID(id, "temperature") + "/config", "", true);
