@@ -326,7 +326,7 @@ void telnetserver::Task() {
         xTaskNotifyWait(0, UINT32_MAX, &notifications, 0);
         if ((notifications & STOP_NOTIFICATION) != 0) break;
 
-        const network::APMode networkMode = Network.ConnectionMode();
+        const network::APMode networkMode = NetworkController.ConnectionMode();
 
         if (!serverStarted && networkMode != network::APMode::Offline) {
             server.begin();
@@ -354,7 +354,7 @@ void telnetserver::Task() {
 }
 
 void telnetserver::AcceptClient(WiFiServer& server) {
-    WiFiClient client = server.available();
+    WiFiClient client = server.accept();
     if (!client) return;
 
     const size_t maxSessions = MaxSessions();

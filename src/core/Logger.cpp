@@ -158,7 +158,7 @@ void logger::LogToSyslog(const char* message, LogLevels loglevel) {
     packet += ">1 ";
     packet += timestamp;
     packet += ' ';
-    const String hostname = Network.Hostname();
+    const String hostname = NetworkController.Hostname();
     packet += hostname.isEmpty() ? String(Defaults.Network.Hostname()) : hostname;
     packet += " " + String(Version::ProductFamily) + " - - - ";
     packet += message;

@@ -22,7 +22,7 @@ bool mqttclient::Start() noexcept {
     pPort = Settings.MQTT.Port();
     pUser = Settings.MQTT.User();
     pPassword = Settings.MQTT.Password();
-    pHostname = Network.Hostname();
+    pHostname = NetworkController.Hostname();
     pDiscoveryEnabled = Settings.MQTT.DiscoveryEnabled();
     pDiscoveryPrefix = Settings.MQTT.DiscoveryPrefix();
     pDeviceID = DeviceIdentifier();
@@ -80,7 +80,7 @@ void mqttclient::MessageCallback(char* topic, uint8_t* payload, unsigned int len
 
 void mqttclient::Task() {
     while (true) {
-        if (Network.ConnectionMode() != network::APMode::WifiClient || WiFi.status() != WL_CONNECTED) {
+        if (NetworkController.ConnectionMode() != network::APMode::WifiClient || WiFi.status() != WL_CONNECTED) {
             if (pClient.connected()) pClient.disconnect();
             DiscardEvents();
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -560,7 +560,7 @@ bool mqttclient::ValidTopicSegment(const String& value) noexcept {
 
 String mqttclient::DeviceIdentifier() {
     // Reads the eFuse MAC directly (same call Network.cpp uses for
-    // pMACAddress) instead of going through Network.MAC_Address(), which
+    // pMACAddress) instead of going through NetworkController.MAC_Address(), which
     // stays empty until the Network task's first UpdateConnectionState()
     // - a race MQTTClient.Start() can win. Losing it used to fall back to
     // ESP.getEfuseMac(), whose byte order is reversed from esp_read_mac(),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <esp_mac.h>
 
 #ifndef DEVICEIQ_VERSION_MAJOR
 #define DEVICEIQ_VERSION_MAJOR 1

@@ -83,24 +83,24 @@ bool app::InitializeLogger() {
 }
 
 bool app::InitializeNetwork() {
-    Network.ConnectionTimeout(Settings.Network.ConnectionTimeout());
-    Network.ReconnectEnabled(Settings.Network.ReconnectEnabled());
-    Network.ReconnectInitialInterval(Settings.Network.ReconnectInitialInterval());
-    Network.ReconnectMaximumInterval(Settings.Network.ReconnectMaximumInterval());
-    Network.FallbackAPEnabled(Settings.Network.FallbackAPEnabled());
-    Network.FallbackAPRetention(Settings.Network.FallbackAPRetention());
-    Network.DHCP_Client(Settings.Network.DHCPClient());
-    Network.SSID(Settings.Network.SSID());
-    const bool stationPasswordValid = Network.Passphrase(Settings.Network.Passphrase());
-    Network.Hostname(Settings.Network.Hostname());
+    NetworkController.ConnectionTimeout(Settings.Network.ConnectionTimeout());
+    NetworkController.ReconnectEnabled(Settings.Network.ReconnectEnabled());
+    NetworkController.ReconnectInitialInterval(Settings.Network.ReconnectInitialInterval());
+    NetworkController.ReconnectMaximumInterval(Settings.Network.ReconnectMaximumInterval());
+    NetworkController.FallbackAPEnabled(Settings.Network.FallbackAPEnabled());
+    NetworkController.FallbackAPRetention(Settings.Network.FallbackAPRetention());
+    NetworkController.DHCP_Client(Settings.Network.DHCPClient());
+    NetworkController.SSID(Settings.Network.SSID());
+    const bool stationPasswordValid = NetworkController.Passphrase(Settings.Network.Passphrase());
+    NetworkController.Hostname(Settings.Network.Hostname());
     const String fallbackSSID = Settings.Network.FallbackAPSSID();
-    Network.SoftAP_SSID(fallbackSSID.isEmpty() ? Settings.Network.Hostname() : fallbackSSID);
-    const bool fallbackPasswordValid = Network.SoftAP_Password(Settings.Network.FallbackAPPassword());
-    Network.IP_Address(Settings.Network.IP_Address());
-    Network.Netmask(Settings.Network.Netmask());
-    Network.Gateway(Settings.Network.Gateway());
-    Network.DNS_Server(0, Settings.Network.DNS(0));
-    Network.DNS_Server(1, Settings.Network.DNS(1));
+    NetworkController.SoftAP_SSID(fallbackSSID.isEmpty() ? Settings.Network.Hostname() : fallbackSSID);
+    const bool fallbackPasswordValid = NetworkController.SoftAP_Password(Settings.Network.FallbackAPPassword());
+    NetworkController.IP_Address(Settings.Network.IP_Address());
+    NetworkController.Netmask(Settings.Network.Netmask());
+    NetworkController.Gateway(Settings.Network.Gateway());
+    NetworkController.DNS_Server(0, Settings.Network.DNS(0));
+    NetworkController.DNS_Server(1, Settings.Network.DNS(1));
 
     if (!stationPasswordValid) {
         Logger.Log("Invalid WiFi passphrase", logger::LogLevels::Error);
@@ -109,9 +109,9 @@ bool app::InitializeNetwork() {
         Logger.Log("Invalid fallback SoftAP password", logger::LogLevels::Error);
     }
 
-    Network.OnModeChanged(LogNetworkStatus);
+    NetworkController.OnModeChanged(LogNetworkStatus);
 
-    if (!Network.Start()) {
+    if (!NetworkController.Start()) {
         Logger.Log("Error initializing Network object", logger::LogLevels::Error);
         return false;
     }
@@ -222,7 +222,7 @@ bool app::InitializeAutomation() {
 void app::ClockTask() {
     uint32_t consecutiveFailures = 0;
     while (true) {
-        if (Network.ConnectionMode() != network::APMode::WifiClient) {
+        if (NetworkController.ConnectionMode() != network::APMode::WifiClient) {
             vTaskDelay(pdMS_TO_TICKS(NTP_OFFLINE_RETRY_MS));
             continue;
         }
@@ -385,7 +385,7 @@ void app::LogConfigurationStatus(bool configurationLoaded) {
 }
 
 void app::LogNetworkStatus() {
-    const network::APMode mode = Network.ConnectionMode();
+    const network::APMode mode = NetworkController.ConnectionMode();
 
     if (mode == network::APMode::Offline) {
         Logger.Log("Network status: Offline", logger::LogLevels::Warning);
@@ -393,9 +393,9 @@ void app::LogNetworkStatus() {
     }
 
     if (mode == network::APMode::WifiClient) {
-        Logger.Log("Network: WiFi Client, connected to " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + " | RSSI: " + String(Network.RSSI()) + " dBm)", logger::LogLevels::Information);
+        Logger.Log("Network: WiFi Client, connected to " + NetworkController.SSID() + " (Hostname: " + NetworkController.Hostname() + " | IP: " + NetworkController.IP_Address().toString() + " | MAC: " + NetworkController.MAC_Address() + " | RSSI: " + String(NetworkController.RSSI()) + " dBm)", logger::LogLevels::Information);
         return;
     }
 
-    Logger.Log("Network: SoftAP active as " + Network.SSID() + " (Hostname: " + Network.Hostname() + " | IP: " + Network.IP_Address().toString() + " | MAC: " + Network.MAC_Address() + ")", logger::LogLevels::Information);
+    Logger.Log("Network: SoftAP active as " + NetworkController.SSID() + " (Hostname: " + NetworkController.Hostname() + " | IP: " + NetworkController.IP_Address().toString() + " | MAC: " + NetworkController.MAC_Address() + ")", logger::LogLevels::Information);
 }

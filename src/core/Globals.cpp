@@ -4,7 +4,7 @@ rtc Clock(0);
 logger Logger(Serial);
 filesystem FileSystem;
 settings Settings;
-network Network;
+network NetworkController;
 telnetserver TelnetServer;
 ComponentManager ComponentController;
 automation Automation;

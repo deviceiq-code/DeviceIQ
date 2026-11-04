@@ -138,16 +138,16 @@ namespace {
     }
 
     void ShowAll(String& output, bool isAdmin) {
-        const network::APMode mode = Network.ConnectionMode();
+        const network::APMode mode = NetworkController.ConnectionMode();
         AppendSetting(output, "Mode", ModeName(mode));
-        AppendSetting(output, "MAC", Network.MAC_Address());
-        AppendSetting(output, "Current SSID", mode == network::APMode::Offline ? "unavailable" : Network.SSID());
-        AppendSetting(output, "RSSI", mode == network::APMode::WifiClient ? String(Network.RSSI()) + " dBm" : "unavailable");
-        AppendSetting(output, "Current IP", Network.IP_Address().toString());
-        AppendSetting(output, "Current gateway", Network.Gateway().toString());
-        AppendSetting(output, "Current netmask", Network.CurrentNetmask().toString());
-        AppendSetting(output, "Current DNS 1", Network.CurrentDNS_Server(0).toString());
-        AppendSetting(output, "Current DNS 2", Network.CurrentDNS_Server(1).toString());
+        AppendSetting(output, "MAC", NetworkController.MAC_Address());
+        AppendSetting(output, "Current SSID", mode == network::APMode::Offline ? "unavailable" : NetworkController.SSID());
+        AppendSetting(output, "RSSI", mode == network::APMode::WifiClient ? String(NetworkController.RSSI()) + " dBm" : "unavailable");
+        AppendSetting(output, "Current IP", NetworkController.IP_Address().toString());
+        AppendSetting(output, "Current gateway", NetworkController.Gateway().toString());
+        AppendSetting(output, "Current netmask", NetworkController.CurrentNetmask().toString());
+        AppendSetting(output, "Current DNS 1", NetworkController.CurrentDNS_Server(0).toString());
+        AppendSetting(output, "Current DNS 2", NetworkController.CurrentDNS_Server(1).toString());
         output += "\r\n";
         AppendSetting(output, "DHCP Client", BoolValue(Settings.Network.DHCPClient()));
         AppendSetting(output, "Hostname", Settings.Network.Hostname());
@@ -207,15 +207,15 @@ namespace {
 
         if (command == "rssi") {
             if (!parameters[1].isEmpty()) return Usage(output);
-            output = Network.ConnectionMode() == network::APMode::WifiClient
-                ? String(Network.RSSI()) + " dBm\r\n"
+            output = NetworkController.ConnectionMode() == network::APMode::WifiClient
+                ? String(NetworkController.RSSI()) + " dBm\r\n"
                 : "Unavailable: WiFi station is not connected.\r\n";
             return true;
         }
 
         if (command == "ip" && parameters[1].isEmpty()) {
             AppendSetting(output, "Configured", Settings.Network.IP_Address().toString());
-            AppendSetting(output, "Current", Network.IP_Address().toString());
+            AppendSetting(output, "Current", NetworkController.IP_Address().toString());
             AppendSetting(output, "DHCP Client", BoolValue(Settings.Network.DHCPClient()));
             return true;
         }

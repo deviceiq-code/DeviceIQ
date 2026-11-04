@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <esp_now.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
@@ -190,7 +191,7 @@ class espnowbus {
         static constexpr uint8_t FORGET_FRAME_COUNT = 3;
 
         static void TaskEntry(void* parameter);
-        static void OnReceive(const uint8_t* mac, const uint8_t* data, int length);
+        static void OnReceive(const esp_now_recv_info_t* info, const uint8_t* data, int length);
         void Task();
         void Wake() noexcept;
 

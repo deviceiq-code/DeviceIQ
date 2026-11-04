@@ -449,11 +449,11 @@ void espnowbus::TaskEntry(void* parameter) {
 
 // Runs on the WiFi task: copy and get out. A full queue just drops the frame,
 // which every exchange here already survives through its retries.
-void espnowbus::OnReceive(const uint8_t* mac, const uint8_t* data, int length) {
-    if (Instance == nullptr || length <= 0 || length > static_cast<int>(MaxFrameLength)) return;
+void espnowbus::OnReceive(const esp_now_recv_info_t* info, const uint8_t* data, int length) {
+    if (Instance == nullptr || info == nullptr || length <= 0 || length > static_cast<int>(MaxFrameLength)) return;
 
     ReceivedFrame frame;
-    memcpy(frame.mac, mac, sizeof(frame.mac));
+    memcpy(frame.mac, info->src_addr, sizeof(frame.mac));
     frame.length = static_cast<uint8_t>(length);
     memcpy(frame.data, data, static_cast<size_t>(length));
     if (xQueueSend(Instance->pReceiveQueue, &frame, 0) == pdTRUE) Instance->Wake();

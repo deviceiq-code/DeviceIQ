@@ -20,7 +20,7 @@ extern rtc Clock;
 extern logger Logger;
 extern filesystem FileSystem;
 extern settings Settings;
-extern network Network;
+extern network NetworkController;
 extern telnetserver TelnetServer;
 extern ComponentManager ComponentController;
 extern automation Automation;

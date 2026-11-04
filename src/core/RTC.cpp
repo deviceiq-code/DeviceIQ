@@ -53,7 +53,7 @@ String rtc::GetDate() const {
 }
 
 bool rtc::NTPUpdate(const String& ntpserver) {
-    if (Network.ConnectionMode() != network::APMode::WifiClient) return false;
+    if (NetworkController.ConnectionMode() != network::APMode::WifiClient) return false;
 
     WiFiUDP udpClient;
 

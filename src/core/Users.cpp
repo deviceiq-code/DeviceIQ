@@ -64,22 +64,8 @@ bool user::SetPassword(const String& password) {
         return false;
     }
 
-    mbedtls_md_context_t ctx;
-    const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    mbedtls_md_init(&ctx);
+    const int ret = mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), newSalt, sizeof(newSalt), PASS_PBKDF2_ITERATIONS, sizeof(newHash), newHash);
 
-    if (mbedtls_md_setup(&ctx, info, 1) != 0) {
-        mbedtls_md_free(&ctx);
-        mbedtls_ctr_drbg_free(&ctr_drbg);
-        mbedtls_entropy_free(&entropy);
-        mbedtls_platform_zeroize(newSalt, sizeof(newSalt));
-        mbedtls_platform_zeroize(newHash, sizeof(newHash));
-        return false;
-    }
-
-    const int ret = mbedtls_pkcs5_pbkdf2_hmac(&ctx, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), newSalt, sizeof(newSalt), PASS_PBKDF2_ITERATIONS, sizeof(newHash), newHash);
-
-    mbedtls_md_free(&ctx);
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
 
@@ -109,19 +95,7 @@ bool user::Authenticate(const String& password) const {
 bool user::VerifyPassword(const String& password, const uint8_t* salt, const uint8_t* hash) noexcept {
     uint8_t computed[PASS_HASHLEN];
 
-    mbedtls_md_context_t ctx;
-    const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-
-    mbedtls_md_init(&ctx);
-
-    if (mbedtls_md_setup(&ctx, info, 1) != 0) {
-        mbedtls_md_free(&ctx);
-        return false;
-    }
-
-    const int ret = mbedtls_pkcs5_pbkdf2_hmac(&ctx, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), salt, PASS_SALTLEN, PASS_PBKDF2_ITERATIONS, PASS_HASHLEN, computed);
-
-    mbedtls_md_free(&ctx);
+    const int ret = mbedtls_pkcs5_pbkdf2_hmac_ext(MBEDTLS_MD_SHA256, reinterpret_cast<const unsigned char*>(password.c_str()), password.length(), salt, PASS_SALTLEN, PASS_PBKDF2_ITERATIONS, PASS_HASHLEN, computed);
 
     if (ret != 0) {
         mbedtls_platform_zeroize(computed, sizeof(computed));

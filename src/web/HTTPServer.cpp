@@ -236,9 +236,9 @@ namespace {
         out["IP Address"] = Settings.Network.IP_Address().toString();
         out["Gateway"] = Settings.Network.Gateway().toString();
         out["Netmask"] = Settings.Network.Netmask().toString();
-        out["Current IP"] = Network.IP_Address().toString();
-        out["Current Gateway"] = Network.Gateway().toString();
-        out["Current Netmask"] = Network.CurrentNetmask().toString();
+        out["Current IP"] = NetworkController.IP_Address().toString();
+        out["Current Gateway"] = NetworkController.Gateway().toString();
+        out["Current Netmask"] = NetworkController.CurrentNetmask().toString();
         out["DNS 1"] = Settings.Network.DNS(0).toString();
         out["DNS 2"] = Settings.Network.DNS(1).toString();
         out["SSID"] = Settings.Network.SSID();
@@ -1007,7 +1007,7 @@ void httpserver::Task() {
         xTaskNotifyWait(0, UINT32_MAX, &notifications, 0);
         if ((notifications & STOP_NOTIFICATION) != 0) break;
 
-        const network::APMode networkMode = Network.ConnectionMode();
+        const network::APMode networkMode = NetworkController.ConnectionMode();
         if (!serverStarted && networkMode != network::APMode::Offline) {
             server.begin();
             serverStarted = true;

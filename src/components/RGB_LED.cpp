@@ -103,8 +103,7 @@ bool rgb_led::Configure() noexcept {
     const uint8_t pins[] = {pRedPin, pGreenPin, pBluePin};
     const uint8_t channels[] = {pRedChannel, pGreenChannel, pBlueChannel};
     for (size_t index = 0; index < 3; ++index) {
-        if (ledcSetup(channels[index], PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS) == 0) return false;
-        ledcAttachPin(pins[index], channels[index]);
+        if (!ledcAttachChannel(pins[index], PWM_FREQUENCY_HZ, PWM_RESOLUTION_BITS, channels[index])) return false;
     }
 
     return true;
@@ -198,9 +197,10 @@ bool rgb_led::ApplyColor(uint8_t red, uint8_t green, uint8_t blue) noexcept {
 
 void rgb_led::WriteChannels() noexcept {
     const bool on = State();
-    ledcWrite(pRedChannel, ElectricalDuty(on ? Red() : 0));
-    ledcWrite(pGreenChannel, ElectricalDuty(on ? Green() : 0));
-    ledcWrite(pBlueChannel, ElectricalDuty(on ? Blue() : 0));
+    // Arduino-ESP32 3.x addresses LEDC by pin; the channel only matters at attach time.
+    ledcWrite(pRedPin, ElectricalDuty(on ? Red() : 0));
+    ledcWrite(pGreenPin, ElectricalDuty(on ? Green() : 0));
+    ledcWrite(pBluePin, ElectricalDuty(on ? Blue() : 0));
 }
 
 uint8_t rgb_led::ElectricalDuty(uint8_t colorValue) const noexcept {
