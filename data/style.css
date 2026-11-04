@@ -786,6 +786,12 @@ main.setup-main {
     gap: 8px;
 }
 
+.setting-row-control.node-actions {
+    flex-shrink: 1;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .setting-row-control input[type="text"],
 .setting-row-control input[type="password"],
 .setting-row-control input[type="number"] {

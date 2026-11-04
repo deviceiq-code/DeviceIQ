@@ -7,6 +7,7 @@
 
 #include "Component.h"
 #include "Pcf8574Input.h"
+#include "core/EspNowBus.h"
 
 class button final : public component {
     public:
@@ -51,6 +52,19 @@ class button final : public component {
             uint32_t multiClickTimeMs = DEFAULT_MULTI_CLICK_TIME_MS,
             bool enabled = true
         );
+        // A button wired to GPIO `address` of ESP-NOW node `node`.
+        button(
+            String name,
+            int16_t id,
+            String node,
+            uint8_t address,
+            ActiveLevels activeLevel = ActiveLevels::Low,
+            InputModes inputMode = InputModes::PullUp,
+            uint32_t debounceTimeMs = DEFAULT_DEBOUNCE_TIME_MS,
+            uint32_t longClickTimeMs = DEFAULT_LONG_CLICK_TIME_MS,
+            uint32_t multiClickTimeMs = DEFAULT_MULTI_CLICK_TIME_MS,
+            bool enabled = true
+        );
         ~button() override = default;
 
         [[nodiscard]] Classes Class() const noexcept override { return Classes::Button; }
@@ -58,6 +72,8 @@ class button final : public component {
         [[nodiscard]] ActiveLevels ActiveLevel() const noexcept { return pActiveLevel; }
         [[nodiscard]] InputModes InputMode() const noexcept { return pInputMode; }
         [[nodiscard]] uint32_t DebounceTime() const noexcept { return pDebounceTimeMs; }
+        [[nodiscard]] const String& Node() const noexcept { return pNode; }
+        [[nodiscard]] bool NodeOnline() const noexcept;
         [[nodiscard]] uint32_t LongClickTime() const noexcept { return pLongClickTimeMs; }
         [[nodiscard]] uint32_t MultiClickTime() const noexcept { return pMultiClickTimeMs; }
         void GetInfo(String& output) const override;
@@ -78,6 +94,8 @@ class button final : public component {
 
         std::atomic<bool> pState{false};
         Pcf8574Input* pInputDevice = nullptr;
+        const String pNode;
+        espnowbus::Port pPort;
         const ActiveLevels pActiveLevel;
         const InputModes pInputMode;
         const uint32_t pDebounceTimeMs;

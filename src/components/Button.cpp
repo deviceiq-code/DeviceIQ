@@ -3,6 +3,8 @@
 #include <driver/gpio.h>
 #include <freertos/task.h>
 
+#include "core/Globals.h"
+
 button::button(
     String name,
     int16_t id,
@@ -48,6 +50,33 @@ button::button(
     pLongClickTicks(pdMS_TO_TICKS(longClickTimeMs)),
     pMultiClickTicks(pdMS_TO_TICKS(multiClickTimeMs)) {}
 
+button::button(
+    String name,
+    int16_t id,
+    String node,
+    uint8_t address,
+    ActiveLevels activeLevel,
+    InputModes inputMode,
+    uint32_t debounceTimeMs,
+    uint32_t longClickTimeMs,
+    uint32_t multiClickTimeMs,
+    bool enabled
+) :
+    component(std::move(name), id, Buses::EspNow, address, enabled),
+    pNode(std::move(node)),
+    pActiveLevel(activeLevel),
+    pInputMode(inputMode),
+    pDebounceTimeMs(debounceTimeMs),
+    pLongClickTimeMs(longClickTimeMs),
+    pMultiClickTimeMs(multiClickTimeMs),
+    pDebounceTicks(pdMS_TO_TICKS(debounceTimeMs)),
+    pLongClickTicks(pdMS_TO_TICKS(longClickTimeMs)),
+    pMultiClickTicks(pdMS_TO_TICKS(multiClickTimeMs)) {}
+
+bool button::NodeOnline() const noexcept {
+    return Bus() == Buses::EspNow && EspNow.Online(pPort);
+}
+
 void button::GetInfo(String& output) const {
     component::GetInfo(output);
     output += "State          | " + String(State() ? "pressed" : "released") + "\r\n";
@@ -56,11 +85,20 @@ void button::GetInfo(String& output) const {
     output += "DebounceTimeMs | " + String(DebounceTime()) + "\r\n";
     output += "LongClickTimeMs| " + String(LongClickTime()) + "\r\n";
     output += "MultiClickMs   | " + String(MultiClickTime()) + "\r\n";
+    if (Bus() == Buses::EspNow) {
+        output += "Node           | " + pNode + "\r\n";
+        output += "NodeOnline     | " + String(NodeOnline() ? "yes" : "no") + "\r\n";
+    }
 }
 
 bool button::Configure() noexcept {
     if (Bus() == Buses::I2C && pInputDevice != nullptr) {
         return pInputDevice->Configure(Address(), pInputMode == InputModes::PullUp);
+    }
+
+    if (Bus() == Buses::EspNow) {
+        pPort = EspNow.AttachInput(pNode, Address(), pInputMode == InputModes::PullUp);
+        return true;
     }
 
     if (Bus() != Buses::Onboard || !GPIO_IS_VALID_GPIO(static_cast<gpio_num_t>(Address()))) return false;
@@ -143,6 +181,8 @@ bool button::ReadState(bool& state) noexcept {
         level = digitalRead(Address()) == HIGH;
     } else if (Bus() == Buses::I2C && pInputDevice != nullptr) {
         if (!pInputDevice->Read(Address(), level)) return false;
+    } else if (Bus() == Buses::EspNow) {
+        if (!EspNow.InputLevel(pPort, level)) return false;
     } else {
         return false;
     }

@@ -610,6 +610,46 @@ namespace {
         out["Port"] = Settings.Webhooks.Port();
     }
 
+    bool ApplyEspNowFields(JsonObjectConst fields, String& error) {
+        if (!HasField(fields, "Enabled")) return true;
+
+        bool value = false;
+        if (!JsonBool(fields, "Enabled", value)) {
+            error = "Enabled must be a boolean.";
+            return false;
+        }
+        Settings.EspNow.Enabled(value);
+        return true;
+    }
+
+    void GetEspNowJson(JsonObject out) {
+        out["Enabled"] = Settings.EspNow.Enabled();
+    }
+
+    void AppendNodeState(JsonObject entry, const component& item) {
+        if (item.Bus() != component::Buses::EspNow) return;
+
+        if (item.Class() == component::Classes::Relay) {
+            entry["node"] = static_cast<const relay&>(item).Node();
+            entry["online"] = static_cast<const relay&>(item).NodeOnline();
+        } else if (item.Class() == component::Classes::Button) {
+            entry["node"] = static_cast<const button&>(item).Node();
+            entry["online"] = static_cast<const button&>(item).NodeOnline();
+        } else if (item.Class() == component::Classes::Doorbell) {
+            entry["node"] = static_cast<const doorbell&>(item).Node();
+            entry["online"] = static_cast<const doorbell&>(item).NodeOnline();
+        }
+    }
+
+    const char* AdoptionStateName(espnowbus::AdoptionState state) {
+        switch (state) {
+            case espnowbus::AdoptionState::Working: return "working";
+            case espnowbus::AdoptionState::Succeeded: return "succeeded";
+            case espnowbus::AdoptionState::Failed: return "failed";
+            default: return "idle";
+        }
+    }
+
     // ---- About ----------------------------------------------------------
     // Mirrors the Telnet CLI's ver/hwinfo (any authenticated session) and
     // mem/fs (admin only) commands, as JSON instead of formatted text.
@@ -1029,6 +1069,13 @@ void httpserver::RegisterRoutes(WebServer& server) {
     server.on("/api/components/catalog", HTTP_GET, [this, &server]() { HandleComponentsCatalogGet(server); });
     server.on("/api/components/add", HTTP_POST, [this, &server]() { HandleComponentsAddPost(server); });
     server.on("/api/components/update", HTTP_POST, [this, &server]() { HandleComponentsUpdatePost(server); });
+    server.on("/api/nodes", HTTP_GET, [this, &server]() { HandleNodesGet(server); });
+    server.on("/api/nodes/discovery", HTTP_POST, [this, &server]() { HandleNodesDiscoveryPost(server); });
+    server.on("/api/nodes/adopt", HTTP_POST, [this, &server]() { HandleNodesAdoptPost(server); });
+    server.on("/api/nodes/replace", HTTP_POST, [this, &server]() { HandleNodesReplacePost(server); });
+    server.on("/api/nodes/identify", HTTP_POST, [this, &server]() { HandleNodesIdentifyPost(server); });
+    server.on("/api/nodes/rename", HTTP_POST, [this, &server]() { HandleNodesRenamePost(server); });
+    server.on("/api/nodes/remove", HTTP_POST, [this, &server]() { HandleNodesRemovePost(server); });
     server.on("/api/settings", HTTP_GET, [this, &server]() { HandleSettingsGet(server); });
     server.on("/api/settings", HTTP_POST, [this, &server]() { HandleSettingsPost(server); });
     server.on("/api/reboot", HTTP_POST, [this, &server]() { HandleRebootPost(server); });
@@ -1337,6 +1384,7 @@ void httpserver::HandleComponentsGet(WebServer& server) {
         entry["name"] = item->Name();
         entry["class"] = component::ClassName(item->Class());
         entry["enabled"] = item->Enabled();
+        AppendNodeState(entry, *item);
 
         if (item->Class() == component::Classes::Relay) {
             entry["state"] = static_cast<const relay&>(*item).State();
@@ -1574,6 +1622,13 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
         return;
     }
 
+    const String bus = request["bus"] | "";
+    const String node = request["node"] | "";
+    if (bus.equalsIgnoreCase("EspNow") && node.isEmpty()) {
+        server.send(400, "application/json", "{\"error\":\"node is required\"}");
+        return;
+    }
+
     String identityParameters[3];
     if (componentClass == "Blinds") {
         const long relayUp = request["relayUp"] | 0L;
@@ -1633,6 +1688,10 @@ void httpserver::HandleComponentsAddPost(WebServer& server) {
     parameters[4] = identityParameters[0];
     if (!identityParameters[1].isEmpty()) parameters[5] = identityParameters[1];
     if (!identityParameters[2].isEmpty()) parameters[6] = identityParameters[2];
+    if (bus.equalsIgnoreCase("EspNow")) {
+        parameters[5] = "bus=EspNow";
+        parameters[6] = "node=" + node;
+    }
 
     String output;
     const bool success = Settings.ExecuteComponentCommand(parameters, output);
@@ -1758,6 +1817,172 @@ void httpserver::HandleComponentsUpdatePost(WebServer& server) {
     server.send(200, "application/json", "{\"success\":true,\"restart\":true}");
 }
 
+void httpserver::HandleNodesGet(WebServer& server) {
+    if (AdminSession(server) == nullptr) return;
+
+    JsonDocument document;
+    document["enabled"] = Settings.EspNow.Enabled();
+    document["running"] = EspNow.Running();
+    document["channel"] = EspNow.Channel();
+    document["discoverySeconds"] = EspNow.DiscoverySecondsLeft();
+
+    String message;
+    document["adoption"] = AdoptionStateName(EspNow.Adoption(message));
+    document["adoptionMessage"] = message;
+
+    // Keys stay out of this on purpose: nothing in the UI needs them.
+    JsonArray nodes = document["nodes"].to<JsonArray>();
+    espnowbus::NodeInfo node;
+    for (size_t index = 0; EspNow.GetNode(index, node); ++index) {
+        JsonObject entry = nodes.add<JsonObject>();
+        entry["name"] = node.name;
+        entry["mac"] = node.mac;
+        entry["online"] = node.online;
+        entry["configSynced"] = node.configSynced;
+        entry["configRejected"] = node.configRejected;
+        entry["firmware"] = node.firmware;
+        entry["ports"] = node.ports;
+        if (node.seen) entry["lastSeenSeconds"] = node.lastSeenSeconds;
+    }
+
+    JsonArray pending = document["pending"].to<JsonArray>();
+    espnowbus::PendingInfo device;
+    for (size_t index = 0; EspNow.GetPending(index, device); ++index) {
+        JsonObject entry = pending.add<JsonObject>();
+        entry["mac"] = device.mac;
+        entry["firmware"] = device.firmware;
+        entry["pinMask"] = device.pinMask;
+        entry["lastSeenSeconds"] = device.lastSeenSeconds;
+    }
+
+    String payload;
+    serializeJson(document, payload);
+    server.send(200, "application/json", payload);
+}
+
+void httpserver::HandleNodesDiscoveryPost(WebServer& server) {
+    if (AdminSession(server) == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain")) || !request["open"].is<bool>()) {
+        server.send(400, "application/json", "{\"error\":\"missing open\"}");
+        return;
+    }
+    if (!EspNow.Running()) {
+        server.send(409, "application/json", "{\"error\":\"enable ESP-NOW and restart first\"}");
+        return;
+    }
+
+    if (request["open"].as<bool>()) EspNow.OpenDiscovery();
+    else EspNow.CloseDiscovery();
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleNodesAdoptPost(WebServer& server) {
+    Session* session = AdminSession(server);
+    if (session == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String mac = request["mac"] | "";
+    const String name = request["name"] | "";
+    String error;
+    if (!EspNow.Adopt(mac, name, error)) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(error) + "\"}");
+        return;
+    }
+
+    Logger.Log("Web Server: node adoption of " + mac + " as '" + name + "' started by " + session->username, logger::LogLevels::Information);
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleNodesReplacePost(WebServer& server) {
+    Session* session = AdminSession(server);
+    if (session == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String name = request["name"] | "";
+    const String mac = request["mac"] | "";
+    String error;
+    if (!EspNow.Replace(name, mac, error)) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(error) + "\"}");
+        return;
+    }
+
+    Logger.Log("Web Server: node '" + name + "' replacement by " + mac + " started by " + session->username, logger::LogLevels::Information);
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleNodesIdentifyPost(WebServer& server) {
+    if (AdminSession(server) == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String selector = request["selector"] | "";
+    String error;
+    if (!EspNow.Identify(selector, error)) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(error) + "\"}");
+        return;
+    }
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
+void httpserver::HandleNodesRenamePost(WebServer& server) {
+    Session* session = AdminSession(server);
+    if (session == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String name = request["name"] | "";
+    const String newName = request["newName"] | "";
+    String error;
+    if (!EspNow.Rename(name, newName, error)) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(error) + "\"}");
+        return;
+    }
+
+    Logger.Log("Web Server: node '" + name + "' renamed to '" + newName + "' by " + session->username, logger::LogLevels::Information);
+    server.send(200, "application/json", "{\"success\":true,\"restart\":true}");
+}
+
+void httpserver::HandleNodesRemovePost(WebServer& server) {
+    Session* session = AdminSession(server);
+    if (session == nullptr) return;
+
+    JsonDocument request;
+    if (deserializeJson(request, server.arg("plain"))) {
+        server.send(400, "application/json", "{\"error\":\"invalid JSON\"}");
+        return;
+    }
+
+    const String name = request["name"] | "";
+    String error;
+    if (!EspNow.Remove(name, error)) {
+        server.send(422, "application/json", "{\"error\":\"" + JsonEscaped(error) + "\"}");
+        return;
+    }
+
+    Logger.Log("Web Server: node '" + name + "' removed by " + session->username, logger::LogLevels::Information);
+    server.send(200, "application/json", "{\"success\":true}");
+}
+
 void httpserver::HandleSettingsGet(WebServer& server) {
     Session* session = AuthenticatedSession(server);
     if (session == nullptr) {
@@ -1781,6 +2006,7 @@ void httpserver::HandleSettingsGet(WebServer& server) {
     GetLogJson(document["Log"].to<JsonObject>());
     GetWebJson(document["Web"].to<JsonObject>());
     GetWebhooksJson(document["Webhooks"].to<JsonObject>());
+    GetEspNowJson(document["EspNow"].to<JsonObject>());
 
     String payload;
     serializeJson(document, payload);
@@ -1836,6 +2062,10 @@ void httpserver::HandleSettingsPost(WebServer& server) {
     } else if (section == "Webhooks") {
         applied = ApplyWebhooksFields(fields, error);
         restartRequired = HasField(fields, "Enabled") || HasField(fields, "Port");
+    } else if (section == "EspNow") {
+        const bool wasEnabled = Settings.EspNow.Enabled();
+        applied = ApplyEspNowFields(fields, error);
+        restartRequired = Settings.EspNow.Enabled() != wasEnabled;
     } else {
         server.send(400, "application/json", "{\"error\":\"unknown section\"}");
         return;
@@ -1886,6 +2116,7 @@ void httpserver::HandleSettingsPost(WebServer& server) {
     else if (section == "Log") GetLogJson(values);
     else if (section == "Web") GetWebJson(values);
     else if (section == "Webhooks") GetWebhooksJson(values);
+    else if (section == "EspNow") GetEspNowJson(values);
 
     String payload;
     serializeJson(response, payload);
@@ -2564,6 +2795,19 @@ String httpserver::SessionTokenFromCookie(WebServer& server) {
     const int valueStart = start + key.length();
     const int end = cookies.indexOf(';', valueStart);
     return end < 0 ? cookies.substring(valueStart) : cookies.substring(valueStart, end);
+}
+
+httpserver::Session* httpserver::AdminSession(WebServer& server) noexcept {
+    Session* session = AuthenticatedSession(server);
+    if (session == nullptr) {
+        server.send(401, "application/json", "{\"error\":\"unauthenticated\"}");
+        return nullptr;
+    }
+    if (!session->admin) {
+        server.send(403, "application/json", "{\"error\":\"admin session required\"}");
+        return nullptr;
+    }
+    return session;
 }
 
 httpserver::Session* httpserver::AuthenticatedSession(WebServer& server) noexcept {

@@ -48,6 +48,7 @@ void app::Start() {
     // uninstalled/inactive, and boot continues so Telnet/Web management
     // still comes up to fix the bad configuration and reboot.
     (void)InitializeComponents();
+    (void)InitializeEspNow();
     (void)InitializeMQTT();
     if (!InitializeAutomation()) return;
     if (!InitializeStatePersistence()) return;
@@ -138,6 +139,9 @@ bool app::InitializeClock() {
 }
 
 bool app::InitializeComponents() {
+    // Before Configure(), which is where remote components attach to a node.
+    if (!EspNow.Load()) Logger.Log("ESP-NOW: unable to read the node table", logger::LogLevels::Error);
+
     if (!Settings.InstallComponents()) {
         Logger.Log("Components schema or configuration is invalid; no components installed", logger::LogLevels::Error);
     }
@@ -149,6 +153,21 @@ bool app::InitializeComponents() {
     }
 
     Logger.Log("Component task initialized", logger::LogLevels::Information);
+    return true;
+}
+
+bool app::InitializeEspNow() {
+    if (!Settings.EspNow.Enabled()) {
+        Logger.Log("ESP-NOW: Disabled", logger::LogLevels::Information);
+        return true;
+    }
+
+    if (!EspNow.Start()) {
+        Logger.Log("Error initializing ESP-NOW", logger::LogLevels::Error);
+        return false;
+    }
+
+    Logger.Log("ESP-NOW: Enabled (" + String(EspNow.NodeCount()) + " node(s))", logger::LogLevels::Information);
     return true;
 }
 

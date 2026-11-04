@@ -9,5 +9,6 @@ telnetserver TelnetServer;
 ComponentManager ComponentController;
 automation Automation;
 mqttclient MQTTClient;
+espnowbus EspNow;
 httpserver HTTPServer;
 webhookserver WebhookServer;

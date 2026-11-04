@@ -6,6 +6,7 @@
 #include "MQTTCommands.h"
 #include "NTPCommands.h"
 #include "NetworkCommands.h"
+#include "NodeCommands.h"
 #include "SystemCommands.h"
 #include "TelnetCommands.h"
 #include "UserCommands.h"
@@ -26,6 +27,7 @@ bool cli::RegisterCommands() {
     const bool mqtt = RegisterMQTTCommands();
     const bool web = RegisterWebCommands();
     const bool webhooks = RegisterWebhookCommands();
+    const bool nodes = RegisterNodeCommands();
 
-    return system && user && component && network && telnet && log && ntp && datetime && mqtt && web && webhooks;
+    return system && user && component && network && telnet && log && ntp && datetime && mqtt && web && webhooks && nodes;
 }

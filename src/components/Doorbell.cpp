@@ -3,6 +3,8 @@
 #include <driver/gpio.h>
 #include <freertos/task.h>
 
+#include "core/Globals.h"
+
 doorbell::doorbell(
     String name,
     int16_t id,
@@ -19,6 +21,27 @@ doorbell::doorbell(
     pDebounceTimeMs(debounceTimeMs),
     pDebounceTicks(pdMS_TO_TICKS(debounceTimeMs)) {}
 
+doorbell::doorbell(
+    String name,
+    int16_t id,
+    String node,
+    uint8_t address,
+    ActiveLevels activeLevel,
+    InputModes inputMode,
+    uint32_t debounceTimeMs,
+    bool enabled
+) :
+    component(std::move(name), id, Buses::EspNow, address, enabled),
+    pNode(std::move(node)),
+    pActiveLevel(activeLevel),
+    pInputMode(inputMode),
+    pDebounceTimeMs(debounceTimeMs),
+    pDebounceTicks(pdMS_TO_TICKS(debounceTimeMs)) {}
+
+bool doorbell::NodeOnline() const noexcept {
+    return Bus() == Buses::EspNow && EspNow.Online(pPort);
+}
+
 void doorbell::GetInfo(String& output) const {
     component::GetInfo(output);
     output += "State          | " + String(State() ? "pressed" : "released") + "\r\n";
@@ -26,9 +49,18 @@ void doorbell::GetInfo(String& output) const {
     output += "ActiveLevel    | " + String(ActiveLevel() == ActiveLevels::High ? "High" : "Low") + "\r\n";
     output += "InputMode      | " + String(InputMode() == InputModes::PullUp ? "PullUp" : InputMode() == InputModes::PullDown ? "PullDown" : "Floating") + "\r\n";
     output += "DebounceTimeMs | " + String(DebounceTime()) + "\r\n";
+    if (Bus() == Buses::EspNow) {
+        output += "Node           | " + pNode + "\r\n";
+        output += "NodeOnline     | " + String(NodeOnline() ? "yes" : "no") + "\r\n";
+    }
 }
 
 bool doorbell::Configure() noexcept {
+    if (Bus() == Buses::EspNow) {
+        pPort = EspNow.AttachInput(pNode, Address(), pInputMode == InputModes::PullUp);
+        return true;
+    }
+
     if (Bus() != Buses::Onboard || !GPIO_IS_VALID_GPIO(static_cast<gpio_num_t>(Address()))) return false;
 
     switch (pInputMode) {
@@ -61,7 +93,9 @@ void doorbell::EnabledChanged(bool enabled) noexcept {
 }
 
 void doorbell::Control(TickType_t now) {
-    const bool rawState = ReadState();
+    bool rawState = false;
+    if (!ReadState(rawState)) return;
+
     if (rawState != pRawState) {
         pRawState = rawState;
         pRawChangedAt = now;
@@ -83,16 +117,24 @@ const ComponentDescriptor* doorbell::EventDescriptors(size_t& count) const noexc
     return descriptors;
 }
 
-bool doorbell::ReadState() const noexcept {
-    const bool level = digitalRead(Address()) == HIGH;
-    return pActiveLevel == ActiveLevels::High ? level : !level;
+bool doorbell::ReadState(bool& state) const noexcept {
+    bool level = false;
+    if (Bus() == Buses::EspNow) {
+        if (!EspNow.InputLevel(pPort, level)) return false;
+    } else {
+        level = digitalRead(Address()) == HIGH;
+    }
+
+    state = pActiveLevel == ActiveLevels::High ? level : !level;
+    return true;
 }
 
 // Seeds from the current level without publishing anything, so a button
 // already held (or a miswired, permanently "active" input) at boot doesn't
 // ring the doorbell - only a later debounced edge does.
 void doorbell::ResetState(TickType_t now) noexcept {
-    const bool state = ReadState();
+    bool state = false;
+    if (!ReadState(state)) state = false;
     pState.store(state, std::memory_order_relaxed);
     pRawState = state;
     pRawChangedAt = now;

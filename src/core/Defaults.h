@@ -75,6 +75,11 @@ struct defaults {
         const bool DiscoveryEnabled = true;
         const char* DiscoveryPrefix = "homeassistant";
     } MQTT;
+    struct espnow {
+        // Off by default: it turns off WiFi modem sleep, and a device with no
+        // remote nodes has no reason to pay for that.
+        const bool Enabled = false;
+    } EspNow;
     struct components {
         const bool Enabled = true;
         struct blinds {

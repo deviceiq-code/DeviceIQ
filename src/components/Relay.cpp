@@ -3,10 +3,20 @@
 #include <driver/gpio.h>
 #include <freertos/task.h>
 
+#include "core/Globals.h"
+
 relay::relay(String name, int16_t id, Buses bus, uint8_t address, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled, uint32_t pulseTimeMs) : component(std::move(name), id, bus, address, enabled), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState), pPulseTimeMs(pulseTimeMs), pPulseTicks(pdMS_TO_TICKS(pulseTimeMs)) {}
 relay::relay(String name, int16_t id, Pcf8574Output& outputDevice, uint8_t output, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled, uint32_t pulseTimeMs) : component(std::move(name), id, Buses::I2C, output, enabled), pOutputDevice(&outputDevice), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState), pPulseTimeMs(pulseTimeMs), pPulseTicks(pdMS_TO_TICKS(pulseTimeMs)) {}
+relay::relay(String name, int16_t id, String node, uint8_t address, RelayTypes type, DriveModes driveMode, bool initialState, bool enabled, uint32_t pulseTimeMs) : component(std::move(name), id, Buses::EspNow, address, enabled), pNode(std::move(node)), pState(initialState), pType(type), pDriveMode(driveMode), pInitialState(initialState), pPulseTimeMs(pulseTimeMs), pPulseTicks(pdMS_TO_TICKS(pulseTimeMs)) {}
+
+bool relay::NodeOnline() const noexcept {
+    return Bus() == Buses::EspNow && EspNow.Online(pPort);
+}
 
 bool relay::State(bool newState, TickType_t timeout) noexcept {
+    // Fails right away instead of through a later WriteFailed event, so the
+    // web UI and webhooks can tell the caller.
+    if (newState && Bus() == Buses::EspNow && !NodeOnline()) return false;
     return RequestCommand(newState ? CommandCodes::TurnOn : CommandCodes::TurnOff, newState ? 1 : 0, timeout);
 }
 
@@ -37,6 +47,10 @@ void relay::GetInfo(String& output) const {
     output += "DriveMode      | " + String(DriveMode() == DriveModes::ActiveHigh ? "ActiveHigh" : "ActiveLow") + "\r\n";
     output += "InitialState   | " + String(pInitialState ? "on" : "off") + "\r\n";
     if (pPulseTimeMs > 0) output += "PulseTimeMs    | " + String(pPulseTimeMs) + "\r\n";
+    if (Bus() == Buses::EspNow) {
+        output += "Node           | " + pNode + "\r\n";
+        output += "NodeOnline     | " + String(NodeOnline() ? "yes" : "no") + "\r\n";
+    }
 }
 
 bool relay::Configure() noexcept {
@@ -54,6 +68,12 @@ bool relay::Configure() noexcept {
         return pOutputDevice->Configure(Address(), level);
     }
 
+    if (Bus() == Buses::EspNow) {
+        const uint16_t autoOffMs = pPulseTimeMs > 0 ? static_cast<uint16_t>(pPulseTimeMs + NODE_PULSE_MARGIN_MS) : 0;
+        pPort = EspNow.AttachOutput(pNode, Address(), ElectricalLevel(false), autoOffMs);
+        return true;
+    }
+
     return false;
 }
 
@@ -64,7 +84,10 @@ bool relay::Initialize() noexcept {
         if (pOutputDevice == nullptr || !pOutputDevice->Begin()) return false;
     }
 
-    if (!WriteOutput(startupState)) return false;
+    // Nodes come online after this, so the startup level is only recorded
+    // here and reaches the node once it does.
+    if (Bus() == Buses::EspNow) (void)EspNow.SetOutput(pPort, ElectricalLevel(startupState), false);
+    else if (!WriteOutput(startupState)) return false;
     pState.store(startupState, std::memory_order_relaxed);
     return true;
 }
@@ -154,6 +177,12 @@ bool relay::WriteOutput(bool logicalState) noexcept {
     if (Bus() == Buses::I2C && pOutputDevice != nullptr) {
         return pOutputDevice->Write(Address(), level);
     }
+
+    // Turning on while the node is unreachable fails: a load energizing
+    // whenever the node happens to return, possibly hours later, is worse
+    // than a reported failure. Turning off is safe to deliver late, and must
+    // not fail or a pulse release would retry every Control() tick.
+    if (Bus() == Buses::EspNow) return EspNow.SetOutput(pPort, level, logicalState);
 
     return false;
 }

@@ -69,6 +69,7 @@ settings::settings() noexcept
       General(pMutex),
       WebServer(pMutex),
       Webhooks(pMutex),
+      EspNow(pMutex),
       TelnetServer(pMutex),
       MQTT(pMutex) {
     configASSERT(pMutex != nullptr);
@@ -529,6 +530,9 @@ void settings::LoadDefaults() {
     Webhooks.Token(Defaults.Webhooks.Token);
     Webhooks.Port(Defaults.Webhooks.Port);
 
+    // EspNow
+    EspNow.Enabled(Defaults.EspNow.Enabled);
+
     // TelnetServer
     TelnetServer.Port(Defaults.TelnetServer.Port);
     TelnetServer.Enabled(Defaults.TelnetServer.Enabled);
@@ -655,6 +659,12 @@ bool settings::Load(const String& configfilename) noexcept {
             Webhooks.Enabled((bool)(wh["Enabled"] | Defaults.Webhooks.Enabled));
 
             if (Webhooks.Token().isEmpty()) Webhooks.Enabled(false); // Token must be 15-30 alphanumeric characters
+        }
+
+        // EspNow
+        if (root["EspNow"].is<JsonObjectConst>()) {
+            JsonObjectConst en = root["EspNow"].as<JsonObjectConst>();
+            EspNow.Enabled((bool)(en["Enabled"] | Defaults.EspNow.Enabled));
         }
 
         // MQTT
@@ -808,6 +818,12 @@ bool settings::Save(const String& configfilename) const noexcept {
             wh["Port"] = Webhooks.Port();
         }
 
+        // EspNow
+        {
+            JsonObject en = doc["EspNow"].to<JsonObject>();
+            en["Enabled"] = EspNow.Enabled();
+        }
+
         // MQTT
         {
             JsonObject mq = doc["MQTT"].to<JsonObject>();
@@ -912,6 +928,11 @@ bool settings::Save(const String& configfilename) const noexcept {
             }
         }
     }
+
+    // Same reasoning as the catalog above: adoption maintains this array in
+    // the file directly (ReadNodes() and friends), and it holds each node's
+    // key, which exists nowhere else.
+    if (existingDoc["Nodes"].is<JsonArrayConst>()) doc["Nodes"].set(existingDoc["Nodes"]);
 
     // Components
     // {

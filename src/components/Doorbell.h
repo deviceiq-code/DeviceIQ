@@ -6,6 +6,7 @@
 #include <Arduino.h>
 
 #include "Component.h"
+#include "core/EspNowBus.h"
 
 // A debounced GPIO input, mechanically a stripped-down Button (no long/
 // multi-click), but exposed to Home Assistant as an "event" entity with
@@ -36,6 +37,17 @@ class doorbell final : public component {
             uint32_t debounceTimeMs = DEFAULT_DEBOUNCE_TIME_MS,
             bool enabled = true
         );
+        // A doorbell button wired to GPIO `address` of ESP-NOW node `node`.
+        doorbell(
+            String name,
+            int16_t id,
+            String node,
+            uint8_t address,
+            ActiveLevels activeLevel = ActiveLevels::Low,
+            InputModes inputMode = InputModes::PullUp,
+            uint32_t debounceTimeMs = DEFAULT_DEBOUNCE_TIME_MS,
+            bool enabled = true
+        );
         ~doorbell() override = default;
 
         [[nodiscard]] Classes Class() const noexcept override { return Classes::Doorbell; }
@@ -47,6 +59,8 @@ class doorbell final : public component {
         [[nodiscard]] ActiveLevels ActiveLevel() const noexcept { return pActiveLevel; }
         [[nodiscard]] InputModes InputMode() const noexcept { return pInputMode; }
         [[nodiscard]] uint32_t DebounceTime() const noexcept { return pDebounceTimeMs; }
+        [[nodiscard]] const String& Node() const noexcept { return pNode; }
+        [[nodiscard]] bool NodeOnline() const noexcept;
         void GetInfo(String& output) const override;
 
     protected:
@@ -57,10 +71,14 @@ class doorbell final : public component {
         const ComponentDescriptor* EventDescriptors(size_t& count) const noexcept override;
 
     private:
-        [[nodiscard]] bool ReadState() const noexcept;
+        // False while an ESP-NOW node isn't reporting: Control() then holds
+        // the last known state rather than inventing an edge.
+        [[nodiscard]] bool ReadState(bool& state) const noexcept;
         void ResetState(TickType_t now) noexcept;
         void ApplyState(bool pressed) noexcept;
 
+        const String pNode;
+        espnowbus::Port pPort;
         std::atomic<bool> pState{false};
         std::atomic<uint32_t> pRings{0};
         const ActiveLevels pActiveLevel;

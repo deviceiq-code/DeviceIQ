@@ -58,7 +58,8 @@ class component {
         enum class Buses : uint8_t {
             Group,
             Onboard,
-            I2C
+            I2C,
+            EspNow
         };
 
         enum class Classes : uint8_t {

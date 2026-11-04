@@ -321,6 +321,15 @@
             }
         },
         {
+            id: "EspNow", title: "ESP-NOW",
+            desc: "Remote I/O over ESP-NOW nodes.",
+            note: "Enabled requires a restart.",
+            fields: [
+                { key: "Enabled", label: "Enabled", desc: "Run the ESP-NOW bus, so components can live on remote nodes.", type: "bool" }
+            ],
+            afterRender: function (card) { renderNodeManager(card); }
+        },
+        {
             id: "Log", title: "Log",
             desc: "Where device logs are sent and how much detail they include.",
             note: "Changes require a restart.",
@@ -348,7 +357,7 @@
     // to its own /api/settings section id), but share one tab visually.
     const COMBINED_TABS = [
         { id: "WebUIAndCLI", title: "Web UI and CLI", desc: "Remote administration over the Telnet CLI and this web interface.", sections: ["Telnet", "Web"] },
-        { id: "Integrations", title: "Integrations", desc: "MQTT broker and webhook integrations.", sections: ["MQTT", "Webhooks"] }
+        { id: "Integrations", title: "Integrations", desc: "MQTT broker, webhook and ESP-NOW integrations.", sections: ["MQTT", "Webhooks", "EspNow"] }
     ];
 
     const combinedSectionIds = {};
@@ -637,6 +646,231 @@
         row.appendChild(control);
 
         return { row: row, control: control };
+    }
+
+    function nodesPost(path, body) {
+        return fetch(path, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        }).then(function (response) { return response.json().then(function (data) { return { ok: response.ok, data: data }; }); })
+            .catch(function () { return { ok: false, data: { error: "Unable to reach the device." } }; });
+    }
+
+    function nodeAge(seconds) {
+        if (seconds < 60) return "less than a minute ago";
+        if (seconds < 3600) return Math.floor(seconds / 60) + " min ago";
+        return Math.floor(seconds / 3600) + " h ago";
+    }
+
+    function nodeStatus(node) {
+        if (node.configRejected) return { text: "Pins rejected", className: "warn" };
+        if (node.online) return node.configSynced ? { text: "Online", className: "on" } : { text: "Syncing", className: "warn" };
+        return { text: node.lastSeenSeconds === undefined ? "Never seen" : "Seen " + nodeAge(node.lastSeenSeconds), className: "off" };
+    }
+
+    function renderNodeManager(card) {
+        const refreshIntervalMs = 2000;
+
+        card.appendChild(groupTitleEl("Nodes"));
+
+        const discoveryList = document.createElement("div");
+        discoveryList.className = "settings-list";
+        const discovery = settingsRow("Discovery", "");
+        const discoveryDesc = document.createElement("div");
+        discoveryDesc.className = "setting-desc";
+        discovery.row.querySelector(".setting-row-text").appendChild(discoveryDesc);
+        const discoveryButton = document.createElement("button");
+        discoveryButton.type = "button";
+        discoveryButton.className = "control-button";
+        discoveryButton.disabled = true;
+        discoveryButton.textContent = "Open";
+        discovery.control.appendChild(discoveryButton);
+        discoveryList.appendChild(discovery.row);
+        card.appendChild(discoveryList);
+
+        const pendingTitle = groupTitleEl("Waiting for Adoption");
+        const pendingList = document.createElement("div");
+        pendingList.className = "settings-list";
+        card.appendChild(pendingTitle);
+        card.appendChild(pendingList);
+
+        card.appendChild(groupTitleEl("Adopted Nodes"));
+        const nodeList = document.createElement("div");
+        nodeList.className = "settings-list";
+        nodeList.textContent = "Loading...";
+        card.appendChild(nodeList);
+
+        let lastData = { discoverySeconds: 0 };
+        let lastSignature = "";
+        let adoptionWatched = false;
+        let loading = false;
+
+        function report(result, title) {
+            if (!result.ok) Notifications.show(result.data.error || "Request failed.", { title: title });
+            return result.ok;
+        }
+
+        function actionButton(label, danger, onClick) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "control-button" + (danger ? " danger" : "");
+            button.textContent = label;
+            button.addEventListener("click", onClick);
+            return button;
+        }
+
+        function identify(selector) {
+            nodesPost("/api/nodes/identify", { selector: selector }).then(function (result) { report(result, "Identify"); });
+        }
+
+        function adopt(mac) {
+            Notifications.prompt("Name for node " + mac + ":", { confirmLabel: "Adopt" }).then(function (name) {
+                if (name === null || !name.trim()) return;
+                nodesPost("/api/nodes/adopt", { mac: mac, name: name.trim() }).then(function (result) {
+                    if (!report(result, "Adopt")) return;
+                    adoptionWatched = true;
+                    refresh();
+                });
+            });
+        }
+
+        function replace(name, mac) {
+            Notifications.confirm("Hand node '" + name + "' and its components over to " + mac + "?", { confirmLabel: "Replace" }).then(function (confirmed) {
+                if (!confirmed) return;
+                nodesPost("/api/nodes/replace", { name: name, mac: mac }).then(function (result) {
+                    if (!report(result, "Replace")) return;
+                    adoptionWatched = true;
+                    refresh();
+                });
+            });
+        }
+
+        function rename(node) {
+            Notifications.prompt("New name for node '" + node.name + "':", { defaultValue: node.name, confirmLabel: "Rename" }).then(function (newName) {
+                if (newName === null || !newName.trim() || newName.trim() === node.name) return;
+                nodesPost("/api/nodes/rename", { name: node.name, newName: newName.trim() }).then(function (result) {
+                    if (!report(result, "Rename")) return;
+                    refresh();
+                    if (!result.data.restart) return;
+                    Notifications.confirm("Node renamed. Restart now so its components pick up the new name?", { confirmLabel: "Restart" })
+                        .then(function (confirmed) { if (confirmed) Notifications.reboot(); });
+                });
+            });
+        }
+
+        function remove(node) {
+            const offlineNote = node.online ? "" : " It is offline, so it will keep its adoption until it is power-cycled 3 times.";
+            Notifications.confirm("Remove node '" + node.name + "'?" + offlineNote, { confirmLabel: "Remove" }).then(function (confirmed) {
+                if (!confirmed) return;
+                nodesPost("/api/nodes/remove", { name: node.name }).then(function (result) {
+                    if (report(result, "Remove")) refresh();
+                });
+            });
+        }
+
+        function pendingRow(device, nodes) {
+            const built = settingsRow(device.mac, "Firmware " + device.firmware);
+            built.control.classList.add("node-actions");
+            built.control.appendChild(actionButton("Identify", false, function () { identify(device.mac); }));
+            built.control.appendChild(actionButton("Adopt", false, function () { adopt(device.mac); }));
+
+            if (nodes.length > 0) {
+                const target = document.createElement("select");
+                nodes.forEach(function (node) {
+                    const option = document.createElement("option");
+                    option.value = node.name;
+                    option.textContent = node.name;
+                    target.appendChild(option);
+                });
+                built.control.appendChild(target);
+                built.control.appendChild(actionButton("Replace", false, function () { replace(target.value, device.mac); }));
+            }
+            return built.row;
+        }
+
+        function nodeRow(node) {
+            const built = settingsRow(node.name, node.mac + " · firmware " + node.firmware + " · " + node.ports + " port(s)");
+            built.control.classList.add("node-actions");
+
+            const status = nodeStatus(node);
+            const pill = document.createElement("span");
+            pill.className = "pill " + status.className;
+            pill.textContent = status.text;
+            built.control.appendChild(pill);
+
+            const identifyButton = actionButton("Identify", false, function () { identify(node.name); });
+            identifyButton.disabled = !node.online;
+            built.control.appendChild(identifyButton);
+            built.control.appendChild(actionButton("Rename", false, function () { rename(node); }));
+            built.control.appendChild(actionButton("Remove", true, function () { remove(node); }));
+            return built.row;
+        }
+
+        function renderLists(data) {
+            pendingTitle.style.display = pendingList.style.display = data.pending.length > 0 ? "" : "none";
+            pendingList.textContent = "";
+            data.pending.forEach(function (device) { pendingList.appendChild(pendingRow(device, data.nodes)); });
+
+            nodeList.textContent = data.nodes.length === 0 ? "No nodes adopted yet." : "";
+            data.nodes.forEach(function (node) { nodeList.appendChild(nodeRow(node)); });
+        }
+
+        function renderDiscovery(data) {
+            const open = data.discoverySeconds > 0;
+            discoveryButton.textContent = open ? "Close" : "Open";
+            discoveryButton.disabled = !data.running;
+
+            if (!data.enabled) discoveryDesc.textContent = "Enable ESP-NOW above, save and restart to manage nodes.";
+            else if (!data.running) discoveryDesc.textContent = "Restart to start ESP-NOW.";
+            else if (open) discoveryDesc.textContent = "Listening for " + data.discoverySeconds + "s. Power the node on now: it only announces itself for 5 minutes after power-up.";
+            else discoveryDesc.textContent = "Open a window to find unadopted nodes. Radio channel " + data.channel + ".";
+        }
+
+        function renderAdoption(data) {
+            if (!adoptionWatched || data.adoption === "working") return;
+            adoptionWatched = false;
+            Notifications.show(data.adoptionMessage || (data.adoption === "succeeded" ? "Node adopted." : "Adoption failed."), { title: "Adopt" });
+        }
+
+        // Rows are only rebuilt when something on them changes: rebuilding on
+        // every poll could swallow a click landing mid-refresh.
+        function refresh() {
+            if (loading) return;
+            loading = true;
+            fetch("/api/nodes")
+                .then(function (response) { return response.ok ? response.json() : null; })
+                .then(function (data) {
+                    if (!data) return;
+                    lastData = data;
+                    renderDiscovery(data);
+                    renderAdoption(data);
+
+                    const signature = JSON.stringify({
+                        pending: data.pending.map(function (device) { return [device.mac, device.firmware]; }),
+                        nodes: data.nodes.map(function (node) {
+                            return [node.name, node.mac, node.online, node.firmware, node.ports, nodeStatus(node).text];
+                        })
+                    });
+                    if (signature === lastSignature) return;
+                    lastSignature = signature;
+                    renderLists(data);
+                })
+                .catch(function () {})
+                .finally(function () { loading = false; });
+        }
+
+        discoveryButton.addEventListener("click", function () {
+            nodesPost("/api/nodes/discovery", { open: !(lastData.discoverySeconds > 0) }).then(function (result) {
+                if (report(result, "Discovery")) refresh();
+            });
+        });
+
+        refresh();
+        setInterval(function () {
+            // Hidden while another tab is showing: nothing to keep fresh.
+            if (card.offsetParent !== null) refresh();
+        }, refreshIntervalMs);
     }
 
     function renderConfigurationPanel() {

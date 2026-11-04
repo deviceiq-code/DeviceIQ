@@ -70,9 +70,27 @@ namespace {
         return true;
     }
 
+    // Parses Setup.Bus for a component that can live either onboard or on an
+    // ESP-NOW node, along with the Setup.Node reference that comes with the
+    // latter. Node existence is checked by ValidateCatalog(), not here: at
+    // boot a missing node must only take down the components that use it.
+    bool ParseRemotableBus(JsonObjectConst setup, uint8_t address, component::Buses& bus, String& node) {
+        const String name = setup["Bus"].as<const char*>();
+        if (name.equalsIgnoreCase("Onboard")) {
+            bus = component::Buses::Onboard;
+            return setup["Node"].isNull();
+        }
+        if (!name.equalsIgnoreCase("EspNow") || !setup["Node"].is<const char*>()) return false;
+        bus = component::Buses::EspNow;
+        node = setup["Node"].as<const char*>();
+        return !node.isEmpty() && address <= espnowprotocol::MaxPin;
+    }
+
     struct RelayConfiguration {
         String name;
         int16_t id = 0;
+        component::Buses bus = component::Buses::Onboard;
+        String node;
         uint8_t address = 0;
         relay::RelayTypes type = relay::RelayTypes::NormallyOpen;
         relay::DriveModes driveMode = relay::DriveModes::ActiveHigh;
@@ -99,11 +117,11 @@ namespace {
         if (address < 0 || address > UINT8_MAX) return false;
 
         const String componentClass = setup["Class"].as<const char*>();
-        const String bus = setup["Bus"].as<const char*>();
-        if (!componentClass.equalsIgnoreCase("Relay") || !bus.equalsIgnoreCase("Onboard")) return false;
+        if (!componentClass.equalsIgnoreCase("Relay")) return false;
 
         result.id = id;
         result.address = static_cast<uint8_t>(address);
+        if (!ParseRemotableBus(setup, result.address, result.bus, result.node)) return false;
 
         if (!setup["Type"].isNull()) {
             if (!setup["Type"].is<const char*>()) return false;
@@ -165,6 +183,8 @@ namespace {
     struct ButtonConfiguration {
         String name;
         int16_t id = 0;
+        component::Buses bus = component::Buses::Onboard;
+        String node;
         uint8_t address = 0;
         button::ActiveLevels activeLevel = button::ActiveLevels::Low;
         button::InputModes inputMode = button::InputModes::PullUp;
@@ -192,11 +212,11 @@ namespace {
         if (address < 0 || address > UINT8_MAX) return false;
 
         const String componentClass = setup["Class"].as<const char*>();
-        const String bus = setup["Bus"].as<const char*>();
-        if (!componentClass.equalsIgnoreCase("Button") || !bus.equalsIgnoreCase("Onboard")) return false;
+        if (!componentClass.equalsIgnoreCase("Button")) return false;
 
         result.id = id;
         result.address = static_cast<uint8_t>(address);
+        if (!ParseRemotableBus(setup, result.address, result.bus, result.node)) return false;
 
         if (!setup["ActiveLevel"].isNull()) {
             if (!setup["ActiveLevel"].is<const char*>()) return false;
@@ -223,6 +243,8 @@ namespace {
                 return false;
             }
         }
+        // The ESP8266 has no internal pull-downs on the GPIOs a node exposes.
+        if (result.bus == component::Buses::EspNow && result.inputMode == button::InputModes::PullDown) return false;
 
         if (!ReadOptionalTime(setup, "DebounceTimeMs", result.debounceTimeMs) ||
             !ReadOptionalTime(setup, "LongClickTimeMs", result.longClickTimeMs) ||
@@ -247,6 +269,8 @@ namespace {
     struct DoorbellConfiguration {
         String name;
         int16_t id = 0;
+        component::Buses bus = component::Buses::Onboard;
+        String node;
         uint8_t address = 0;
         doorbell::ActiveLevels activeLevel = doorbell::ActiveLevels::Low;
         doorbell::InputModes inputMode = doorbell::InputModes::PullUp;
@@ -272,11 +296,11 @@ namespace {
         if (address < 0 || address > UINT8_MAX) return false;
 
         const String componentClass = setup["Class"].as<const char*>();
-        const String bus = setup["Bus"].as<const char*>();
-        if (!componentClass.equalsIgnoreCase("Doorbell") || !bus.equalsIgnoreCase("Onboard")) return false;
+        if (!componentClass.equalsIgnoreCase("Doorbell")) return false;
 
         result.id = id;
         result.address = static_cast<uint8_t>(address);
+        if (!ParseRemotableBus(setup, result.address, result.bus, result.node)) return false;
 
         if (!setup["ActiveLevel"].isNull()) {
             if (!setup["ActiveLevel"].is<const char*>()) return false;
@@ -303,6 +327,7 @@ namespace {
                 return false;
             }
         }
+        if (result.bus == component::Buses::EspNow && result.inputMode == doorbell::InputModes::PullDown) return false;
 
         if (!ReadOptionalTime(setup, "DebounceTimeMs", result.debounceTimeMs)) return false;
 
@@ -662,6 +687,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         uint8_t addresses[3];
         component::Classes type;
         uint8_t addressCount;
+        String node;
     };
 
     ComponentIdentity identities[MaxConfiguredComponents];
@@ -693,21 +719,21 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Relay configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Relay, 1};
+            identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Relay, 1, configuration.node};
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(object, configuredID, configuration)) {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Button configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
+            identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Button, 1, configuration.node};
         } else if (componentClass.equalsIgnoreCase("Doorbell")) {
             DoorbellConfiguration configuration;
             if (!ParseDoorbellConfiguration(object, configuredID, configuration)) {
                 Logger.Log("Component #" + String(configuredID) + ": invalid Doorbell configuration", logger::LogLevels::Error);
                 return false;
             }
-            identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Doorbell, 1};
+            identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Doorbell, 1, configuration.node};
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
             if (!ParseThermometerConfiguration(object, configuredID, configuration)) {
@@ -747,6 +773,7 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         for (size_t previous = 0; previous < count; ++previous) {
             if (identities[previous].name.equalsIgnoreCase(identities[count].name) ||
                 (identities[previous].bus == identities[count].bus &&
+                    identities[previous].node.equalsIgnoreCase(identities[count].node) &&
                     AddressesCollide(identities[previous].addresses, identities[previous].addressCount,
                         identities[count].addresses, identities[count].addressCount))) {
                 return false;
@@ -791,7 +818,10 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         const int16_t members[] = {relayUp, relayDown, buttonUp, buttonDown};
         for (int16_t member : members) {
             if (member < 0) continue;
-            if (owners[member] >= 0) return false;
+            if (owners[member] >= 0 || identities[member].bus == component::Buses::EspNow) {
+                Logger.Log("Blinds #" + String(configuredID) + ": members must be onboard and belong to a single group", logger::LogLevels::Error);
+                return false;
+            }
             owners[member] = static_cast<int16_t>(blindsIndex);
             if (!installable[blindsIndex]) installable[member] = false;
         }
@@ -817,45 +847,87 @@ bool settings::InstallComponents(const String& configfilename) noexcept {
         if (componentClass.equalsIgnoreCase("Relay")) {
             RelayConfiguration configuration;
             if (!ParseRelayConfiguration(object, configuredID, configuration, ComponentState(stateRoot, configuredID))) return false;
-            instances[index].reset(new (std::nothrow) relay(
-                configuration.name,
-                configuration.id,
-                component::Buses::Onboard,
-                configuration.address,
-                configuration.type,
-                configuration.driveMode,
-                owners[index] < 0 ? configuration.state : false,
-                owners[index] < 0 ? configuration.enabled : true,
-                configuration.pulseTimeMs
-            ));
+            if (configuration.bus == component::Buses::EspNow) {
+                instances[index].reset(new (std::nothrow) relay(
+                    configuration.name,
+                    configuration.id,
+                    configuration.node,
+                    configuration.address,
+                    configuration.type,
+                    configuration.driveMode,
+                    configuration.state,
+                    configuration.enabled,
+                    configuration.pulseTimeMs
+                ));
+            } else {
+                instances[index].reset(new (std::nothrow) relay(
+                    configuration.name,
+                    configuration.id,
+                    component::Buses::Onboard,
+                    configuration.address,
+                    configuration.type,
+                    configuration.driveMode,
+                    owners[index] < 0 ? configuration.state : false,
+                    owners[index] < 0 ? configuration.enabled : true,
+                    configuration.pulseTimeMs
+                ));
+            }
         } else if (componentClass.equalsIgnoreCase("Button")) {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(object, configuredID, configuration)) return false;
-            instances[index].reset(new (std::nothrow) button(
-                configuration.name,
-                configuration.id,
-                component::Buses::Onboard,
-                configuration.address,
-                configuration.activeLevel,
-                configuration.inputMode,
-                configuration.debounceTimeMs,
-                configuration.longClickTimeMs,
-                configuration.multiClickTimeMs,
-                owners[index] < 0 ? configuration.enabled : true
-            ));
+            if (configuration.bus == component::Buses::EspNow) {
+                instances[index].reset(new (std::nothrow) button(
+                    configuration.name,
+                    configuration.id,
+                    configuration.node,
+                    configuration.address,
+                    configuration.activeLevel,
+                    configuration.inputMode,
+                    configuration.debounceTimeMs,
+                    configuration.longClickTimeMs,
+                    configuration.multiClickTimeMs,
+                    configuration.enabled
+                ));
+            } else {
+                instances[index].reset(new (std::nothrow) button(
+                    configuration.name,
+                    configuration.id,
+                    component::Buses::Onboard,
+                    configuration.address,
+                    configuration.activeLevel,
+                    configuration.inputMode,
+                    configuration.debounceTimeMs,
+                    configuration.longClickTimeMs,
+                    configuration.multiClickTimeMs,
+                    owners[index] < 0 ? configuration.enabled : true
+                ));
+            }
         } else if (componentClass.equalsIgnoreCase("Doorbell")) {
             DoorbellConfiguration configuration;
             if (!ParseDoorbellConfiguration(object, configuredID, configuration)) return false;
-            instances[index].reset(new (std::nothrow) doorbell(
-                configuration.name,
-                configuration.id,
-                component::Buses::Onboard,
-                configuration.address,
-                configuration.activeLevel,
-                configuration.inputMode,
-                configuration.debounceTimeMs,
-                configuration.enabled
-            ));
+            if (configuration.bus == component::Buses::EspNow) {
+                instances[index].reset(new (std::nothrow) doorbell(
+                    configuration.name,
+                    configuration.id,
+                    configuration.node,
+                    configuration.address,
+                    configuration.activeLevel,
+                    configuration.inputMode,
+                    configuration.debounceTimeMs,
+                    configuration.enabled
+                ));
+            } else {
+                instances[index].reset(new (std::nothrow) doorbell(
+                    configuration.name,
+                    configuration.id,
+                    component::Buses::Onboard,
+                    configuration.address,
+                    configuration.activeLevel,
+                    configuration.inputMode,
+                    configuration.debounceTimeMs,
+                    configuration.enabled
+                ));
+            }
         } else if (componentClass.equalsIgnoreCase("Thermometer")) {
             ThermometerConfiguration configuration;
             if (!ParseThermometerConfiguration(object, configuredID, configuration)) return false;
@@ -1125,6 +1197,7 @@ namespace {
             uint8_t addresses[3];
             component::Classes type;
             uint8_t addressCount;
+            String node;
         };
 
         Identity identities[MaxConfiguredComponents];
@@ -1143,15 +1216,15 @@ namespace {
             if (componentClass.equalsIgnoreCase("Relay")) {
                 RelayConfiguration configuration;
                 if (!ParseRelayConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Relay, 1};
+                identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Relay, 1, configuration.node};
             } else if (componentClass.equalsIgnoreCase("Button")) {
                 ButtonConfiguration configuration;
                 if (!ParseButtonConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Button, 1};
+                identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Button, 1, configuration.node};
             } else if (componentClass.equalsIgnoreCase("Doorbell")) {
                 DoorbellConfiguration configuration;
                 if (!ParseDoorbellConfiguration(object, configuredID, configuration)) return false;
-                identities[count] = {configuration.name, configuration.id, component::Buses::Onboard, {configuration.address}, component::Classes::Doorbell, 1};
+                identities[count] = {configuration.name, configuration.id, configuration.bus, {configuration.address}, component::Classes::Doorbell, 1, configuration.node};
             } else if (componentClass.equalsIgnoreCase("Thermometer")) {
                 ThermometerConfiguration configuration;
                 if (!ParseThermometerConfiguration(object, configuredID, configuration)) return false;
@@ -1174,9 +1247,11 @@ namespace {
             for (size_t previous = 0; previous < count; ++previous) {
                 if (identities[previous].name.equalsIgnoreCase(identities[count].name) ||
                     (identities[previous].bus == identities[count].bus &&
+                        identities[previous].node.equalsIgnoreCase(identities[count].node) &&
                         AddressesCollide(identities[previous].addresses, identities[previous].addressCount,
                             identities[count].addresses, identities[count].addressCount))) return false;
             }
+            if (identities[count].bus == component::Buses::EspNow && !EspNow.HasNode(identities[count].node)) return false;
             owners[count] = -1;
             ++count;
         }
@@ -1212,7 +1287,9 @@ namespace {
             const int16_t members[] = {relayUp, relayDown, buttonUp, buttonDown};
             for (int16_t member : members) {
                 if (member < 0) continue;
-                if (owners[member] >= 0) return false;
+                // Blinds time their motors on the controller: a stop frame
+                // lost on the radio would leave a motor running to its limit.
+                if (owners[member] >= 0 || identities[member].bus == component::Buses::EspNow) return false;
                 owners[member] = static_cast<int16_t>(ownerIndex);
             }
             ++ownerIndex;
@@ -1236,7 +1313,8 @@ namespace {
             RelayConfiguration configuration;
             if (!ParseRelayConfiguration(configured, configuredID, configuration)) return false;
             const relay& value = static_cast<const relay&>(runtime);
-            return configuration.type == value.Type() && configuration.driveMode == value.DriveMode() &&
+            return configuration.bus == value.Bus() && configuration.node == value.Node() &&
+                configuration.type == value.Type() && configuration.driveMode == value.DriveMode() &&
                 configuration.pulseTimeMs == value.PulseTime();
         }
 
@@ -1244,7 +1322,8 @@ namespace {
             ButtonConfiguration configuration;
             if (!ParseButtonConfiguration(configured, configuredID, configuration)) return false;
             const button& value = static_cast<const button&>(runtime);
-            return configuration.activeLevel == value.ActiveLevel() &&
+            return configuration.bus == value.Bus() && configuration.node == value.Node() &&
+                   configuration.activeLevel == value.ActiveLevel() &&
                    configuration.inputMode == value.InputMode() &&
                    configuration.debounceTimeMs == value.DebounceTime() &&
                    configuration.longClickTimeMs == value.LongClickTime() &&
@@ -1255,7 +1334,8 @@ namespace {
             DoorbellConfiguration configuration;
             if (!ParseDoorbellConfiguration(configured, configuredID, configuration)) return false;
             const doorbell& value = static_cast<const doorbell&>(runtime);
-            return configuration.activeLevel == value.ActiveLevel() &&
+            return configuration.bus == value.Bus() && configuration.node == value.Node() &&
+                   configuration.activeLevel == value.ActiveLevel() &&
                    configuration.inputMode == value.InputMode() &&
                    configuration.debounceTimeMs == value.DebounceTime();
         }
@@ -1322,6 +1402,13 @@ namespace {
             long value = 0;
             if (!ParseInteger(text, 0, UINT8_MAX, value)) return false;
             setup["Address"] = value;
+            return true;
+        }
+
+        if (property.equalsIgnoreCase("node")) {
+            const String bus = setup["Bus"] | "";
+            if (!bus.equalsIgnoreCase("EspNow")) return false;
+            setup["Node"] = text;
             return true;
         }
 
@@ -1608,6 +1695,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         const BusView buses[] = {
             {component::Buses::Onboard, "Onboard"},
             {component::Buses::I2C, "I2C"},
+            {component::Buses::EspNow, "EspNow"},
             {component::Buses::Group, "Group"}
         };
 
@@ -2123,16 +2211,20 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
             } else if (property.equalsIgnoreCase("bus")) {
                 const bool isBlinds = componentClass.equalsIgnoreCase("Blinds");
                 const bool isThermometer = componentClass.equalsIgnoreCase("Thermometer");
+                const bool isRemotable = componentClass.equalsIgnoreCase("Relay") || componentClass.equalsIgnoreCase("Button") ||
+                    componentClass.equalsIgnoreCase("Doorbell");
                 const bool validBus = isBlinds ? value.equalsIgnoreCase("Group") :
                     isThermometer ? (value.equalsIgnoreCase("Onboard") || value.equalsIgnoreCase("I2C")) :
+                    isRemotable ? (value.equalsIgnoreCase("Onboard") || value.equalsIgnoreCase("EspNow")) :
                     value.equalsIgnoreCase("Onboard");
                 if (!validBus) {
                     output = isBlinds ? "Blinds requires bus=Group.\r\n" :
                         isThermometer ? "Thermometer supports bus=Onboard or bus=I2C.\r\n" :
+                        isRemotable ? "This class supports bus=Onboard or bus=EspNow.\r\n" :
                         "Only bus=Onboard is currently supported.\r\n";
                     return false;
                 }
-                setup["Bus"] = value.equalsIgnoreCase("I2C") ? "I2C" : isBlinds ? "Group" : "Onboard";
+                setup["Bus"] = value.equalsIgnoreCase("I2C") ? "I2C" : value.equalsIgnoreCase("EspNow") ? "EspNow" : isBlinds ? "Group" : "Onboard";
             } else if (componentClass.equalsIgnoreCase("Blinds") && property.equalsIgnoreCase("relayup")) {
                 long memberID = 0;
                 if (!ParseInteger(value, 1, INT16_MAX, memberID)) return false;
@@ -2156,7 +2248,7 @@ bool settings::ExecuteComponentCommand(String* parameters, String& output) noexc
         }
 
         if (!ValidateCatalog(components)) {
-            output = "Invalid component definition, duplicate ID/name, or duplicate GPIO.\r\n";
+            output = "Invalid component definition, duplicate ID/name, duplicate GPIO, or unknown node.\r\n";
             return false;
         }
 
@@ -2190,4 +2282,97 @@ void settings::EventNamesForClass(const String& componentClass, JsonArray output
     size_t count = 0;
     const char* const* names = ComponentEventNames(componentClass, count);
     for (size_t index = 0; index < count; ++index) output.add(names[index]);
+}
+
+bool settings::ReadNodes(JsonDocument& document) noexcept {
+    Lock lock(pMutex);
+    if (!lock.IsLocked()) return false;
+
+    String content;
+    const filesystem::Result result = FileSystem.Read(Defaults.ConfigFileName, content);
+    if (result == filesystem::Result::NotFound || (result == filesystem::Result::Ok && content.isEmpty())) return true;
+    if (result != filesystem::Result::Ok) return false;
+    return !deserializeJson(document, content);
+}
+
+bool settings::SaveNode(const String& name, const String& mac, const String& key, String& error) noexcept {
+    Lock lock(pMutex);
+    JsonDocument document;
+    if (!lock.IsLocked() || !ReadNodes(document)) {
+        error = "unable to read configuration";
+        return false;
+    }
+
+    JsonArray nodes = document["Nodes"].is<JsonArray>() ? document["Nodes"].as<JsonArray>() : document["Nodes"].to<JsonArray>();
+    JsonObject entry;
+    for (JsonObject candidate : nodes) {
+        if (name.equalsIgnoreCase(candidate["Name"] | "")) {
+            entry = candidate;
+            break;
+        }
+    }
+    if (entry.isNull()) entry = nodes.add<JsonObject>();
+    entry["Name"] = name;
+    entry["MAC"] = mac;
+    entry["Key"] = key;
+
+    if (!WriteConfigurationDocument(document)) {
+        error = "unable to save configuration";
+        return false;
+    }
+    return true;
+}
+
+bool settings::RemoveNode(const String& name, String& error) noexcept {
+    Lock lock(pMutex);
+    JsonDocument document;
+    if (!lock.IsLocked() || !ReadNodes(document)) {
+        error = "unable to read configuration";
+        return false;
+    }
+
+    for (JsonPair entry : document["Components"].as<JsonObject>()) {
+        const JsonObjectConst setup = entry.value()["Setup"].as<JsonObjectConst>();
+        if (name.equalsIgnoreCase(setup["Node"] | "")) {
+            error = "Node is used by component '" + String(setup["Name"] | "") + "'.";
+            return false;
+        }
+    }
+
+    JsonArray nodes = document["Nodes"].as<JsonArray>();
+    for (size_t index = 0; index < nodes.size(); ++index) {
+        if (name.equalsIgnoreCase(nodes[index]["Name"] | "")) {
+            nodes.remove(index);
+            break;
+        }
+    }
+
+    if (!WriteConfigurationDocument(document)) {
+        error = "unable to save configuration";
+        return false;
+    }
+    return true;
+}
+
+bool settings::RenameNode(const String& name, const String& newName, String& error) noexcept {
+    Lock lock(pMutex);
+    JsonDocument document;
+    if (!lock.IsLocked() || !ReadNodes(document)) {
+        error = "unable to read configuration";
+        return false;
+    }
+
+    for (JsonObject entry : document["Nodes"].as<JsonArray>()) {
+        if (name.equalsIgnoreCase(entry["Name"] | "")) entry["Name"] = newName;
+    }
+    for (JsonPair entry : document["Components"].as<JsonObject>()) {
+        JsonObject setup = entry.value()["Setup"].as<JsonObject>();
+        if (name.equalsIgnoreCase(setup["Node"] | "")) setup["Node"] = newName;
+    }
+
+    if (!WriteConfigurationDocument(document)) {
+        error = "unable to save configuration";
+        return false;
+    }
+    return true;
 }

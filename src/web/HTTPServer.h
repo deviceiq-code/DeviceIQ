@@ -127,6 +127,13 @@ class httpserver {
         void HandleComponentsCatalogGet(WebServer& server);
         void HandleComponentsAddPost(WebServer& server);
         void HandleComponentsUpdatePost(WebServer& server);
+        void HandleNodesGet(WebServer& server);
+        void HandleNodesDiscoveryPost(WebServer& server);
+        void HandleNodesAdoptPost(WebServer& server);
+        void HandleNodesReplacePost(WebServer& server);
+        void HandleNodesIdentifyPost(WebServer& server);
+        void HandleNodesRenamePost(WebServer& server);
+        void HandleNodesRemovePost(WebServer& server);
         void HandleSettingsGet(WebServer& server);
         void HandleSettingsPost(WebServer& server);
         void HandleRebootPost(WebServer& server);
@@ -149,5 +156,7 @@ class httpserver {
         void DestroySession(const String& token) noexcept;
         [[nodiscard]] static String SessionTokenFromCookie(WebServer& server);
         [[nodiscard]] Session* AuthenticatedSession(WebServer& server) noexcept;
+        // Answers 401/403 itself and returns nullptr unless this is an admin.
+        [[nodiscard]] Session* AdminSession(WebServer& server) noexcept;
         [[nodiscard]] static String GenerateToken();
 };

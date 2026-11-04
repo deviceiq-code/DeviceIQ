@@ -115,6 +115,8 @@
 
     let currentClass = "Relay";
     let catalog = { components: [] };
+    let nodes = [];
+    let busControl = null;
     let classReaders = {};
     let eventReaders = {};
 
@@ -210,6 +212,62 @@
         return options;
     }
 
+    // Bus and Node for the classes that can live on an ESP-NOW node. The bus
+    // is part of a component's identity, so it's only a choice while creating.
+    function busFields(list, setup) {
+        const current = setup.Bus || "Onboard";
+        const busOptions = [["Onboard", "Onboard"]];
+        if (nodes.length > 0 || current === "EspNow") busOptions.push(["EspNow", "ESP-NOW"]);
+
+        let control;
+        if (isEdit) {
+            control = document.createElement("span");
+            control.textContent = current === "EspNow" ? "ESP-NOW" : current;
+            control.className = "setting-desc";
+        } else {
+            control = selectInput(busOptions, current);
+        }
+        list.appendChild(row("Bus", "Where this component is wired. Cannot be changed after creation.", control));
+
+        const nodeNames = nodes.map(function (node) { return node.name; });
+        if (setup.Node && nodeNames.indexOf(setup.Node) === -1) nodeNames.push(setup.Node);
+        const nodeSelect = selectInput(nodeNames.map(function (name) { return [name, name]; }), setup.Node);
+        const nodeRow = row("Node", "The adopted node this component is wired to.", nodeSelect);
+        list.appendChild(nodeRow);
+
+        const listeners = [];
+        function isRemote() { return isEdit ? current === "EspNow" : control.value === "EspNow"; }
+        function apply() {
+            nodeRow.style.display = isRemote() ? "" : "none";
+            listeners.forEach(function (listener) { listener(isRemote()); });
+        }
+        if (!isEdit) control.addEventListener("change", apply);
+        apply();
+
+        return {
+            isRemote: isRemote,
+            node: function () { return isRemote() ? nodeSelect.value : ""; },
+            onChange: function (listener) { listeners.push(listener); listener(isRemote()); }
+        };
+    }
+
+    function describePin(bus, addressRow) {
+        const desc = addressRow.querySelector(".setting-desc");
+        const onboardText = desc.textContent;
+        bus.onChange(function (remote) {
+            desc.textContent = remote ? "The GPIO pin on the node (0-3 on an ESP-01)." : onboardText;
+        });
+    }
+
+    // A node's pins have no pull-down.
+    function limitInputMode(bus, inputMode) {
+        const pullDown = inputMode.querySelector('option[value="PullDown"]');
+        bus.onChange(function (remote) {
+            pullDown.disabled = remote;
+            if (remote && inputMode.value === "PullDown") inputMode.value = "PullUp";
+        });
+    }
+
     function renderBasicFields(setup) {
         const list = document.getElementById("basic-list");
         list.innerHTML = "";
@@ -254,10 +312,14 @@
         container.appendChild(list);
 
         const readers = {};
+        busControl = null;
 
         if (currentClass === "Relay") {
+            const bus = busControl = busFields(list, setup);
             const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
-            list.appendChild(row("GPIO Address", "The GPIO pin driving this relay (0-255).", addr));
+            const addressRow = row("GPIO Address", "The GPIO pin driving this relay (0-255).", addr);
+            list.appendChild(addressRow);
+            describePin(bus, addressRow);
             const type = selectInput([["NormallyOpen", "Normally Open"], ["NormallyClosed", "Normally Closed"]], setup.Type || "NormallyOpen");
             list.appendChild(row("Type", "Relay contact type.", type));
             const driveMode = selectInput([["ActiveHigh", "Active High"], ["ActiveLow", "Active Low"]], setup.DriveMode || "ActiveHigh");
@@ -265,17 +327,22 @@
             const pulseTime = numberInput(setup.PulseTimeMs !== undefined ? setup.PulseTimeMs : 0, 0, 5000);
             list.appendChild(row("Pulse Time (ms)", "0 = normal relay (stays on/off). Above 0 (20-5000) makes it momentary: turning on auto-releases after this many ms, for simulating a button press - e.g. cloning a tactile switch on an RF remote.", pulseTime));
 
+            readers.node = bus.node;
             readers.address = function () { return addr.value; };
             readers.type = function () { return type.value; };
             readers.drivemode = function () { return driveMode.value; };
             readers.pulsetimems = function () { return pulseTime.value; };
         } else if (currentClass === "Button") {
+            const bus = busControl = busFields(list, setup);
             const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
-            list.appendChild(row("GPIO Address", "The GPIO pin this button is wired to (0-255).", addr));
+            const addressRow = row("GPIO Address", "The GPIO pin this button is wired to (0-255).", addr);
+            list.appendChild(addressRow);
+            describePin(bus, addressRow);
             const activeLevel = selectInput([["High", "High"], ["Low", "Low"]], setup.ActiveLevel || "Low");
             list.appendChild(row("Active Level", "Logic level read while the button is pressed.", activeLevel));
             const inputMode = selectInput([["Floating", "Floating"], ["PullUp", "Pull Up"], ["PullDown", "Pull Down"]], setup.InputMode || "PullUp");
             list.appendChild(row("Input Mode", "Internal pin biasing.", inputMode));
+            limitInputMode(bus, inputMode);
             const debounce = numberInput(setup.DebounceTimeMs !== undefined ? setup.DebounceTimeMs : 50, 0);
             list.appendChild(row("Debounce Time (ms)", "Minimum time a level must hold to register.", debounce));
             const longClick = numberInput(setup.LongClickTimeMs !== undefined ? setup.LongClickTimeMs : 1000, 0);
@@ -283,6 +350,7 @@
             const multiClick = numberInput(setup.MultiClickTimeMs !== undefined ? setup.MultiClickTimeMs : 400, 0);
             list.appendChild(row("Multi-Click Window (ms)", "Maximum gap between clicks in a multi-click.", multiClick));
 
+            readers.node = bus.node;
             readers.address = function () { return addr.value; };
             readers.activelevel = function () { return activeLevel.value; };
             readers.inputmode = function () { return inputMode.value; };
@@ -290,15 +358,20 @@
             readers.longclicktimems = function () { return longClick.value; };
             readers.multiclicktimems = function () { return multiClick.value; };
         } else if (currentClass === "Doorbell") {
+            const bus = busControl = busFields(list, setup);
             const addr = numberInput(setup.Address >= 0 ? setup.Address : "", 0, 255);
-            list.appendChild(row("GPIO Address", "The GPIO pin this doorbell button is wired to (0-255).", addr));
+            const addressRow = row("GPIO Address", "The GPIO pin this doorbell button is wired to (0-255).", addr);
+            list.appendChild(addressRow);
+            describePin(bus, addressRow);
             const activeLevel = selectInput([["High", "High"], ["Low", "Low"]], setup.ActiveLevel || "Low");
             list.appendChild(row("Active Level", "Logic level read while the doorbell button is pressed.", activeLevel));
             const inputMode = selectInput([["Floating", "Floating"], ["PullUp", "Pull Up"], ["PullDown", "Pull Down"]], setup.InputMode || "PullUp");
             list.appendChild(row("Input Mode", "Internal pin biasing.", inputMode));
+            limitInputMode(bus, inputMode);
             const debounce = numberInput(setup.DebounceTimeMs !== undefined ? setup.DebounceTimeMs : 50, 0);
             list.appendChild(row("Debounce Time (ms)", "Minimum time a level must hold to register.", debounce));
 
+            readers.node = bus.node;
             readers.address = function () { return addr.value; };
             readers.activelevel = function () { return activeLevel.value; };
             readers.inputmode = function () { return inputMode.value; };
@@ -486,6 +559,10 @@
             } else {
                 addBody.address = Number(fields.address);
             }
+            if (busControl && busControl.isRemote()) {
+                addBody.bus = "EspNow";
+                addBody.node = fields.node;
+            }
 
             apiPost("/api/components/add", addBody).then(function (addResult) {
                 if (!addResult.ok) {
@@ -502,8 +579,12 @@
     document.getElementById("back-button").addEventListener("click", function () { window.location.replace("/dashboard.html"); });
 
     function loadCatalogThen(callback) {
-        fetch("/api/components/catalog").then(function (response) { return response.json(); }).then(function (data) {
-            catalog = data;
+        Promise.all([
+            fetch("/api/components/catalog").then(function (response) { return response.json(); }),
+            fetch("/api/nodes").then(function (response) { return response.ok ? response.json() : { nodes: [] }; })
+        ]).then(function (results) {
+            catalog = results[0];
+            nodes = results[1].nodes || [];
             callback();
         }).catch(function () { callback(); });
     }

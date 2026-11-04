@@ -187,6 +187,15 @@ class settings {
                 [[nodiscard]] uint16_t Port() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pPort : 0; }
                 void Port(uint16_t value) { Lock lock(pMutex); if (lock.IsLocked()) pPort = (value == 0) ? Defaults.Webhooks.Port : value; }
         } Webhooks;
+        class espnow {
+            private:
+                SemaphoreHandle_t pMutex;
+                bool pEnabled{};
+            public:
+                explicit espnow(SemaphoreHandle_t mutex) noexcept : pMutex(mutex) {}
+                [[nodiscard]] bool Enabled() const noexcept { Lock lock(pMutex); return lock.IsLocked() ? pEnabled : false; }
+                void Enabled(bool value) noexcept { Lock lock(pMutex); if (lock.IsLocked()) pEnabled = value; }
+        } EspNow;
         class telnetserver {
             private:
                 SemaphoreHandle_t pMutex;
@@ -270,6 +279,17 @@ class settings {
         // (e.g. "Relay" -> SettingOn/SettingOff/.../Changed/WriteFailed) -
         // pure static data, no file access or locking involved.
         void EventNamesForClass(const String& componentClass, JsonArray output) noexcept;
+
+        // The ESP-NOW node table ("Nodes" in config.json). Adoption takes
+        // effect without a restart, so these write straight to the file
+        // rather than going through Save(), which preserves the array as-is.
+        // SaveNode adds or, for a name that exists, replaces an entry;
+        // RemoveNode refuses while a component references the node;
+        // RenameNode updates those references along with the entry.
+        bool ReadNodes(JsonDocument& document) noexcept;
+        bool SaveNode(const String& name, const String& mac, const String& key, String& error) noexcept;
+        bool RemoveNode(const String& name, String& error) noexcept;
+        bool RenameNode(const String& name, const String& newName, String& error) noexcept;
 };
 
 extern settings Settings;

@@ -104,6 +104,7 @@ const char* component::BusName(Buses value) noexcept {
         case Buses::Group: return "Group";
         case Buses::Onboard: return "Onboard";
         case Buses::I2C: return "I2C";
+        case Buses::EspNow: return "EspNow";
         default: return "Unknown";
     }
 }

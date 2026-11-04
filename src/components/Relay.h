@@ -7,6 +7,7 @@
 
 #include "Component.h"
 #include "Pcf8574Output.h"
+#include "core/EspNowBus.h"
 
 class relay final : public component {
     public:
@@ -38,6 +39,8 @@ class relay final : public component {
 
         relay(String name, int16_t id, Buses bus, uint8_t address, RelayTypes type = RelayTypes::NormallyOpen, DriveModes driveMode = DriveModes::ActiveHigh, bool initialState = false, bool enabled = true, uint32_t pulseTimeMs = 0);
         relay(String name, int16_t id, Pcf8574Output& outputDevice, uint8_t output, RelayTypes type = RelayTypes::NormallyOpen, DriveModes driveMode = DriveModes::ActiveHigh, bool initialState = false, bool enabled = true, uint32_t pulseTimeMs = 0);
+        // A relay wired to GPIO `address` of ESP-NOW node `node`.
+        relay(String name, int16_t id, String node, uint8_t address, RelayTypes type = RelayTypes::NormallyOpen, DriveModes driveMode = DriveModes::ActiveHigh, bool initialState = false, bool enabled = true, uint32_t pulseTimeMs = 0);
         ~relay() override = default;
 
         [[nodiscard]] Classes Class() const noexcept override { return Classes::Relay; }
@@ -51,6 +54,8 @@ class relay final : public component {
         [[nodiscard]] DriveModes DriveMode() const noexcept { return pDriveMode; }
         [[nodiscard]] bool InitialState() const noexcept { return pInitialState; }
         [[nodiscard]] uint32_t PulseTime() const noexcept { return pPulseTimeMs; }
+        [[nodiscard]] const String& Node() const noexcept { return pNode; }
+        [[nodiscard]] bool NodeOnline() const noexcept;
 
         [[nodiscard]] bool State(bool newState, TickType_t timeout = 0) noexcept;
         [[nodiscard]] bool Toggle(TickType_t timeout = 0) noexcept;
@@ -73,7 +78,14 @@ class relay final : public component {
         [[nodiscard]] bool WriteOutput(bool logicalState) noexcept;
         [[nodiscard]] bool ElectricalLevel(bool logicalState) const noexcept;
 
+        // Margin on top of PulseTimeMs before a node releases a momentary
+        // output by itself. The controller times the pulse as usual; this
+        // only catches the release frame never arriving.
+        static constexpr uint32_t NODE_PULSE_MARGIN_MS = 2000;
+
         Pcf8574Output* pOutputDevice = nullptr;
+        const String pNode;
+        espnowbus::Port pPort;
         std::atomic<bool> pState{false};
         const RelayTypes pType;
         const DriveModes pDriveMode;

@@ -14,6 +14,7 @@ class app {
         bool InitializeClock();
         bool InitializeComponents();
         bool InitializeAutomation();
+        bool InitializeEspNow();
         bool InitializeMQTT();
         bool InitializeStatePersistence();
         bool InitializeTelnetServer();
