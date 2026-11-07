@@ -338,3 +338,73 @@
         }
     };
 })();
+
+// Light/dark theme toggle, added to the topbar of every page that loads this
+// script, just before the Sign out button. With no stored choice the page
+// follows the OS (prefers-color-scheme in style.css); clicking stores the
+// opposite of what's showing in localStorage, which the inline script in
+// each page's <head> applies as <html data-theme> before first paint. When
+// the choice matches the OS again it's cleared, so the page goes back to
+// following the OS instead of being pinned.
+(function () {
+    const STORAGE_KEY = "diq-theme";
+    const root = document.documentElement;
+    const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+    const SUN = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+    const MOON = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+    function systemTheme() {
+        return media && media.matches ? "dark" : "light";
+    }
+
+    function currentTheme() {
+        const explicit = root.getAttribute("data-theme");
+        return explicit === "light" || explicit === "dark" ? explicit : systemTheme();
+    }
+
+    function store(theme) {
+        try {
+            if (theme === null) localStorage.removeItem(STORAGE_KEY);
+            else localStorage.setItem(STORAGE_KEY, theme);
+        } catch (e) { /* storage blocked: the choice just lasts for this page */ }
+    }
+
+    const logout = document.getElementById("logout-button");
+    if (!logout || !logout.parentNode) return;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "icon-button";
+    button.id = "theme-button";
+
+    // The icon shows the theme a click switches to.
+    function render() {
+        const dark = currentTheme() === "dark";
+        button.innerHTML = dark ? SUN : MOON;
+        button.title = dark ? "Switch to light mode" : "Switch to dark mode";
+        button.setAttribute("aria-label", button.title);
+    }
+
+    button.addEventListener("click", function () {
+        const next = currentTheme() === "dark" ? "light" : "dark";
+        if (next === systemTheme()) {
+            root.removeAttribute("data-theme");
+            store(null);
+        } else {
+            root.setAttribute("data-theme", next);
+            store(next);
+        }
+        render();
+    });
+
+    // Following the OS: keep the icon right when the OS theme changes.
+    if (media) {
+        const onChange = function () { if (!root.hasAttribute("data-theme")) render(); };
+        if (media.addEventListener) media.addEventListener("change", onChange);
+        else if (media.addListener) media.addListener(onChange);
+    }
+
+    render();
+    logout.parentNode.insertBefore(button, logout);
+})();
