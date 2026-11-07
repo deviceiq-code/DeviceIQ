@@ -64,7 +64,7 @@
                     <p>Up to 3 accounts. At least one administrator must always remain.</p>
                 </div>
 
-                <div class="settings-list" id="users-list">Loading...</div>
+                <div class="settings-list" id="users-list"><div class="list-empty">Loading...</div></div>
 
                 <div class="group-title">Actions</div>
                 <div class="settings-list">
@@ -90,8 +90,8 @@
                             <div class="setting-desc">Username: 3-32 characters (lowercase letters, digits, '.', '_', '-'). Password: 8-64 characters.</div>
                         </div>
                         <div class="setting-row-control" id="add-user-control">
-                            <input type="text" id="add-username" placeholder="Username" style="width: 140px;">
-                            <input type="password" id="add-password" placeholder="Password" style="width: 140px;">
+                            <input type="text" id="add-username" placeholder="Username" class="input-compact">
+                            <input type="password" id="add-password" placeholder="Password" class="input-compact">
                             <label class="flag-option"><input type="checkbox" id="add-admin"> Admin</label>
                             <button type="button" class="control-button" id="add-user-button">Add</button>
                         </div>

@@ -73,7 +73,7 @@
                 '<div class="modal-message"></div>' +
                 '<input class="modal-input" type="text" hidden>' +
                 '<div class="modal-actions">' +
-                    '<button class="secondary" data-role="cancel"></button>' +
+                    '<button class="control-button" data-role="cancel"></button>' +
                     '<button data-role="confirm"></button>' +
                 '</div>' +
             '</div>';

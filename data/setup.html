@@ -149,7 +149,7 @@
                 label.textContent = "Manual Date/Time";
                 const desc = document.createElement("div");
                 desc.className = "setting-desc";
-                desc.textContent = "Set the clock by hand. Only available while NTP is off.";
+                desc.textContent = "Shows the device's current date/time. Set the clock by hand while NTP is off.";
                 text.appendChild(label);
                 text.appendChild(desc);
                 row.appendChild(text);
@@ -167,6 +167,36 @@
                 button.textContent = "Set";
 
                 const ntpToggle = card.querySelector('[data-field-key="Enabled"]');
+
+                // The device clock is read once (Current Epoch, UTC, from
+                // GET /api/settings) and kept ticking here off the browser's
+                // own clock. The input shows it in the device's time zone
+                // until the admin starts editing it.
+                let timeZone = Number(currentValues["Time Zone"]) || 0;
+                let offsetMs = typeof currentValues["Current Epoch"] === "number"
+                    ? currentValues["Current Epoch"] * 1000 - Date.now()
+                    : null;
+                let editing = false;
+
+                function pad(value) { return String(value).padStart(2, "0"); }
+
+                function tick() {
+                    if (offsetMs === null || editing || document.activeElement === input) return;
+                    const local = new Date(Date.now() + offsetMs + timeZone * 3600000);
+                    input.value = local.getUTCFullYear() + "-" + pad(local.getUTCMonth() + 1) + "-" + pad(local.getUTCDate()) +
+                        "T" + pad(local.getUTCHours()) + ":" + pad(local.getUTCMinutes()) + ":" + pad(local.getUTCSeconds());
+                }
+
+                input.addEventListener("input", function () { editing = true; });
+                setInterval(tick, 1000);
+                tick();
+
+                // A saved Time Zone applies to the device clock immediately.
+                document.addEventListener("settings-saved", function () {
+                    const tzInput = card.querySelector('[data-field-key="Time Zone"]');
+                    if (tzInput && tzInput.value !== "") timeZone = Number(tzInput.value);
+                    tick();
+                });
 
                 function refreshAvailability() {
                     const ntpOn = ntpToggle ? ntpToggle.checked : !!currentValues["Enabled"];
@@ -186,6 +216,13 @@
                         .then(function (result) {
                             if (!result.ok) { Notifications.show(result.data.error || "Unable to set the clock.", { title: "Clock" }); return; }
                             Notifications.show("Clock updated.", { title: "Clock" });
+                            // Resync the local ticker to what was just set.
+                            const parts = input.value.split(/[-T:]/).map(Number);
+                            const enteredAsUTC = Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5] || 0);
+                            offsetMs = enteredAsUTC - timeZone * 3600000 - Date.now();
+                            editing = false;
+                            input.blur();
+                            tick();
                         })
                         .catch(function () { Notifications.show("Unable to reach the device.", { title: "Clock" }); })
                         .finally(refreshAvailability);
@@ -234,7 +271,7 @@
 
                 const list = document.createElement("div");
                 list.className = "settings-list";
-                list.textContent = "Loading...";
+                listMessage(list, "Loading...");
                 card.appendChild(list);
 
                 function webhookActions(item) {
@@ -292,7 +329,7 @@
                         const port = portInput ? portInput.value : "";
 
                         if (!token) {
-                            list.textContent = "Set and save a token above to see webhook URLs.";
+                            listMessage(list, "Set and save a token above to see webhook URLs.");
                             return;
                         }
 
@@ -301,7 +338,7 @@
                         const components = data.components || [];
 
                         if (components.length === 0) {
-                            list.textContent = "No components are installed.";
+                            listMessage(list, "No components are installed.");
                             return;
                         }
 
@@ -316,7 +353,7 @@
                         });
                     })
                     .catch(function () {
-                        list.textContent = "Unable to load installed components.";
+                        listMessage(list, "Unable to load installed components.");
                     });
             }
         },
@@ -616,6 +653,16 @@
         return panel;
     }
 
+    // Placeholder/empty-state text for a .settings-list, styled like a row
+    // description rather than left as bare text in the list.
+    function listMessage(list, text) {
+        list.textContent = "";
+        const message = document.createElement("div");
+        message.className = "list-empty";
+        message.textContent = text;
+        list.appendChild(message);
+    }
+
     function groupTitleEl(text) {
         const el = document.createElement("div");
         el.className = "group-title";
@@ -698,7 +745,7 @@
         card.appendChild(groupTitleEl("Adopted Nodes"));
         const nodeList = document.createElement("div");
         nodeList.className = "settings-list";
-        nodeList.textContent = "Loading...";
+        listMessage(nodeList, "Loading...");
         card.appendChild(nodeList);
 
         let lastData = { discoverySeconds: 0 };
@@ -812,7 +859,8 @@
             pendingList.textContent = "";
             data.pending.forEach(function (device) { pendingList.appendChild(pendingRow(device, data.nodes)); });
 
-            nodeList.textContent = data.nodes.length === 0 ? "No nodes adopted yet." : "";
+            nodeList.textContent = "";
+            if (data.nodes.length === 0) listMessage(nodeList, "No nodes adopted yet.");
             data.nodes.forEach(function (node) { nodeList.appendChild(nodeRow(node)); });
         }
 
@@ -1118,6 +1166,7 @@
                 });
             } else {
                 markClean();
+                document.dispatchEvent(new CustomEvent("settings-saved"));
                 status.className = "setup-status ok";
                 status.textContent = "All changes saved.";
             }

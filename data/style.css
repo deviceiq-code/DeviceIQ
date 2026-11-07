@@ -22,6 +22,14 @@
     --shadow-card: 0 1px 2px rgba(20, 30, 50, 0.06), 0 1px 1px rgba(20, 30, 50, 0.04);
     --shadow-pop: 0 12px 32px rgba(20, 30, 50, 0.18);
     --sidebar-width: 84px;
+    /* Control sizing scale: buttons share a minimum width so a row of
+       actions lines up; inputs/selects in a setting row share one width. */
+    --control-height: 34px;
+    --button-min-width: 112px;
+    --input-width: 240px;
+    --input-compact-width: 160px;
+    --checkbox-size: 16px;
+    --flag-option-min-width: 112px;
 }
 
 * { box-sizing: border-box; }
@@ -127,7 +135,9 @@ svg { display: block; }
     margin: 0;
 }
 
-label {
+/* Scoped to the login card: a bare `label` rule would also hit every
+   .toggle and .flag-option (both <label>s) across the app. */
+.card label {
     display: block;
     font-size: 12px;
     font-weight: 600;
@@ -135,7 +145,7 @@ label {
     margin: 16px 0 6px;
 }
 
-input[type="text"], input[type="password"], input[type="number"] {
+input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"] {
     width: 100%;
     padding: 10px 12px;
     background: var(--surface-alt);
@@ -146,7 +156,7 @@ input[type="text"], input[type="password"], input[type="number"] {
     font-family: inherit;
 }
 
-input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus {
+input[type="text"]:focus, input[type="password"]:focus, input[type="number"]:focus, input[type="datetime-local"]:focus {
     outline: none;
     border-color: var(--accent);
     background: var(--surface);
@@ -171,19 +181,10 @@ button {
 button:hover { background: var(--accent-hover); }
 button:disabled { opacity: 0.55; cursor: default; }
 
-button.secondary {
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    color: var(--text);
-    width: auto;
-    margin: 0;
-    padding: 7px 14px;
-    font-weight: 500;
-}
 
-button.secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-
-.error {
+/* Login form error box. Not `.error`: that name is also used as a state
+   modifier (e.g. .setup-status.error), which this rule would hide. */
+.form-error {
     margin-top: 16px;
     padding: 10px 12px;
     border-radius: var(--radius);
@@ -194,7 +195,7 @@ button.secondary:hover { border-color: var(--accent); color: var(--accent); back
     display: none;
 }
 
-.error.visible { display: block; }
+.form-error.visible { display: block; }
 
 /* ---- App shell ---------------------------------------------------------- */
 
@@ -446,14 +447,14 @@ main.setup-main {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    height: 32px;
+    height: 32px; /* 34px with the .view-toggle border, like other controls */
     margin: 0;
     padding: 0 36px;
     border: none;
     border-left: 1px solid var(--border-strong);
     background: var(--surface);
     color: var(--text-dim);
-    font-size: 15px;
+    font-size: 13px;
     font-family: inherit;
     white-space: nowrap;
     cursor: pointer;
@@ -471,17 +472,6 @@ main.setup-main {
     color: var(--text-dim);
 }
 
-.refresh-select select {
-    height: 32px;
-    padding: 0 30px 0 14px;
-    background: var(--surface);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    color: var(--text);
-    font-size: 14px;
-    font-family: inherit;
-    cursor: pointer;
-}
 
 .comp-group + .comp-group { margin-top: 20px; }
 
@@ -594,7 +584,8 @@ main.setup-main {
     gap: 6px;
 }
 
-.comp-controls button { flex: 1; }
+/* Buttons share the card width here, so the global minimum would overflow. */
+.comp-controls button { flex: 1; min-width: 0; }
 
 .state {
     font-size: 13px;
@@ -677,8 +668,11 @@ main.setup-main {
 
 .tabs-actions button {
     width: auto;
+    min-width: var(--button-min-width);
+    height: var(--control-height);
     margin: 0;
-    padding: 8px 20px;
+    padding: 0 16px;
+    font-size: 13px;
 }
 
 .setup-card {
@@ -731,7 +725,7 @@ main.setup-main {
 }
 
 .group-title ~ .settings-list {
-    padding-left: 1cm;
+    padding-left: 38px;
 }
 
 .setting-row {
@@ -771,6 +765,33 @@ main.setup-main {
     margin-top: 2px;
 }
 
+/* Placeholder/empty-state text inside a .settings-list ("Loading...",
+   "No nodes adopted yet."), sized like a row description. */
+.list-empty {
+    padding: 10px 0;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    padding: 1px 5px;
+    background: var(--surface-alt);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
+input[type="color"] {
+    width: 34px;
+    height: 34px;
+    padding: 2px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
 .webhook-url {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size: 11px;
@@ -786,6 +807,9 @@ main.setup-main {
     gap: 8px;
 }
 
+.setting-row-control select { width: var(--input-width); }
+.setting-row-control.node-actions select { width: var(--input-compact-width); }
+
 .setting-row-control.node-actions {
     flex-shrink: 1;
     flex-wrap: wrap;
@@ -794,10 +818,22 @@ main.setup-main {
 
 .setting-row-control input[type="text"],
 .setting-row-control input[type="password"],
-.setting-row-control input[type="number"] {
-    width: 240px;
-    padding: 8px 10px;
+.setting-row-control input[type="number"],
+.setting-row-control input[type="datetime-local"] {
+    width: var(--input-width);
+    height: var(--control-height);
+    padding: 0 10px;
     font-size: 13px;
+}
+
+.setting-row-control input.input-compact { width: var(--input-compact-width); }
+.setting-row-control input.input-wide { width: 360px; }
+
+.form-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 0;
 }
 
 .setting-row-control input:disabled {
@@ -806,8 +842,11 @@ main.setup-main {
     background: var(--bg);
 }
 
-.setting-row-control select {
-    height: 34px;
+/* One look for every <select> in the app (setup rows, component editor,
+   dashboard refresh interval, log viewer). */
+select {
+    min-width: var(--button-min-width);
+    height: var(--control-height);
     padding: 0 10px;
     font-size: 13px;
     font-family: inherit;
@@ -871,12 +910,15 @@ main.setup-main {
     font-size: 12px;
 }
 
+/* Checkbox groups (e.g. Log > Endpoint / Level) are a fixed two-column
+   grid as wide as the inputs/selects in other rows: the columns line up
+   from one group to the next and with the left edge of those controls,
+   whatever the label lengths or option count. */
 .flags {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px 14px;
-    max-width: 260px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(var(--flag-option-min-width), 1fr));
+    gap: 8px 14px;
+    width: var(--input-width);
 }
 
 .flag-option {
@@ -888,7 +930,17 @@ main.setup-main {
     font-weight: 400;
 }
 
-.flag-option input { accent-color: var(--accent); width: 15px; height: 15px; }
+/* flex: none keeps the box from shrinking when the label text is long,
+   so every checkbox renders at the same size. */
+.flag-option input {
+    flex: none;
+    width: var(--checkbox-size);
+    height: var(--checkbox-size);
+    min-width: var(--checkbox-size);
+    margin: 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
 
 .control-button, .file-picker {
     display: inline-flex;
@@ -896,7 +948,8 @@ main.setup-main {
     justify-content: center;
     gap: 8px;
     width: auto;
-    height: 34px;
+    min-width: var(--button-min-width);
+    height: var(--control-height);
     margin: 0;
     padding: 0 16px;
     background: var(--surface);
@@ -912,6 +965,9 @@ main.setup-main {
 
 .control-button:hover, .file-picker:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .control-button:disabled { opacity: 0.5; cursor: default; pointer-events: none; }
+
+.control-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.control-button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #fff; }
 
 .control-button.danger { color: var(--error); border-color: var(--error); }
 .control-button.danger:hover { border-color: var(--error); color: var(--error); background: var(--error-soft); }
@@ -971,7 +1027,7 @@ main.setup-main {
 
 .toast-container {
     position: fixed;
-    top: calc(88px + 1cm);
+    top: 126px;
     right: 20px;
     display: flex;
     flex-direction: column;
@@ -1068,8 +1124,11 @@ main.setup-main {
 
 .modal-actions button {
     width: auto;
+    min-width: var(--button-min-width);
+    height: var(--control-height);
     margin: 0;
-    padding: 8px 18px;
+    padding: 0 16px;
+    font-size: 13px;
 }
 
 .fab {

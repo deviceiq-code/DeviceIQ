@@ -354,6 +354,9 @@ namespace {
         out["Enabled"] = Settings.General.NTPUpdate();
         out["Server"] = Settings.General.NTPServer();
         out["Time Zone"] = Settings.General.TimeZone();
+        // Read-only snapshot (UTC epoch) so the setup page can show the
+        // device clock; the browser keeps it ticking locally from here.
+        out["Current Epoch"] = static_cast<int64_t>(Clock.GetEpoch());
     }
 
     // ---- MQTT ---------------------------------------------------------------

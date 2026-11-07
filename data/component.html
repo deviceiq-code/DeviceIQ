@@ -90,17 +90,14 @@
                             <p>Program what runs when each event fires. Leave a field blank for no action. Syntax: <code>log(text)</code> or <code>compset(selector property=value)</code> - e.g. <code>compset(GarageLights state=toggle)</code>. Use <code>%NAME%</code> for this component's own name.</p>
                         </div>
 
-                        <div class="settings-list" id="events-list">Loading...</div>
+                        <div class="settings-list" id="events-list"><div class="list-empty">Loading...</div></div>
                     </div>
                 </div>
             </div>
 
-            <div class="setting-row" style="padding-top: 4px;">
-                <div class="setting-row-text"></div>
-                <div class="setting-row-control">
-                    <button type="button" class="control-button" id="cancel-button">Cancel</button>
-                    <button type="button" class="control-button" id="save-button">Save</button>
-                </div>
+            <div class="form-footer">
+                <button type="button" class="control-button" id="cancel-button">Cancel</button>
+                <button type="button" class="control-button primary" id="save-button">Save</button>
             </div>
         </main>
     </div>
@@ -161,11 +158,11 @@
         return wrap;
     }
 
-    function textInput(value, width) {
+    function textInput(value, className) {
         const input = document.createElement("input");
         input.type = "text";
         input.value = value === undefined || value === null ? "" : value;
-        if (width) input.style.width = width;
+        if (className) input.className = className;
         return input;
     }
 
@@ -176,6 +173,14 @@
         if (max !== undefined) input.max = max;
         input.value = value === undefined || value === null ? "" : value;
         return input;
+    }
+
+    function listMessage(list, text) {
+        list.textContent = "";
+        const message = document.createElement("div");
+        message.className = "list-empty";
+        message.textContent = text;
+        list.appendChild(message);
     }
 
     function selectInput(options, selected) {
@@ -272,7 +277,7 @@
         const list = document.getElementById("basic-list");
         list.innerHTML = "";
 
-        const nameInput = textInput(setup.Name, "240px");
+        const nameInput = textInput(setup.Name);
         list.appendChild(row("Name", "A short, unique label for this component.", nameInput));
 
         let classControl;
@@ -450,12 +455,12 @@
         list.innerHTML = "";
 
         if (!names || names.length === 0) {
-            list.textContent = "This component class exposes no events.";
+            listMessage(list, "This component class exposes no events.");
             return;
         }
 
         names.forEach(function (eventName) {
-            const input = textInput(currentEvents[eventName], "360px");
+            const input = textInput(currentEvents[eventName], "input-wide");
             input.placeholder = "No action";
             list.appendChild(row(eventName, null, input));
             eventReaders[eventName] = function () { return input.value.trim(); };
