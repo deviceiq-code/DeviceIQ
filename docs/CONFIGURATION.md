@@ -4,8 +4,9 @@ Este documento descreve o formato do `config.json`, lido pelo firmware a partir 
 
 O arquivo é um único objeto JSON com duas partes bem distintas:
 
-- **Seções de sistema** (`Log`, `Network`, `General`, `Web Server`, `Webhooks`, `MQTT`, `Telnet`, `Users`): configuração de infraestrutura do dispositivo. Toleram campos ausentes ou inválidos — nesse caso, cada campo assume seu próprio *default* (ver [Defaults e auto-correção](#defaults-e-auto-correção) abaixo).
-- **Catálogo de componentes** (`ComponentSchemaVersion` + `Components`): descreve o hardware ligado ao dispositivo (relés, botões, cortinas, termômetros) e a automação declarativa entre eles. Ao contrário das seções de sistema, este catálogo é **validado como um todo**: se algo estiver fora do formato esperado, ou se `ComponentSchemaVersion` não bater com a versão que o firmware entende, a instalação dos componentes falha por inteiro (`settings::InstallComponents()`, [ComponentConfig.cpp](../src/core/ComponentConfig.cpp)) e nenhum componente é criado.
+- **Seções de sistema** (`Log`, `Network`, `General`, `Web Server`, `Webhooks`, `EspNow`, `MQTT`, `Telnet`, `Users`): configuração de infraestrutura do dispositivo. Toleram campos ausentes ou inválidos — nesse caso, cada campo assume seu próprio *default* (ver [Defaults e auto-correção](#defaults-e-auto-correção) abaixo).
+- **Tabela de nodes** (`Nodes`): os nodes ESP-NOW adotados por este dispositivo (ver [`Nodes`](#nodes)).
+- **Catálogo de componentes** (`ComponentSchemaVersion` + `Components`): descreve o hardware ligado ao dispositivo (relés, botões, campainhas, cortinas, termômetros, LEDs RGB) e a automação declarativa entre eles. Ao contrário das seções de sistema, este catálogo é **validado como um todo**: se algo estiver fora do formato esperado, ou se `ComponentSchemaVersion` não bater com a versão que o firmware entende, a instalação dos componentes falha por inteiro (`settings::InstallComponents()`, [ComponentConfig.cpp](../src/core/ComponentConfig.cpp)) e nenhum componente é criado.
 
 ---
 
@@ -69,6 +70,12 @@ Cada seção abaixo é um objeto opcional dentro da raiz do JSON. Se a seção i
 | `Token` | string | `""` | Precisa ter 15–30 chars alfanuméricos; qualquer outro valor fica vazio. |
 | `Port` | inteiro | `81` | `0` recai no default. |
 
+### `EspNow`
+
+| Campo | Tipo | Default | Observações |
+|---|---|---|---|
+| `Enabled` | bool | `false` | Liga o barramento ESP-NOW (nodes remotos). Desligado por default porque desativa o *modem sleep* do Wi-Fi — sem nodes, não há por que pagar esse custo. |
+
 ### `MQTT`
 
 | Campo | Tipo | Default | Observações |
@@ -101,6 +108,26 @@ Array de contas administrativas do dispositivo:
 - `Salt` (16 bytes) e `Hash` (32 bytes, PBKDF2‑SHA256) — nunca a senha em texto puro.
 - Se o arquivo não existir, estiver vazio/corrompido, ou a lista de usuários vier vazia, o firmware cria automaticamente duas contas default e as persiste: `admin`/`admin1234` (administrador) e `user`/`user1234` (não administrador). **Troque essas senhas assim que possível** — elas são conhecidas por qualquer pessoa com acesso ao código-fonte.
 
+### `Nodes`
+
+Array com os nodes ESP-NOW adotados — placas ESP-01 rodando o firmware genérico DeviceIQ-Node, que hospedam componentes remotos (ver `Bus: "EspNow"` nas classes [`Relay`](#classe-relay), [`Button`](#classe-button) e [`Doorbell`](#classe-doorbell)):
+
+```json
+"Nodes": [
+    { "Name": "porch", "MAC": "AA:BB:CC:DD:EE:FF", "Key": "<32 dígitos hex>" }
+]
+```
+
+| Campo | Observações |
+|---|---|
+| `Name` | 1–24 caracteres: letras, dígitos, `-` ou `_`. Único entre os nodes; é o nome usado em `Setup.Node` dos componentes. |
+| `MAC` | Endereço MAC do node. |
+| `Key` | Chave de 16 bytes (32 dígitos hex) gerada na adoção, usada no HMAC-SHA256 que autentica cada frame. **Segredo** — trate como uma senha. |
+
+- Esta tabela **não deve ser editada à mão**: ela é escrita pelo firmware ao adotar, substituir, renomear ou remover nodes (Web UI em Setup → Integrations, ou o comando `nodes` do CLI). A adoção exige a janela de discovery aberta (180 s) e o node ligado há poucos minutos.
+- No máximo **12 nodes**. Entradas inválidas (nome, MAC ou chave fora do formato) são ignoradas no boot, com erro no log.
+- Ao salvar, o firmware preserva `Nodes` como está no arquivo.
+
 ---
 
 ## 2. Catálogo de componentes
@@ -131,8 +158,25 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 - Até **32 componentes** no total (`MaxConfiguredComponents`).
 - Cada entrada tem exatamente três seções, todas obrigatórias: `Setup`, `Properties`, `Events` (mesmo que `Properties`/`Events` sejam objetos vazios `{}`).
 - `Name` (em `Setup`) deve ser único entre todos os componentes (case-insensitive).
-- Para componentes endereçáveis (Relay, Button, Doorbell, Thermometer), o par `(Bus, Address)` deve ser único.
+- Para componentes endereçáveis (Relay, Button, Doorbell, Thermometer, RGB_LED), o endereço deve ser único no mesmo barramento: `(Bus, Address)` para `Onboard`/`I2C`, `(Bus, Node, Address)` para `EspNow`. Os três pinos de um `RGB_LED` contam como endereços ocupados.
 - `Setup.Class` determina qual sub-schema abaixo se aplica.
+
+#### Componentes remotos (`Bus: "EspNow"`)
+
+`Relay`, `Button` e `Doorbell` aceitam, além de `"Onboard"`, `Bus: "EspNow"`: o componente fica num node ESP-NOW em vez de num GPIO do próprio controlador.
+
+```json
+"Setup": { "Name": "FrontDoor", "Class": "Doorbell", "Bus": "EspNow", "Node": "porch", "Address": 2 }
+```
+
+| Campo | Regra |
+|---|---|
+| `Setup.Node` | Obrigatório com `EspNow`, proibido com `Onboard`. Nome de um node em [`Nodes`](#nodes). |
+| `Setup.Address` | GPIO **do node**, `0`–`15`. |
+
+- Edições pela Web UI ou pelo CLI que referenciem um node inexistente são rejeitadas. No boot, um node ausente derruba apenas os componentes que dependem dele, não o catálogo inteiro.
+- Precisa de `EspNow.Enabled = true`. Enquanto o node estiver offline, o componente aparece como offline no dashboard e um relé remoto recusa ser ligado.
+- Os demais campos de `Setup`/`Properties`/`Events` são os mesmos da versão `Onboard`.
 
 #### Classe `Relay`
 
@@ -144,8 +188,9 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 
 | Campo | Obrigatório | Default | Valores aceitos |
 |---|---|---|---|
-| `Setup.Bus` | sim | — | apenas `"Onboard"` |
-| `Setup.Address` | sim | — | `0`–`255` |
+| `Setup.Bus` | sim | — | `"Onboard"` \| `"EspNow"` (ver [Componentes remotos](#componentes-remotos-bus-espnow)) |
+| `Setup.Node` | só com `EspNow` | — | nome de um node em `Nodes` |
+| `Setup.Address` | sim | — | `0`–`255` (`0`–`15` com `EspNow`) |
 | `Setup.Type` | não | `"NormallyOpen"` | `"NormallyOpen"` \| `"NormallyClosed"` |
 | `Setup.DriveMode` | não | `"ActiveHigh"` | `"ActiveHigh"` \| `"ActiveLow"` |
 | `Setup.PulseTimeMs` | não | desativado (relé travado) | inteiro (ms), `20`–`5000`. Quando presente, o relé é **momentâneo**: ligar já agenda o desligamento automático após esse tempo — para simular o toque de um botão (ex.: clonar um controle remoto RF) em vez de manter um contato travado. Um relé momentâneo nunca persiste estado em `state.json` e ignora `Properties.State`/qualquer valor herdado — ele sempre inicia desligado. |
@@ -163,8 +208,9 @@ Objeto (não array) cujas **chaves são o ID do componente** — um inteiro posi
 
 | Campo | Obrigatório | Default | Valores aceitos |
 |---|---|---|---|
-| `Setup.Bus` | sim | — | apenas `"Onboard"` |
-| `Setup.Address` | sim | — | `0`–`255` |
+| `Setup.Bus` | sim | — | `"Onboard"` \| `"EspNow"` (ver [Componentes remotos](#componentes-remotos-bus-espnow)) |
+| `Setup.Node` | só com `EspNow` | — | nome de um node em `Nodes` |
+| `Setup.Address` | sim | — | `0`–`255` (`0`–`15` com `EspNow`) |
 | `Setup.ActiveLevel` | não | `"Low"` | `"High"` \| `"Low"` |
 | `Setup.InputMode` | não | `"PullUp"` | `"Floating"` \| `"PullUp"` \| `"PullDown"` |
 | `Setup.DebounceTimeMs` | não | `50` | inteiro (ms) |
@@ -185,8 +231,9 @@ Uma entrada GPIO com debounce, como um `Button` simplificado (sem clique longo/m
 
 | Campo | Obrigatório | Default | Valores aceitos |
 |---|---|---|---|
-| `Setup.Bus` | sim | — | apenas `"Onboard"` |
-| `Setup.Address` | sim | — | `0`–`255` |
+| `Setup.Bus` | sim | — | `"Onboard"` \| `"EspNow"` (ver [Componentes remotos](#componentes-remotos-bus-espnow)) |
+| `Setup.Node` | só com `EspNow` | — | nome de um node em `Nodes` |
+| `Setup.Address` | sim | — | `0`–`255` (`0`–`15` com `EspNow`) |
 | `Setup.ActiveLevel` | não | `"Low"` | `"High"` \| `"Low"` |
 | `Setup.InputMode` | não | `"PullUp"` | `"Floating"` \| `"PullUp"` \| `"PullDown"` |
 | `Setup.DebounceTimeMs` | não | `50` | inteiro (ms) |
@@ -243,6 +290,29 @@ Um grupo lógico que combina 2 relés (obrigatórios) e até 2 botões (opcionai
 
 Os relés e botões referenciados por um `Blinds` tornam-se **membros privados** do grupo: continuam existindo como componentes próprios (com seu ID), mas deixam de ter automação/MQTT independentes — apenas o `Blinds` publica eventos e aceita comandos externamente.
 
+#### Classe `RGB_LED`
+
+Um LED RGB em 3 pinos PWM (LEDC, 5 kHz, 8 bits), com estado ligado/desligado e cor. Publicado no Home Assistant como entidade `light`.
+
+```json
+"Setup": { "Name": "DeskLight", "Class": "RGB_LED", "Bus": "Onboard", "RedPin": 25, "GreenPin": 26, "BluePin": 27, "DriveMode": "ActiveHigh" },
+"Properties": { "Enabled": true, "State": false, "RGB": "255,180,90" },
+"Events": { "ColorChanged": "log(%NAME% color changed)" }
+```
+
+| Campo | Obrigatório | Default | Valores aceitos |
+|---|---|---|---|
+| `Setup.Bus` | sim | — | apenas `"Onboard"` |
+| `Setup.RedPin` / `Setup.GreenPin` / `Setup.BluePin` | sim | — | `0`–`255`, os três diferentes entre si. Não usa `Setup.Address`. |
+| `Setup.DriveMode` | não | `"ActiveHigh"` | `"ActiveHigh"` \| `"ActiveLow"` (ex.: LED de anodo comum) |
+| `Properties.Enabled` | não | `true` | bool |
+| `Properties.State` | não | `false` | bool — semente inicial; sobrescrita por `state.json` se presente |
+| `Properties.RGB` | não | `"0,0,0"` | string `"R,G,B"`, cada canal `0`–`255` — semente inicial; sobrescrita por `state.json` se presente |
+| `Events` | — | — | `SettingOn`, `SettingOff`, `SetOn`, `SetOff`, `ColorChanged`, `Changed` |
+
+- Cada `RGB_LED` ocupa 3 dos 8 canais LEDC do chip, então **no máximo 2** podem coexistir.
+- Propriedades aceitas em `compset`/`comp set`/webhooks: `state=on|off|toggle` e `rgb=R,G,B`.
+
 ### `Events`: automação declarativa
 
 Cada valor de `Events` é uma *script string* com uma das duas ações suportadas (`automation::ParseScript`, [Automation.cpp](../src/core/Automation.cpp)):
@@ -276,7 +346,7 @@ Não fazem parte do JSON, mas valem citar por completude (também em `Defaults.h
 | Constante | Valor | Uso |
 |---|---|---|
 | `ConfigFileName` | `/config.json` | Caminho padrão lido/gravado por `Load()`/`Save()`. |
-| `StateFileName` | `/state.json` | Estado de runtime dos componentes (ex.: `Relay.State`, `Blinds.Position`), salvo a cada `Save State Pooling` segundos. |
+| `StateFileName` | `/state.json` | Estado de runtime dos componentes (ex.: `Relay.State`, `Blinds.Position`, `RGB_LED.State`/`RGB`), salvo a cada `Save State Pooling` segundos. |
 | `LogFileName` | `/device.log` | Usado quando o endpoint `File` está ativo em `Log.Endpoint`. |
 | `Users.Admin` | `admin` / `admin1234` | Conta administrativa criada no primeiro boot. |
 | `Users.User` | `user` / `user1234` | Conta não administrativa criada no primeiro boot. |
